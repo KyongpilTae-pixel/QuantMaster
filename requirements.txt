@@ -1,0 +1,9 @@
+pandas
+numpy
+finance-datareader
+pykrx
+plotly
+reflex
+requests
+
+reflex==0.8.28.post1

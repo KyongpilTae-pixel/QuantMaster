@@ -1,0 +1,13 @@
+assets/external/
+.web/
+.web
+__pycache__/
+*.py[cod]
+*.pyc
+*.pyo
+.states
+*.db
+.env
+.reflex/
+.claude/
+requirement.txt
