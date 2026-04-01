@@ -526,7 +526,7 @@ def price_chart() -> rx.Component:
                         stroke="#16a34a",
                         dot=False,
                         type_="monotone",
-                        name="MA20",
+                        name="TWAP20",
                         stroke_width=1,
                     ),
                     rx.recharts.line(
@@ -534,7 +534,7 @@ def price_chart() -> rx.Component:
                         stroke="#dc2626",
                         dot=False,
                         type_="monotone",
-                        name="MA60",
+                        name="TWAP60",
                         stroke_width=1,
                     ),
                     rx.recharts.x_axis(data_key="date", tick={"fontSize": 9}),
