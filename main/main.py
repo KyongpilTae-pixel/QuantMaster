@@ -38,7 +38,9 @@ class ScanResult(BaseModel):
     applied_gpa: float = 0.6
     applied_mfi: int = 50
     applied_obv: bool = True
+    applied_min_cap: str = "전체"
     currency: str = "KRW"
+    market_cap_str: str = "-"
 
 
 class BacktestSummary(BaseModel):
@@ -57,9 +59,10 @@ class BacktestSummary(BaseModel):
 
 class State(rx.State):
     # Settings
-    pbr_limit: float = 1.2
+    pbr_limit: List[float] = [1.2]
     vwap_period: str = "120"
     market: str = "KOSPI"
+    min_cap_label: str = "전체"
 
     # Scanner results
     scan_results: List[ScanResult] = []
@@ -93,9 +96,11 @@ class State(rx.State):
         self.vwap_period = value
 
     def set_pbr_limit(self, values: list):
-        """Slider returns a list of values."""
         if values:
-            self.pbr_limit = round(float(values[0]), 1)
+            self.pbr_limit = [round(float(values[0]), 1)]
+
+    def set_min_cap_label(self, value: str):
+        self.min_cap_label = value
 
     def set_tab(self, tab: str):
         self.active_tab = tab
@@ -158,10 +163,11 @@ class State(rx.State):
             vwap = int(self.vwap_period)
             results = await asyncio.to_thread(
                 scanner.run_advanced_scan,
-                self.pbr_limit,
+                self.pbr_limit[0],
                 vwap,
                 10,
                 self.market,
+                self.min_cap_label,
             )
 
             self.scan_results = [
@@ -179,7 +185,9 @@ class State(rx.State):
                     applied_gpa=float(row["Applied_GPA"]),
                     applied_mfi=int(row["Applied_MFI"]),
                     applied_obv=bool(row["Applied_OBV"]),
+                    applied_min_cap=str(row.get("Applied_MinCap", "전체")),
                     currency=str(row.get("Currency", "KRW")),
+                    market_cap_str=str(row.get("MarketCap_Str", "-")),
                 )
                 for _, row in results.iterrows()
             ]
@@ -277,14 +285,28 @@ def sidebar() -> rx.Component:
 
             rx.hstack(
                 rx.text("PBR 한도: ", size="2", color="gray"),
-                rx.text(State.pbr_limit, size="2"),
+                rx.text(State.pbr_limit[0], size="2"),
             ),
             rx.slider(
                 min=0.5,
                 max=2.0,
                 step=0.1,
-                value=[State.pbr_limit],
-                on_value_commit=State.set_pbr_limit,
+                value=State.pbr_limit,
+                on_change=State.set_pbr_limit,
+                width="100%",
+            ),
+
+            rx.text("최소 시가총액", size="2", color="gray"),
+            rx.select.root(
+                rx.select.trigger(placeholder="시가총액 선택"),
+                rx.select.content(
+                    rx.select.item("전체", value="전체"),
+                    rx.select.item("소형주+ (KR:300억 / US:$2B)", value="소형주+"),
+                    rx.select.item("중형주+ (KR:3000억 / US:$10B)", value="중형주+"),
+                    rx.select.item("대형주+ (KR:1조 / US:$50B)", value="대형주+"),
+                ),
+                value=State.min_cap_label,
+                on_change=State.set_min_cap_label,
                 width="100%",
             ),
 
@@ -342,6 +364,7 @@ def scanner_tab() -> rx.Component:
                 rx.table.row(
                     rx.table.column_header_cell("종목명"),
                     rx.table.column_header_cell("심볼"),
+                    rx.table.column_header_cell("시가총액"),
                     rx.table.column_header_cell("PBR"),
                     rx.table.column_header_cell("MFI"),
                     rx.table.column_header_cell("현재가"),
@@ -357,6 +380,7 @@ def scanner_tab() -> rx.Component:
                     lambda r: rx.table.row(
                         rx.table.cell(r.name),
                         rx.table.cell(r.symbol),
+                        rx.table.cell(r.market_cap_str),
                         rx.table.cell(r.pbr),
                         rx.table.cell(r.mfi),
                         rx.table.cell(r.close),
@@ -413,6 +437,7 @@ def scan_conditions_panel(r: ScanResult) -> rx.Component:
                 threshold_badge("GPA 최소", rx.text("≥ ", r.applied_gpa * 100, "%"), r.applied_gpa >= 0.6),
                 threshold_badge("MFI 최소", rx.text("> ", r.applied_mfi), r.applied_mfi >= 50),
                 threshold_badge("OBV 조건", rx.cond(r.applied_obv, rx.text("필수"), rx.text("제외")), r.applied_obv),
+                threshold_badge("시가총액", rx.text(r.applied_min_cap), r.applied_min_cap == "전체"),
                 columns="2",
                 spacing="2",
                 width="100%",
@@ -438,6 +463,7 @@ def actual_values_panel(r: ScanResult) -> rx.Component:
                 threshold_badge("MFI", rx.text(r.mfi), r.mfi > r.applied_mfi),
                 threshold_badge("VWAP 괴리", rx.text(r.vwap_gap, "%"), r.vwap_gap > 0),
                 threshold_badge("OBV", rx.cond(r.obv_ok, rx.text("충족"), rx.text("미충족")), r.obv_ok),
+                threshold_badge("시가총액", rx.text(r.market_cap_str), True),
                 columns="2",
                 spacing="2",
                 width="100%",

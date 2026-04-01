@@ -78,6 +78,7 @@ def _parse_page(session: requests.Session, sosok: str, page: int) -> list[dict]:
             roe = float(texts[7]) if texts[7] not in ("", "N/A", "-") else np.nan
             pbr = float(texts[8]) if texts[8] not in ("", "N/A", "-") else np.nan
             price = float(texts[2]) if texts[2] else np.nan
+            mktcap = float(texts[4]) if texts[4] not in ("", "N/A", "-") else np.nan
         except ValueError:
             continue
 
@@ -92,6 +93,7 @@ def _parse_page(session: requests.Session, sosok: str, page: int) -> list[dict]:
                 "PBR": pbr,
                 "PER": per,
                 "ROE": roe,
+                "MarketCap": mktcap,  # 억원
             }
         )
     return records
@@ -114,6 +116,7 @@ def _fetch_us_fundamentals(symbol: str) -> dict | None:
         name = info.get("shortName") or symbol
         if not pbr or pbr <= 0:
             return None
+        mktcap_raw = info.get("marketCap")
         return {
             "Symbol": symbol,
             "Name": name,
@@ -121,6 +124,7 @@ def _fetch_us_fundamentals(symbol: str) -> dict | None:
             "PBR": float(pbr),
             "ROE": float(roe * 100) if roe else np.nan,
             "PER": float(info.get("trailingPE") or np.nan),
+            "MarketCap": float(mktcap_raw / 1e9) if mktcap_raw else np.nan,  # billion USD
         }
     except Exception:
         return None
@@ -174,7 +178,7 @@ class QuantDataLoader:
 
         if not all_records:
             return pd.DataFrame(
-                columns=["Symbol", "Name", "Close", "PBR", "PER", "ROE", "GPA_Score"]
+                columns=["Symbol", "Name", "Close", "PBR", "PER", "ROE", "MarketCap", "GPA_Score"]
             )
 
         df = pd.DataFrame(all_records)
@@ -214,7 +218,7 @@ class QuantDataLoader:
 
         if not records:
             return pd.DataFrame(
-                columns=["Symbol", "Name", "Close", "PBR", "PER", "ROE", "GPA_Score"]
+                columns=["Symbol", "Name", "Close", "PBR", "PER", "ROE", "MarketCap", "GPA_Score"]
             )
 
         df = pd.DataFrame(records)

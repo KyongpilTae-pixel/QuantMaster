@@ -24,6 +24,14 @@ _STEP_LABELS = {
 
 _US_MARKETS = {"SP500", "NASDAQ"}
 
+# 시가총액 프리셋: KR=억원, US=billion USD
+_CAP_PRESETS = {
+    "전체":    {"KR": 0,      "US": 0},
+    "소형주+": {"KR": 300,    "US": 2},
+    "중형주+": {"KR": 3_000,  "US": 10},
+    "대형주+": {"KR": 10_000, "US": 50},
+}
+
 
 class QuantScanner:
     def run_advanced_scan(
@@ -32,6 +40,7 @@ class QuantScanner:
         vwap_period: int = 120,
         min_count: int = 10,
         market: str = "KOSPI",
+        min_cap_label: str = "전체",
     ) -> pd.DataFrame:
         """
         3단계 하이브리드 스캔 + 자동 임계값 완화:
@@ -44,10 +53,17 @@ class QuantScanner:
         """
         loader = QuantDataLoader()
         currency = "USD" if market in _US_MARKETS else "KRW"
+        cap_key = "US" if currency == "USD" else "KR"
+        min_cap = _CAP_PRESETS.get(min_cap_label, {"KR": 0, "US": 0})[cap_key]
+
         stocks = loader.get_market_snapshot(market=market)
 
         if stocks.empty:
             return pd.DataFrame()
+
+        # 시가총액 필터
+        if min_cap > 0 and "MarketCap" in stocks.columns:
+            stocks = stocks[stocks["MarketCap"].fillna(0) >= min_cap]
 
         final_candidates: list[dict] = []
         seen_symbols: set[str] = set()
@@ -85,6 +101,14 @@ class QuantScanner:
 
                     if vwap_ok and mfi_ok and (obv_ok or not require_obv):
                         seen_symbols.add(row["Symbol"])
+                        cap_val = row.get("MarketCap", float("nan"))
+                        import math
+                        if math.isnan(cap_val):
+                            cap_str = "-"
+                        elif currency == "USD":
+                            cap_str = f"${cap_val:.1f}B"
+                        else:
+                            cap_str = f"{int(cap_val):,}억"
                         final_candidates.append(
                             {
                                 "Name": row["Name"],
@@ -99,11 +123,13 @@ class QuantScanner:
                                     / curr[vwap_col] * 100,
                                     1,
                                 ),
+                                "MarketCap_Str": cap_str,
                                 # 적용된 임계값 정보
                                 "Applied_PBR": effective_pbr,
                                 "Applied_GPA": gpa_min,
                                 "Applied_MFI": mfi_min,
                                 "Applied_OBV": require_obv,
+                                "Applied_MinCap": min_cap_label,
                                 "Condition": _STEP_LABELS[step],
                                 "Currency": currency,
                             }
