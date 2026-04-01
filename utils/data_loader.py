@@ -41,7 +41,7 @@ def _make_session() -> requests.Session:
         data={
             "menu": "market_sum",
             "returnUrl": "http://finance.naver.com/sise/sise_market_sum.naver",
-            "fieldIds": ["pbr", "per", "roe"],
+            "fieldIds": ["market_sum", "per", "roe", "pbr"],
         },
         headers=_HEADERS,
         timeout=10,
@@ -70,15 +70,17 @@ def _parse_page(session: requests.Session, sosok: str, page: int) -> list[dict]:
 
         cells = row.find_all("td")
         texts = [c.text.strip().replace(",", "").replace("%", "") for c in cells]
-        # 컬럼 순서(field_submit 이후): N, 종목명, 현재가, 등락폭, 시가총액, 상한가, PER, ROE, PBR, ...
-        if len(texts) < 9:
+        # 컬럼 순서(field_submit market_sum+per+roe+pbr 이후):
+        # [0]N [1]종목명 [2]현재가 [3]전일비 [4]등락률 [5]거래량
+        # [6]시가총액(억원) [7]PER [8]ROE [9]PBR
+        if len(texts) < 10:
             continue
         try:
-            per = float(texts[6]) if texts[6] not in ("", "N/A", "-") else np.nan
-            roe = float(texts[7]) if texts[7] not in ("", "N/A", "-") else np.nan
-            pbr = float(texts[8]) if texts[8] not in ("", "N/A", "-") else np.nan
+            per = float(texts[7]) if texts[7] not in ("", "N/A", "-") else np.nan
+            roe = float(texts[8]) if texts[8] not in ("", "N/A", "-") else np.nan
+            pbr = float(texts[9]) if texts[9] not in ("", "N/A", "-") else np.nan
             price = float(texts[2]) if texts[2] else np.nan
-            mktcap = float(texts[4]) if texts[4] not in ("", "N/A", "-") else np.nan
+            mktcap = float(texts[6]) if texts[6] not in ("", "N/A", "-") else np.nan
         except ValueError:
             continue
 
