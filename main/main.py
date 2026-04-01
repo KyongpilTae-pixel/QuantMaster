@@ -8,6 +8,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import asyncio
+import math
 from typing import List
 
 import reflex as rx
@@ -26,7 +27,9 @@ from utils.reasoning import InvestmentReasoning
 class ScanResult(BaseModel):
     name: str = ""
     symbol: str = ""
+    market_raw: str = "KOSPI"
     pbr: float = 0.0
+    psr: float = 0.0
     mfi: float = 0.0
     obv_ok: bool = True
     vwap_price: float = 0.0
@@ -77,6 +80,7 @@ class State(rx.State):
 
     # 분석 차트 데이터 (종가 + VWAP)
     price_chart_data: List[dict] = []
+    psr_chart_data: List[dict] = []
     is_loading_chart: bool = False
 
     # UI state
@@ -121,6 +125,7 @@ class State(rx.State):
         self.equity_data = []
         self.trades_data = []
         self.price_chart_data = []
+        self.psr_chart_data = []
         self.is_loading_chart = True
         self.active_tab = "analysis"
         yield
@@ -149,6 +154,11 @@ class State(rx.State):
                 }
                 for d, row in display_df.iterrows()
             ]
+            # 분기별 PSR
+            psr_data = await asyncio.to_thread(
+                loader.get_quarterly_psr, target.symbol, target.market_raw
+            )
+            self.psr_chart_data = psr_data
         except Exception:
             pass
         finally:
@@ -181,7 +191,9 @@ class State(rx.State):
                 ScanResult(
                     name=str(row["Name"]),
                     symbol=str(row["Symbol"]),
+                    market_raw=str(row.get("Market", "KOSPI")),
                     pbr=float(row["PBR"]),
+                    psr=float(row["PSR"]) if not math.isnan(float(row.get("PSR", float("nan")))) else 0.0,
                     mfi=float(row["MFI"]),
                     obv_ok=bool(row["OBV_OK"]),
                     vwap_price=float(row["VWAP_Price"]),
@@ -373,6 +385,7 @@ def scanner_tab() -> rx.Component:
                     rx.table.column_header_cell("심볼"),
                     rx.table.column_header_cell("시가총액"),
                     rx.table.column_header_cell("PBR"),
+                    rx.table.column_header_cell("PSR"),
                     rx.table.column_header_cell("MFI"),
                     rx.table.column_header_cell("현재가"),
                     rx.table.column_header_cell("VWAP"),
@@ -389,6 +402,7 @@ def scanner_tab() -> rx.Component:
                         rx.table.cell(r.symbol),
                         rx.table.cell(r.market_cap_str),
                         rx.table.cell(r.pbr),
+                        rx.table.cell(r.psr),
                         rx.table.cell(r.mfi),
                         rx.table.cell(r.close),
                         rx.table.cell(r.vwap_price),
@@ -553,6 +567,48 @@ def price_chart() -> rx.Component:
     )
 
 
+def psr_chart() -> rx.Component:
+    """분기별 PSR 추이 바 차트."""
+    return rx.cond(
+        State.psr_chart_data.length() > 0,
+        rx.vstack(
+            rx.hstack(
+                rx.text("분기별 PSR 추이", weight="bold", size="2"),
+                rx.badge("PSR = 시가총액 ÷ 매출액", color_scheme="gray"),
+                spacing="2",
+                align_items="center",
+            ),
+            rx.recharts.bar_chart(
+                rx.recharts.bar(
+                    data_key="PSR",
+                    fill="#6366f1",
+                    name="PSR",
+                    radius=[4, 4, 0, 0],
+                ),
+                rx.recharts.x_axis(data_key="quarter", tick={"fontSize": 10}),
+                rx.recharts.y_axis(tick={"fontSize": 10}),
+                rx.recharts.cartesian_grid(stroke_dasharray="3 3"),
+                rx.recharts.tooltip(),
+                rx.recharts.reference_line(
+                    y=1,
+                    stroke="#ef4444",
+                    stroke_dasharray="4 4",
+                    label={"value": "PSR=1", "fontSize": 10, "fill": "#ef4444"},
+                ),
+                data=State.psr_chart_data,
+                width="100%",
+                height=240,
+            ),
+            rx.text(
+                "PSR < 1 → 매출 대비 저평가 / PSR 1~3 → 적정 / PSR > 3 → 고평가 주의",
+                size="1", color="gray",
+            ),
+            width="100%",
+        ),
+        rx.box(),
+    )
+
+
 def analysis_tab() -> rx.Component:
     return rx.cond(
         State.selected_name != "",
@@ -628,6 +684,8 @@ def analysis_tab() -> rx.Component:
             ),
             # 3. 차트
             price_chart(),
+            # 3-1. 분기별 PSR 추이
+            psr_chart(),
             # 4 & 5. 적용된 스캔 조건 / 실제 측정값
             rx.foreach(
                 State.scan_results,

@@ -41,7 +41,7 @@ def _make_session() -> requests.Session:
         data={
             "menu": "market_sum",
             "returnUrl": "http://finance.naver.com/sise/sise_market_sum.naver",
-            "fieldIds": ["market_sum", "per", "roe", "pbr"],
+            "fieldIds": ["market_sum", "sales", "per", "roe", "pbr"],
         },
         headers=_HEADERS,
         timeout=10,
@@ -70,22 +70,25 @@ def _parse_page(session: requests.Session, sosok: str, page: int) -> list[dict]:
 
         cells = row.find_all("td")
         texts = [c.text.strip().replace(",", "").replace("%", "") for c in cells]
-        # 컬럼 순서(field_submit market_sum+per+roe+pbr 이후):
+        # 컬럼 순서(field_submit market_sum+sales+per+roe+pbr 이후):
         # [0]N [1]종목명 [2]현재가 [3]전일비 [4]등락률 [5]거래량
-        # [6]시가총액(억원) [7]PER [8]ROE [9]PBR
-        if len(texts) < 10:
+        # [6]시가총액(억원) [7]매출액(억원) [8]PER [9]ROE [10]PBR
+        if len(texts) < 11:
             continue
         try:
-            per = float(texts[7]) if texts[7] not in ("", "N/A", "-") else np.nan
-            roe = float(texts[8]) if texts[8] not in ("", "N/A", "-") else np.nan
-            pbr = float(texts[9]) if texts[9] not in ("", "N/A", "-") else np.nan
-            price = float(texts[2]) if texts[2] else np.nan
             mktcap = float(texts[6]) if texts[6] not in ("", "N/A", "-") else np.nan
+            sales  = float(texts[7]) if texts[7] not in ("", "N/A", "-") else np.nan
+            per    = float(texts[8]) if texts[8] not in ("", "N/A", "-") else np.nan
+            roe    = float(texts[9]) if texts[9] not in ("", "N/A", "-") else np.nan
+            pbr    = float(texts[10]) if texts[10] not in ("", "N/A", "-") else np.nan
+            price  = float(texts[2]) if texts[2] else np.nan
         except ValueError:
             continue
 
         if np.isnan(pbr) or pbr <= 0:
             continue
+
+        psr = round(mktcap / sales, 2) if (sales and sales > 0 and not np.isnan(mktcap)) else np.nan
 
         records.append(
             {
@@ -96,6 +99,8 @@ def _parse_page(session: requests.Session, sosok: str, page: int) -> list[dict]:
                 "PER": per,
                 "ROE": roe,
                 "MarketCap": mktcap,  # 억원
+                "Sales": sales,        # 억원
+                "PSR": psr,
             }
         )
     return records
@@ -119,6 +124,7 @@ def _fetch_us_fundamentals(symbol: str) -> dict | None:
         if not pbr or pbr <= 0:
             return None
         mktcap_raw = info.get("marketCap")
+        psr_raw = info.get("priceToSalesTrailing12Months")
         return {
             "Symbol": symbol,
             "Name": name,
@@ -127,6 +133,7 @@ def _fetch_us_fundamentals(symbol: str) -> dict | None:
             "ROE": float(roe * 100) if roe else np.nan,
             "PER": float(info.get("trailingPE") or np.nan),
             "MarketCap": float(mktcap_raw / 1e9) if mktcap_raw else np.nan,  # billion USD
+            "PSR": float(psr_raw) if psr_raw else np.nan,
         }
     except Exception:
         return None
@@ -226,6 +233,57 @@ class QuantDataLoader:
         df = pd.DataFrame(records)
         df["GPA_Score"] = df["ROE"].rank(pct=True)
         return df.reset_index(drop=True)
+
+    def get_quarterly_psr(self, symbol: str, market: str) -> list[dict]:
+        """분기별 PSR 추이 반환 (최근 8분기)."""
+        import yfinance as yf
+
+        if market in ("KOSPI", "KOSDAQ"):
+            suffix = ".KS" if market == "KOSPI" else ".KQ"
+            yf_symbol = symbol + suffix
+        else:
+            yf_symbol = symbol
+
+        try:
+            ticker = yf.Ticker(yf_symbol)
+            info = ticker.info
+            shares = info.get("sharesOutstanding") or info.get("impliedSharesOutstanding")
+            if not shares:
+                return []
+
+            fin = ticker.quarterly_financials
+            rev_row = next(
+                (r for r in ["Total Revenue", "Revenues", "Revenue"] if r in fin.index),
+                None,
+            )
+            if rev_row is None:
+                return []
+            rev = fin.loc[rev_row].dropna().sort_index()
+
+            hist = ticker.history(period="2y")
+            if hist.empty:
+                return []
+            quarterly_close = hist["Close"].resample("QE").last().dropna()
+
+            results = []
+            for date, revenue in rev.items():
+                if revenue <= 0:
+                    continue
+                # 해당 분기 종가
+                idx = quarterly_close.index.get_indexer([date], method="nearest")[0]
+                if idx < 0:
+                    continue
+                close = quarterly_close.iloc[idx]
+                mktcap = close * shares
+                annual_rev = revenue * 4  # 연환산
+                psr = round(mktcap / annual_rev, 2)
+                quarter = f"{date.year}Q{(date.month - 1) // 3 + 1}"
+                results.append({"quarter": quarter, "PSR": psr})
+
+            return sorted(results, key=lambda x: x["quarter"])[-8:]
+        except Exception as e:
+            print(f"[quarterly_psr] {yf_symbol}: {e}")
+            return []
 
     def get_ohlcv(self, symbol: str, lookback_days: int = 400) -> pd.DataFrame:
         """FinanceDataReader로 OHLCV 데이터 반환 (한국/미국 공통)."""

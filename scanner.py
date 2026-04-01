@@ -1,3 +1,4 @@
+import math
 import pandas as pd
 from utils.data_loader import QuantDataLoader
 from utils.indicators import TechnicalIndicators
@@ -102,18 +103,20 @@ class QuantScanner:
                     if vwap_ok and mfi_ok and (obv_ok or not require_obv):
                         seen_symbols.add(row["Symbol"])
                         cap_val = row.get("MarketCap", float("nan"))
-                        import math
                         if math.isnan(cap_val):
                             cap_str = "-"
                         elif currency == "USD":
                             cap_str = f"${cap_val:.1f}B"
                         else:
                             cap_str = f"{int(cap_val):,}억"
+                        psr_val = row.get("PSR", float("nan"))
                         final_candidates.append(
                             {
                                 "Name": row["Name"],
                                 "Symbol": row["Symbol"],
+                                "Market": market,
                                 "PBR": round(row["PBR"], 2),
+                                "PSR": round(psr_val, 2) if not math.isnan(psr_val) else float("nan"),
                                 "MFI": round(curr["MFI"], 1),
                                 "OBV_OK": obv_ok,
                                 "VWAP_Price": round(curr[vwap_col], 0),
