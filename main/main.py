@@ -126,21 +126,30 @@ class State(rx.State):
         yield
 
         try:
+            import pandas as pd
             from utils.data_loader import QuantDataLoader
             from utils.indicators import TechnicalIndicators
             vwap = int(self.vwap_period)
             loader = QuantDataLoader()
-            df = await asyncio.to_thread(loader.get_ohlcv, target.symbol, 300)
+            df = await asyncio.to_thread(loader.get_ohlcv, target.symbol, 600)
             df = TechnicalIndicators.calculate_all(df, [vwap])
-            df = df.dropna().tail(120)
+            df["MA_20"] = df["Close"].rolling(20).mean()
+            df["MA_60"] = df["Close"].rolling(60).mean()
+            display_df = df.tail(200)
             vwap_col = f"VWAP_{vwap}"
+
+            def _v(val):
+                return round(float(val), 0) if not pd.isna(val) else None
+
             self.price_chart_data = [
                 {
                     "date": str(d.date()),
-                    "종가": round(float(row["Close"]), 0),
-                    "VWAP": round(float(row[vwap_col]), 0),
+                    "종가": _v(row["Close"]),
+                    "VWAP": _v(row[vwap_col]),
+                    "MA20": _v(row["MA_20"]),
+                    "MA60": _v(row["MA_60"]),
                 }
-                for d, row in df.iterrows()
+                for d, row in display_df.iterrows()
             ]
         except Exception:
             pass
@@ -487,7 +496,15 @@ def price_chart() -> rx.Component:
         rx.cond(
             State.price_chart_data.length() > 0,
             rx.vstack(
-                rx.text("가격 차트 (종가 vs VWAP)", weight="bold", size="2"),
+                rx.hstack(
+                    rx.text("가격 차트", weight="bold", size="2"),
+                    rx.badge("종가", color_scheme="blue"),
+                    rx.badge("VWAP " + State.vwap_period + "일", color_scheme="amber"),
+                    rx.badge("MA20", color_scheme="green"),
+                    rx.badge("MA60", color_scheme="red"),
+                    spacing="2",
+                    align_items="center",
+                ),
                 rx.recharts.line_chart(
                     rx.recharts.line(
                         data_key="종가",
@@ -495,23 +512,41 @@ def price_chart() -> rx.Component:
                         dot=False,
                         type_="monotone",
                         name="종가",
+                        stroke_width=2,
                     ),
                     rx.recharts.line(
                         data_key="VWAP",
                         stroke="#f59e0b",
                         dot=False,
                         type_="monotone",
-                        stroke_dasharray="5 5",
+                        stroke_dasharray="6 3",
                         name="VWAP",
+                        stroke_width=2,
                     ),
-                    rx.recharts.x_axis(data_key="date", tick={"fontSize": 10}),
-                    rx.recharts.y_axis(tick={"fontSize": 10}),
+                    rx.recharts.line(
+                        data_key="MA20",
+                        stroke="#16a34a",
+                        dot=False,
+                        type_="monotone",
+                        name="MA20",
+                        stroke_width=1,
+                    ),
+                    rx.recharts.line(
+                        data_key="MA60",
+                        stroke="#dc2626",
+                        dot=False,
+                        type_="monotone",
+                        name="MA60",
+                        stroke_width=1,
+                    ),
+                    rx.recharts.x_axis(data_key="date", tick={"fontSize": 9}),
+                    rx.recharts.y_axis(tick={"fontSize": 9}),
                     rx.recharts.cartesian_grid(stroke_dasharray="3 3"),
                     rx.recharts.tooltip(),
                     rx.recharts.legend(),
                     data=State.price_chart_data,
                     width="100%",
-                    height=280,
+                    height=320,
                 ),
                 width="100%",
             ),
