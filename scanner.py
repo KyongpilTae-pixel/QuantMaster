@@ -22,6 +22,9 @@ _STEP_LABELS = {
 }
 
 
+_US_MARKETS = {"SP500", "NASDAQ"}
+
+
 class QuantScanner:
     def run_advanced_scan(
         self,
@@ -40,6 +43,7 @@ class QuantScanner:
         PBR 한도는 사용자 설정값(target_pbr)과 단계별 pbr_max 중 큰 값 사용.
         """
         loader = QuantDataLoader()
+        currency = "USD" if market in _US_MARKETS else "KRW"
         stocks = loader.get_market_snapshot(market=market)
 
         if stocks.empty:
@@ -101,6 +105,7 @@ class QuantScanner:
                                 "Applied_MFI": mfi_min,
                                 "Applied_OBV": require_obv,
                                 "Condition": _STEP_LABELS[step],
+                                "Currency": currency,
                             }
                         )
                 except Exception:

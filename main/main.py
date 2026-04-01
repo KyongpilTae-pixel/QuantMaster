@@ -38,6 +38,7 @@ class ScanResult(BaseModel):
     applied_gpa: float = 0.6
     applied_mfi: int = 50
     applied_obv: bool = True
+    currency: str = "KRW"
 
 
 class BacktestSummary(BaseModel):
@@ -107,7 +108,7 @@ class State(rx.State):
 
         buy, sell = InvestmentReasoning.generate_report(
             target.name, target.pbr, int(self.vwap_period),
-            target.mfi, target.vwap_price,
+            target.mfi, target.vwap_price, target.currency,
         )
         self.buy_msg = buy
         self.sell_msg = sell
@@ -178,6 +179,7 @@ class State(rx.State):
                     applied_gpa=float(row["Applied_GPA"]),
                     applied_mfi=int(row["Applied_MFI"]),
                     applied_obv=bool(row["Applied_OBV"]),
+                    currency=str(row.get("Currency", "KRW")),
                 )
                 for _, row in results.iterrows()
             ]
@@ -256,8 +258,17 @@ def sidebar() -> rx.Component:
             rx.select.root(
                 rx.select.trigger(placeholder="시장 선택"),
                 rx.select.content(
-                    rx.select.item("KOSPI", value="KOSPI"),
-                    rx.select.item("KOSDAQ", value="KOSDAQ"),
+                    rx.select.group(
+                        rx.select.label("한국"),
+                        rx.select.item("KOSPI", value="KOSPI"),
+                        rx.select.item("KOSDAQ", value="KOSDAQ"),
+                    ),
+                    rx.select.separator(),
+                    rx.select.group(
+                        rx.select.label("미국"),
+                        rx.select.item("S&P 500", value="SP500"),
+                        rx.select.item("NASDAQ", value="NASDAQ"),
+                    ),
                 ),
                 value=State.market,
                 on_change=State.set_market,

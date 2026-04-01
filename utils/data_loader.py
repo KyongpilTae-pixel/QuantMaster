@@ -1,18 +1,24 @@
 """
-NAVER Finance 기반 시장 데이터 로더.
-pykrx KRX API 연결 불가 문제로 NAVER Finance 스크래핑 방식으로 대체.
+NAVER Finance 기반 시장 데이터 로더 (한국 + 미국).
+한국: NAVER Finance 스크래핑 (pykrx KRX API 연결 불가로 대체)
+미국: FinanceDataReader + yfinance 병렬 조회
 """
 
 import time
-import pandas as pd
-import numpy as np
-import FinanceDataReader as fdr
-import requests
-from bs4 import BeautifulSoup
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 
+import FinanceDataReader as fdr
+import numpy as np
+import pandas as pd
+import requests
+from bs4 import BeautifulSoup
 
-# NAVER Finance 시장 코드
+
+# ---------------------------------------------------------------------------
+# 한국 시장 (NAVER Finance)
+# ---------------------------------------------------------------------------
+
 _MARKET_CODE = {"KOSPI": "0", "KOSDAQ": "1"}
 
 _HEADERS = {
@@ -22,6 +28,9 @@ _HEADERS = {
         "Chrome/120.0.0.0 Safari/537.36"
     )
 }
+
+# 미국 시장: FinanceDataReader 리스팅 키
+_US_MARKET_FDR = {"SP500": "S&P500", "NASDAQ": "NASDAQ"}
 
 
 def _make_session() -> requests.Session:
@@ -88,6 +97,40 @@ def _parse_page(session: requests.Session, sosok: str, page: int) -> list[dict]:
     return records
 
 
+# ---------------------------------------------------------------------------
+# 미국 시장 (yfinance)
+# ---------------------------------------------------------------------------
+
+
+def _fetch_us_fundamentals(symbol: str) -> dict | None:
+    """yfinance로 단일 종목 기본 데이터(PBR, ROE, 현재가) 조회."""
+    try:
+        import yfinance as yf
+
+        info = yf.Ticker(symbol).info
+        pbr = info.get("priceToBook")
+        roe = info.get("returnOnEquity")
+        price = info.get("currentPrice") or info.get("regularMarketPrice") or 0.0
+        name = info.get("shortName") or symbol
+        if not pbr or pbr <= 0:
+            return None
+        return {
+            "Symbol": symbol,
+            "Name": name,
+            "Close": float(price),
+            "PBR": float(pbr),
+            "ROE": float(roe * 100) if roe else np.nan,
+            "PER": float(info.get("trailingPE") or np.nan),
+        }
+    except Exception:
+        return None
+
+
+# ---------------------------------------------------------------------------
+# Main Loader
+# ---------------------------------------------------------------------------
+
+
 class QuantDataLoader:
     def __init__(self):
         self._session: requests.Session | None = None
@@ -105,10 +148,17 @@ class QuantDataLoader:
         self, market: str = "KOSPI", max_pages: int = 8
     ) -> pd.DataFrame:
         """
-        NAVER Finance 시가총액 상위 종목의 PBR/ROE 데이터를 가져옴.
-        max_pages × ~50종목 = 최대 300종목 처리.
+        시장 스냅샷 조회.
+        - 한국(KOSPI/KOSDAQ): NAVER Finance 스크래핑, max_pages × ~50종목
+        - 미국(SP500/NASDAQ): FinanceDataReader 리스트 + yfinance 병렬 조회,
+          max_pages × 30종목 처리
         GPA_Score = ROE 백분위 (Novy-Marx GP/A 프록시).
         """
+        if market in _US_MARKET_FDR:
+            return self._get_us_snapshot(market, max_pages)
+        return self._get_kr_snapshot(market, max_pages)
+
+    def _get_kr_snapshot(self, market: str, max_pages: int) -> pd.DataFrame:
         sosok = _MARKET_CODE.get(market, "0")
         session = self._get_session()
 
@@ -117,7 +167,7 @@ class QuantDataLoader:
             try:
                 records = _parse_page(session, sosok, page)
                 all_records.extend(records)
-                time.sleep(0.3)  # 서버 부하 방지
+                time.sleep(0.3)
             except Exception as e:
                 print(f"[DataLoader] page {page} 오류: {e}")
                 break
@@ -131,8 +181,48 @@ class QuantDataLoader:
         df["GPA_Score"] = df["ROE"].rank(pct=True)
         return df.reset_index(drop=True)
 
+    def _get_us_snapshot(self, market: str, max_pages: int) -> pd.DataFrame:
+        """yfinance 병렬 조회로 미국 시장 스냅샷 반환."""
+        fdr_key = _US_MARKET_FDR[market]
+        try:
+            listing = fdr.StockListing(fdr_key)
+            # 열 이름이 다를 수 있으므로 Symbol 열 탐색
+            sym_col = next(
+                (c for c in listing.columns if c.lower() in ("symbol", "code")), None
+            )
+            if sym_col is None:
+                raise ValueError("Symbol 열 없음")
+            symbols = listing[sym_col].dropna().astype(str).tolist()
+        except Exception as e:
+            print(f"[DataLoader] US 리스트 조회 실패: {e}")
+            return pd.DataFrame(
+                columns=["Symbol", "Name", "Close", "PBR", "PER", "ROE", "GPA_Score"]
+            )
+
+        max_symbols = max_pages * 30
+        symbols = [s for s in symbols if s and "." not in s][:max_symbols]
+
+        records: list[dict] = []
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            futures = {
+                executor.submit(_fetch_us_fundamentals, sym): sym for sym in symbols
+            }
+            for future in as_completed(futures):
+                result = future.result()
+                if result:
+                    records.append(result)
+
+        if not records:
+            return pd.DataFrame(
+                columns=["Symbol", "Name", "Close", "PBR", "PER", "ROE", "GPA_Score"]
+            )
+
+        df = pd.DataFrame(records)
+        df["GPA_Score"] = df["ROE"].rank(pct=True)
+        return df.reset_index(drop=True)
+
     def get_ohlcv(self, symbol: str, lookback_days: int = 400) -> pd.DataFrame:
-        """FinanceDataReader로 OHLCV 데이터 반환."""
+        """FinanceDataReader로 OHLCV 데이터 반환 (한국/미국 공통)."""
         end = datetime.today()
         start = end - timedelta(days=lookback_days)
         df = fdr.DataReader(

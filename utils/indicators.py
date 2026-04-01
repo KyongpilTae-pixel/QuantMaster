@@ -17,7 +17,14 @@ class TechnicalIndicators:
         mf = tp * df["Volume"]
         pos_mf = mf.where(tp > tp.shift(1), 0).rolling(window=14).sum()
         neg_mf = mf.where(tp < tp.shift(1), 0).rolling(window=14).sum()
-        df["MFI"] = 100 - (100 / (1 + (pos_mf / neg_mf.replace(0, np.nan))))
+        # When neg_mf=0 and pos_mf>0 → MFI=100; when both=0 (flat) → MFI=50
+        with np.errstate(divide="ignore", invalid="ignore"):
+            mfr = np.where(
+                neg_mf == 0,
+                np.where(pos_mf == 0, 1.0, np.inf),
+                pos_mf.values / neg_mf.values,
+            )
+        df["MFI"] = 100 - (100 / (1 + mfr))
 
         # OBV (On-Balance Volume)
         df["OBV"] = (np.sign(df["Close"].diff()) * df["Volume"]).fillna(0).cumsum()
