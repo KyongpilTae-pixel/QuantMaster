@@ -568,6 +568,54 @@ def analysis_tab() -> rx.Component:
                 border="1px solid var(--green-6)",
                 width="100%",
             ),
+            # 1-1. MFI / OBV 지표 설명
+            rx.box(
+                rx.vstack(
+                    rx.text("지표 해석 가이드", weight="bold", size="2", color="blue"),
+                    rx.grid(
+                        rx.vstack(
+                            rx.hstack(
+                                rx.badge("MFI", color_scheme="blue"),
+                                rx.text("Money Flow Index", size="2", weight="bold"),
+                                spacing="2",
+                            ),
+                            rx.text(
+                                "거래량을 반영한 0~100 범위의 수급 강도 지표. "
+                                "50 초과 → 매수 우위(스마트 머니 유입), "
+                                "80 이상 → 과매수 주의, "
+                                "20 이하 → 과매도 반등 가능성.",
+                                size="1", color="gray",
+                            ),
+                            align_items="start", spacing="1",
+                        ),
+                        rx.vstack(
+                            rx.hstack(
+                                rx.badge("OBV", color_scheme="violet"),
+                                rx.text("On-Balance Volume", size="2", weight="bold"),
+                                spacing="2",
+                            ),
+                            rx.text(
+                                "누적 거래량으로 자금 흐름 방향을 측정. "
+                                "OBV > OBV신호선(20일MA) → 매수세 우위, "
+                                "주가 상승 + OBV 상승 → 추세 신뢰도 높음, "
+                                "주가 상승 + OBV 하락 → 다이버전스 경고.",
+                                size="1", color="gray",
+                            ),
+                            align_items="start", spacing="1",
+                        ),
+                        columns="2",
+                        spacing="4",
+                        width="100%",
+                    ),
+                    spacing="3",
+                    width="100%",
+                ),
+                padding="16px",
+                border_radius="8px",
+                background="var(--blue-2)",
+                border="1px solid var(--blue-5)",
+                width="100%",
+            ),
             # 2. 매도 가이드
             rx.box(
                 rx.text("매도 가이드", weight="bold", color="red", size="2"),
