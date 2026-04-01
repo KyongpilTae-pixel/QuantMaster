@@ -132,9 +132,7 @@ class State(rx.State):
             vwap = int(self.vwap_period)
             loader = QuantDataLoader()
             df = await asyncio.to_thread(loader.get_ohlcv, target.symbol, 600)
-            df = TechnicalIndicators.calculate_all(df, [vwap])
-            df["MA_20"] = df["Close"].rolling(20).mean()
-            df["MA_60"] = df["Close"].rolling(60).mean()
+            df = TechnicalIndicators.calculate_all(df, [vwap, 20, 60])
             display_df = df.tail(200)
             vwap_col = f"VWAP_{vwap}"
 
@@ -146,8 +144,8 @@ class State(rx.State):
                     "date": str(d.date()),
                     "종가": _v(row["Close"]),
                     "VWAP": _v(row[vwap_col]),
-                    "MA20": _v(row["MA_20"]),
-                    "MA60": _v(row["MA_60"]),
+                    "MA20": _v(row["TWAP_20"]),
+                    "MA60": _v(row["TWAP_60"]),
                 }
                 for d, row in display_df.iterrows()
             ]
@@ -500,8 +498,8 @@ def price_chart() -> rx.Component:
                     rx.text("가격 차트", weight="bold", size="2"),
                     rx.badge("종가", color_scheme="blue"),
                     rx.badge("VWAP " + State.vwap_period + "일", color_scheme="amber"),
-                    rx.badge("MA20", color_scheme="green"),
-                    rx.badge("MA60", color_scheme="red"),
+                    rx.badge("TWAP20", color_scheme="green"),
+                    rx.badge("TWAP60", color_scheme="red"),
                     spacing="2",
                     align_items="center",
                 ),
