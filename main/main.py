@@ -44,6 +44,7 @@ class ScanResult(BaseModel):
     applied_min_cap: str = "전체"
     currency: str = "KRW"
     market_cap_str: str = "-"
+    div_yield: str = "-"
 
 
 class BuyPlanStep(BaseModel):
@@ -248,6 +249,7 @@ class State(rx.State):
                     applied_min_cap=str(row.get("Applied_MinCap", "전체")),
                     currency=str(row.get("Currency", "KRW")),
                     market_cap_str=str(row.get("MarketCap_Str", "-")),
+                    div_yield=str(row.get("DivYield", "-")),
                 )
                 for _, row in results.iterrows()
             ]
@@ -427,6 +429,7 @@ def scanner_tab() -> rx.Component:
                     rx.table.column_header_cell("시가총액"),
                     rx.table.column_header_cell("PBR"),
                     rx.table.column_header_cell("PSR"),
+                    rx.table.column_header_cell("배당률"),
                     rx.table.column_header_cell("MFI"),
                     rx.table.column_header_cell("현재가"),
                     rx.table.column_header_cell("VWAP"),
@@ -444,6 +447,7 @@ def scanner_tab() -> rx.Component:
                         rx.table.cell(r.market_cap_str),
                         rx.table.cell(r.pbr),
                         rx.table.cell(r.psr),
+                        rx.table.cell(r.div_yield),
                         rx.table.cell(r.mfi),
                         rx.table.cell(r.close),
                         rx.table.cell(r.vwap_price),

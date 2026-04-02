@@ -41,7 +41,7 @@ def _make_session() -> requests.Session:
         data={
             "menu": "market_sum",
             "returnUrl": "http://finance.naver.com/sise/sise_market_sum.naver",
-            "fieldIds": ["market_sum", "sales", "per", "roe", "pbr"],
+            "fieldIds": ["market_sum", "sales", "dividend", "per", "roe", "pbr"],
         },
         headers=_HEADERS,
         timeout=10,
@@ -70,18 +70,19 @@ def _parse_page(session: requests.Session, sosok: str, page: int) -> list[dict]:
 
         cells = row.find_all("td")
         texts = [c.text.strip().replace(",", "").replace("%", "") for c in cells]
-        # 컬럼 순서(field_submit market_sum+sales+per+roe+pbr 이후):
+        # 컬럼 순서(field_submit market_sum+sales+dividend+per+roe+pbr 이후):
         # [0]N [1]종목명 [2]현재가 [3]전일비 [4]등락률 [5]거래량
-        # [6]시가총액(억원) [7]매출액(억원) [8]PER [9]ROE [10]PBR
-        if len(texts) < 11:
+        # [6]시가총액(억원) [7]매출액(억원) [8]배당수익률(%) [9]PER [10]ROE [11]PBR
+        if len(texts) < 12:
             continue
         try:
-            mktcap = float(texts[6]) if texts[6] not in ("", "N/A", "-") else np.nan
-            sales  = float(texts[7]) if texts[7] not in ("", "N/A", "-") else np.nan
-            per    = float(texts[8]) if texts[8] not in ("", "N/A", "-") else np.nan
-            roe    = float(texts[9]) if texts[9] not in ("", "N/A", "-") else np.nan
-            pbr    = float(texts[10]) if texts[10] not in ("", "N/A", "-") else np.nan
-            price  = float(texts[2]) if texts[2] else np.nan
+            mktcap   = float(texts[6])  if texts[6]  not in ("", "N/A", "-") else np.nan
+            sales    = float(texts[7])  if texts[7]  not in ("", "N/A", "-") else np.nan
+            div_yld  = float(texts[8])  if texts[8]  not in ("", "N/A", "-") else np.nan
+            per      = float(texts[9])  if texts[9]  not in ("", "N/A", "-") else np.nan
+            roe      = float(texts[10]) if texts[10] not in ("", "N/A", "-") else np.nan
+            pbr      = float(texts[11]) if texts[11] not in ("", "N/A", "-") else np.nan
+            price    = float(texts[2])  if texts[2]  else np.nan
         except ValueError:
             continue
 
@@ -98,9 +99,10 @@ def _parse_page(session: requests.Session, sosok: str, page: int) -> list[dict]:
                 "PBR": pbr,
                 "PER": per,
                 "ROE": roe,
-                "MarketCap": mktcap,  # 억원
-                "Sales": sales,        # 억원
+                "MarketCap": mktcap,   # 억원
+                "Sales": sales,         # 억원
                 "PSR": psr,
+                "DivYield": div_yld,   # %
             }
         )
     return records
@@ -124,7 +126,8 @@ def _fetch_us_fundamentals(symbol: str) -> dict | None:
         if not pbr or pbr <= 0:
             return None
         mktcap_raw = info.get("marketCap")
-        psr_raw = info.get("priceToSalesTrailing12Months")
+        psr_raw    = info.get("priceToSalesTrailing12Months")
+        div_raw    = info.get("dividendYield")  # decimal (e.g. 0.015 = 1.5%)
         return {
             "Symbol": symbol,
             "Name": name,
@@ -132,8 +135,9 @@ def _fetch_us_fundamentals(symbol: str) -> dict | None:
             "PBR": float(pbr),
             "ROE": float(roe * 100) if roe else np.nan,
             "PER": float(info.get("trailingPE") or np.nan),
-            "MarketCap": float(mktcap_raw / 1e9) if mktcap_raw else np.nan,  # billion USD
+            "MarketCap": float(mktcap_raw / 1e9) if mktcap_raw else np.nan,
             "PSR": float(psr_raw) if psr_raw else np.nan,
+            "DivYield": round(float(div_raw) * 100, 2) if div_raw else np.nan,  # %
         }
     except Exception:
         return None

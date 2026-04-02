@@ -110,6 +110,8 @@ class QuantScanner:
                         else:
                             cap_str = f"{int(cap_val):,}억"
                         psr_val = row.get("PSR", float("nan"))
+                        div_val = row.get("DivYield", float("nan"))
+                        div_str = f"{div_val:.2f}%" if not math.isnan(div_val) and div_val > 0 else "-"
                         final_candidates.append(
                             {
                                 "Name": row["Name"],
@@ -117,6 +119,7 @@ class QuantScanner:
                                 "Market": market,
                                 "PBR": round(row["PBR"], 2),
                                 "PSR": round(psr_val, 2) if not math.isnan(psr_val) else float("nan"),
+                                "DivYield": div_str,
                                 "MFI": round(curr["MFI"], 1),
                                 "OBV_OK": obv_ok,
                                 "VWAP_Price": round(curr[vwap_col], 0),

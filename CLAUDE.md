@@ -42,9 +42,9 @@ QuantMaster/
 
 ### 데이터 수집
 - **한국 시장**: pykrx/KRX API 연결 불가로 NAVER Finance 스크래핑으로 대체
-  - `field_submit` POST로 `market_sum, sales, per, roe, pbr` 필드 선택
-  - 컬럼 순서: `[6]=시가총액(억원) [7]=매출액(억원) [8]=PER [9]=ROE [10]=PBR`
-  - PSR = 시가총액 / 매출액
+  - `field_submit` POST로 `market_sum, sales, dividend, per, roe, pbr` 필드 선택
+  - 컬럼 순서: `[6]=시가총액(억원) [7]=매출액(억원) [8]=배당수익률(%) [9]=PER [10]=ROE [11]=PBR`
+  - PSR = 시가총액 / 매출액; `len < 12` 체크
 - **미국 시장**: FinanceDataReader로 구성종목 목록 → yfinance 병렬 수집 (ThreadPoolExecutor)
 - **OHLCV**: FinanceDataReader (한국/미국 공통)
 
