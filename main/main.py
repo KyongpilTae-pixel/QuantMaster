@@ -64,6 +64,11 @@ class BacktestSummary(BaseModel):
     trade_count: int = 0
 
 
+class SavedRun(BaseModel):
+    run_id: str = ""
+    label: str = ""
+
+
 # ---------------------------------------------------------------------------
 # App State
 # ---------------------------------------------------------------------------
@@ -100,6 +105,11 @@ class State(rx.State):
     plan_stop_loss: float = 0.0
     plan_stop_loss_pct: float = 0.0
 
+    # 히스토리 (저장된 스캔)
+    saved_runs: List[SavedRun] = []
+    selected_run_id: str = ""
+    history_results: List[ScanResult] = []
+
     # UI state
     is_scanning: bool = False
     is_backtesting: bool = False
@@ -128,10 +138,42 @@ class State(rx.State):
 
     def set_tab(self, tab: str):
         self.active_tab = tab
+        if tab == "history":
+            from utils.scan_db import load_run_list
+            runs = load_run_list()
+            self.saved_runs = [SavedRun(run_id=r["id"], label=r["label"]) for r in runs]
+
+    def set_selected_run_id(self, value: str):
+        self.selected_run_id = value
+        if value:
+            from utils.scan_db import load_scan_results
+            results = load_scan_results(int(value))
+            self.history_results = [ScanResult(**r) for r in results]
+
+    def save_scan(self):
+        """현재 스캔 결과를 DB에 저장."""
+        if not self.scan_results:
+            return
+        from utils.scan_db import save_scan as db_save
+        run_id = db_save(
+            market=self.market,
+            vwap_period=int(self.vwap_period),
+            target_pbr=self.pbr_limit[0],
+            min_cap_label=self.min_cap_label,
+            results=self.scan_results,
+        )
+        self.status_msg = f"저장 완료 (#{run_id})"
+
+    def _find_result(self, name: str):
+        """scan_results와 history_results 모두에서 종목 검색."""
+        return next(
+            (r for r in self.scan_results if r.name == name),
+            next((r for r in self.history_results if r.name == name), None),
+        )
 
     def calc_buy_plan(self):
         """예산 입력 후 분할 매수 플랜 계산."""
-        target = next((r for r in self.scan_results if r.name == self.selected_name), None)
+        target = self._find_result(self.selected_name)
         if not target:
             return
         try:
@@ -153,7 +195,7 @@ class State(rx.State):
 
     async def select_stock(self, name: str):
         self.selected_name = name
-        target = next((r for r in self.scan_results if r.name == name), None)
+        target = self._find_result(name)
         if not target:
             return
 
@@ -394,6 +436,14 @@ def sidebar() -> rx.Component:
                 on_click=State.run_scan,
                 disabled=State.is_scanning,
                 color_scheme="blue",
+                width="100%",
+            ),
+            rx.button(
+                "결과 저장",
+                on_click=State.save_scan,
+                disabled=State.scan_results.length() == 0,
+                color_scheme="green",
+                variant="soft",
                 width="100%",
             ),
 
@@ -986,12 +1036,108 @@ def backtest_tab() -> rx.Component:
     )
 
 
+def history_tab() -> rx.Component:
+    """저장된 스캔 결과 히스토리 탭."""
+    return rx.vstack(
+        rx.heading("스캔 히스토리", size="4"),
+        # 저장된 스캔 선택
+        rx.cond(
+            State.saved_runs.length() == 0,
+            rx.callout.root(
+                rx.callout.text("저장된 스캔 결과가 없습니다. 스캔 후 '결과 저장' 버튼을 누르세요."),
+                color_scheme="gray",
+                variant="soft",
+            ),
+            rx.vstack(
+                rx.select.root(
+                    rx.select.trigger(placeholder="날짜 / 시장 / 조건 선택"),
+                    rx.select.content(
+                        rx.foreach(
+                            State.saved_runs,
+                            lambda r: rx.select.item(r.label, value=r.run_id),
+                        ),
+                    ),
+                    value=State.selected_run_id,
+                    on_change=State.set_selected_run_id,
+                    width="100%",
+                ),
+                # 결과 테이블
+                rx.cond(
+                    State.history_results.length() > 0,
+                    rx.table.root(
+                        rx.table.header(
+                            rx.table.row(
+                                rx.table.column_header_cell("종목명"),
+                                rx.table.column_header_cell("심볼"),
+                                rx.table.column_header_cell("시가총액"),
+                                rx.table.column_header_cell("PBR"),
+                                rx.table.column_header_cell("PSR"),
+                                rx.table.column_header_cell("배당률"),
+                                rx.table.column_header_cell("MFI"),
+                                rx.table.column_header_cell("현재가"),
+                                rx.table.column_header_cell("VWAP"),
+                                rx.table.column_header_cell("괴리율(%)"),
+                                rx.table.column_header_cell("조건"),
+                                rx.table.column_header_cell(""),
+                            )
+                        ),
+                        rx.table.body(
+                            rx.foreach(
+                                State.history_results,
+                                lambda r: rx.table.row(
+                                    rx.table.cell(r.name),
+                                    rx.table.cell(r.symbol),
+                                    rx.table.cell(r.market_cap_str),
+                                    rx.table.cell(r.pbr),
+                                    rx.table.cell(r.psr),
+                                    rx.table.cell(r.div_yield),
+                                    rx.table.cell(r.mfi),
+                                    rx.table.cell(r.close),
+                                    rx.table.cell(r.vwap_price),
+                                    rx.table.cell(r.vwap_gap),
+                                    rx.table.cell(
+                                        rx.badge(
+                                            r.condition,
+                                            color_scheme=rx.cond(
+                                                r.condition == "원본", "green", "orange"
+                                            ),
+                                        )
+                                    ),
+                                    rx.table.cell(
+                                        rx.button(
+                                            "분석",
+                                            size="1",
+                                            variant="soft",
+                                            on_click=State.select_stock(r.name),
+                                        )
+                                    ),
+                                ),
+                            )
+                        ),
+                        width="100%",
+                        variant="surface",
+                    ),
+                    rx.center(
+                        rx.text("날짜를 선택하면 결과가 표시됩니다.", color="gray"),
+                        height="100px",
+                    ),
+                ),
+                width="100%",
+                spacing="4",
+            ),
+        ),
+        width="100%",
+        spacing="4",
+    )
+
+
 def main_content() -> rx.Component:
     return rx.tabs.root(
         rx.tabs.list(
             rx.tabs.trigger("스캐너", value="scanner"),
             rx.tabs.trigger("분석", value="analysis"),
             rx.tabs.trigger("백테스트", value="backtest"),
+            rx.tabs.trigger("히스토리", value="history"),
         ),
         rx.tabs.content(
             rx.box(scanner_tab(), padding_top="16px"),
@@ -1004,6 +1150,10 @@ def main_content() -> rx.Component:
         rx.tabs.content(
             rx.box(backtest_tab(), padding_top="16px"),
             value="backtest",
+        ),
+        rx.tabs.content(
+            rx.box(history_tab(), padding_top="16px"),
+            value="history",
         ),
         value=State.active_tab,
         on_change=State.set_tab,
