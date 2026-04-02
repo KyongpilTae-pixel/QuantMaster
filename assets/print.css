@@ -1,0 +1,51 @@
+/* =====================================================================
+   QuantMaster Pro — 인쇄(PDF 저장) 전용 스타일
+   분석 탭 컨텐츠만 출력하고 나머지(사이드바·탭·버튼)는 숨김
+   ===================================================================== */
+
+@media print {
+    @page {
+        size: A4 portrait;
+        margin: 1.5cm 1.5cm 1.5cm 1.5cm;
+    }
+
+    /* 기본: 모든 요소 숨김 */
+    body * {
+        visibility: hidden;
+    }
+
+    /* 분석 영역만 표시 */
+    #analysis-print-area,
+    #analysis-print-area * {
+        visibility: visible;
+    }
+
+    #analysis-print-area {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+        padding: 0;
+        margin: 0;
+    }
+
+    /* 인쇄 시 숨길 요소 */
+    .no-print,
+    .no-print * {
+        display: none !important;
+        visibility: hidden !important;
+    }
+
+    /* 배경색 출력 허용 */
+    * {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+    }
+
+    /* 페이지 나눔 방지 (차트 등) */
+    .recharts-wrapper,
+    .radix-themes {
+        page-break-inside: avoid;
+        break-inside: avoid;
+    }
+}

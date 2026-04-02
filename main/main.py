@@ -253,6 +253,10 @@ class State(rx.State):
     # Async event handlers
     # ------------------------------------------------------------------
 
+    def export_pdf(self):
+        """분석 탭 내용을 PDF로 저장 (브라우저 인쇄 대화상자)."""
+        return rx.call_script("window.print()")
+
     async def run_scan(self):
         self.is_scanning = True
         self.status_msg = "시장 데이터 수집 중..."
@@ -811,104 +815,123 @@ def psr_chart() -> rx.Component:
 def analysis_tab() -> rx.Component:
     return rx.cond(
         State.selected_name != "",
-        rx.vstack(
-            rx.heading(State.selected_name, size="5"),
-            # 1. 매수 근거
-            rx.box(
-                rx.text("매수 근거", weight="bold", color="green", size="2"),
-                rx.text(State.buy_msg, size="2"),
-                padding="16px",
-                border_radius="8px",
-                background="var(--green-2)",
-                border="1px solid var(--green-6)",
-                width="100%",
-            ),
-            # 1-1. 분할 매수 플랜
-            buy_plan_panel(),
-            # 1-2. MFI / OBV 지표 설명
-            rx.box(
-                rx.vstack(
-                    rx.text("지표 해석 가이드", weight="bold", size="2", color="blue"),
-                    rx.grid(
-                        rx.vstack(
-                            rx.hstack(
-                                rx.badge("MFI", color_scheme="blue"),
-                                rx.text("Money Flow Index", size="2", weight="bold"),
-                                spacing="2",
-                            ),
-                            rx.text(
-                                "거래량을 반영한 0~100 범위의 수급 강도 지표. "
-                                "50 초과 → 매수 우위(스마트 머니 유입), "
-                                "80 이상 → 과매수 주의, "
-                                "20 이하 → 과매도 반등 가능성.",
-                                size="1", color="gray",
-                            ),
-                            align_items="start", spacing="1",
-                        ),
-                        rx.vstack(
-                            rx.hstack(
-                                rx.badge("OBV", color_scheme="violet"),
-                                rx.text("On-Balance Volume", size="2", weight="bold"),
-                                spacing="2",
-                            ),
-                            rx.text(
-                                "누적 거래량으로 자금 흐름 방향을 측정. "
-                                "OBV > OBV신호선(20일MA) → 매수세 우위, "
-                                "주가 상승 + OBV 상승 → 추세 신뢰도 높음, "
-                                "주가 상승 + OBV 하락 → 다이버전스 경고.",
-                                size="1", color="gray",
-                            ),
-                            align_items="start", spacing="1",
-                        ),
-                        columns="2",
-                        spacing="4",
-                        width="100%",
+        rx.box(
+            rx.vstack(
+                # 상단 헤더 (종목명 + PDF 버튼)
+                rx.hstack(
+                    rx.heading(State.selected_name, size="5"),
+                    rx.spacer(),
+                    rx.button(
+                        "PDF 저장",
+                        on_click=State.export_pdf,
+                        color_scheme="gray",
+                        variant="soft",
+                        size="2",
+                        class_name="no-print",
                     ),
-                    spacing="3",
+                    width="100%",
+                    align_items="center",
+                ),
+                # 1. 매수 근거
+                rx.box(
+                    rx.text("매수 근거", weight="bold", color="green", size="2"),
+                    rx.text(State.buy_msg, size="2"),
+                    padding="16px",
+                    border_radius="8px",
+                    background="var(--green-2)",
+                    border="1px solid var(--green-6)",
                     width="100%",
                 ),
-                padding="16px",
-                border_radius="8px",
-                background="var(--blue-2)",
-                border="1px solid var(--blue-5)",
-                width="100%",
-            ),
-            # 2. 매도 가이드
-            rx.box(
-                rx.text("매도 가이드", weight="bold", color="red", size="2"),
-                rx.text(State.sell_msg, size="2"),
-                padding="16px",
-                border_radius="8px",
-                background="var(--red-2)",
-                border="1px solid var(--red-6)",
-                width="100%",
-            ),
-            # 3. 차트
-            price_chart(),
-            # 3-1. 분기별 PSR 추이
-            psr_chart(),
-            # 4 & 5. 적용된 스캔 조건 / 실제 측정값
-            rx.foreach(
-                State.scan_results,
-                lambda r: rx.cond(
-                    r.name == State.selected_name,
+                # 1-1. 분할 매수 플랜
+                buy_plan_panel(),
+                # 1-2. MFI / OBV 지표 설명
+                rx.box(
                     rx.vstack(
-                        scan_conditions_panel(r),
-                        actual_values_panel(r),
-                        width="100%",
+                        rx.text("지표 해석 가이드", weight="bold", size="2", color="blue"),
+                        rx.grid(
+                            rx.vstack(
+                                rx.hstack(
+                                    rx.badge("MFI", color_scheme="blue"),
+                                    rx.text("Money Flow Index", size="2", weight="bold"),
+                                    spacing="2",
+                                ),
+                                rx.text(
+                                    "거래량을 반영한 0~100 범위의 수급 강도 지표. "
+                                    "50 초과 → 매수 우위(스마트 머니 유입), "
+                                    "80 이상 → 과매수 주의, "
+                                    "20 이하 → 과매도 반등 가능성.",
+                                    size="1", color="gray",
+                                ),
+                                align_items="start", spacing="1",
+                            ),
+                            rx.vstack(
+                                rx.hstack(
+                                    rx.badge("OBV", color_scheme="violet"),
+                                    rx.text("On-Balance Volume", size="2", weight="bold"),
+                                    spacing="2",
+                                ),
+                                rx.text(
+                                    "누적 거래량으로 자금 흐름 방향을 측정. "
+                                    "OBV > OBV신호선(20일MA) → 매수세 우위, "
+                                    "주가 상승 + OBV 상승 → 추세 신뢰도 높음, "
+                                    "주가 상승 + OBV 하락 → 다이버전스 경고.",
+                                    size="1", color="gray",
+                                ),
+                                align_items="start", spacing="1",
+                            ),
+                            columns="2",
+                            spacing="4",
+                            width="100%",
+                        ),
                         spacing="3",
+                        width="100%",
                     ),
-                    rx.box(),
+                    padding="16px",
+                    border_radius="8px",
+                    background="var(--blue-2)",
+                    border="1px solid var(--blue-5)",
+                    width="100%",
                 ),
+                # 2. 매도 가이드
+                rx.box(
+                    rx.text("매도 가이드", weight="bold", color="red", size="2"),
+                    rx.text(State.sell_msg, size="2"),
+                    padding="16px",
+                    border_radius="8px",
+                    background="var(--red-2)",
+                    border="1px solid var(--red-6)",
+                    width="100%",
+                ),
+                # 3. 차트
+                price_chart(),
+                # 3-1. 분기별 PSR 추이
+                psr_chart(),
+                # 4 & 5. 적용된 스캔 조건 / 실제 측정값
+                rx.foreach(
+                    State.scan_results,
+                    lambda r: rx.cond(
+                        r.name == State.selected_name,
+                        rx.vstack(
+                            scan_conditions_panel(r),
+                            actual_values_panel(r),
+                            width="100%",
+                            spacing="3",
+                        ),
+                        rx.box(),
+                    ),
+                ),
+                rx.button(
+                    rx.cond(State.is_backtesting, rx.spinner(size="2"), rx.text("백테스트 실행")),
+                    on_click=State.run_backtest,
+                    disabled=State.is_backtesting,
+                    color_scheme="violet",
+                    class_name="no-print",
+                ),
+                width="100%",
+                spacing="4",
             ),
-            rx.button(
-                rx.cond(State.is_backtesting, rx.spinner(size="2"), rx.text("백테스트 실행")),
-                on_click=State.run_backtest,
-                disabled=State.is_backtesting,
-                color_scheme="violet",
-            ),
+            id="analysis-print-area",
             width="100%",
-            spacing="4",
         ),
         rx.center(
             rx.text("스캔 결과에서 종목을 선택하세요.", color="gray"),
