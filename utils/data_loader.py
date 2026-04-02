@@ -76,15 +76,23 @@ def _parse_page(session: requests.Session, sosok: str, page: int) -> list[dict]:
         if len(texts) < 12:
             continue
         try:
-            mktcap   = float(texts[6])  if texts[6]  not in ("", "N/A", "-") else np.nan
-            sales    = float(texts[7])  if texts[7]  not in ("", "N/A", "-") else np.nan
-            div_yld  = float(texts[8])  if texts[8]  not in ("", "N/A", "-") else np.nan
-            per      = float(texts[9])  if texts[9]  not in ("", "N/A", "-") else np.nan
-            roe      = float(texts[10]) if texts[10] not in ("", "N/A", "-") else np.nan
-            pbr      = float(texts[11]) if texts[11] not in ("", "N/A", "-") else np.nan
-            price    = float(texts[2])  if texts[2]  else np.nan
+            mktcap      = float(texts[6])  if texts[6]  not in ("", "N/A", "-") else np.nan
+            sales       = float(texts[7])  if texts[7]  not in ("", "N/A", "-") else np.nan
+            div_per_shr = float(texts[8])  if texts[8]  not in ("", "N/A", "-") else np.nan
+            per         = float(texts[9])  if texts[9]  not in ("", "N/A", "-") else np.nan
+            roe         = float(texts[10]) if texts[10] not in ("", "N/A", "-") else np.nan
+            pbr         = float(texts[11]) if texts[11] not in ("", "N/A", "-") else np.nan
+            price       = float(texts[2])  if texts[2]  else np.nan
         except ValueError:
             continue
+
+        # NAVER dividend 필드는 주당배당금(원) → 수익률(%)로 변환
+        if not np.isnan(div_per_shr) and not np.isnan(price) and price > 0:
+            div_yld = round(div_per_shr / price * 100, 2)
+            if div_yld > 30:   # 비정상값 방어
+                div_yld = np.nan
+        else:
+            div_yld = np.nan
 
         if np.isnan(pbr) or pbr <= 0:
             continue
