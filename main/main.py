@@ -46,6 +46,14 @@ class ScanResult(BaseModel):
     market_cap_str: str = "-"
 
 
+class BuyPlanStep(BaseModel):
+    level: str = ""
+    price: float = 0.0
+    weight_pct: float = 0.0
+    amount: float = 0.0
+    shares: float = 0.0
+
+
 class BacktestSummary(BaseModel):
     total_return: float = 0.0
     mdd: float = 0.0
@@ -83,6 +91,14 @@ class State(rx.State):
     psr_chart_data: List[dict] = []
     is_loading_chart: bool = False
 
+    # 분할 매수 플랜
+    budget_input: str = "10000000"
+    buy_plan_steps: List[BuyPlanStep] = []
+    plan_type: str = ""
+    plan_avg_price: float = 0.0
+    plan_stop_loss: float = 0.0
+    plan_stop_loss_pct: float = 0.0
+
     # UI state
     is_scanning: bool = False
     is_backtesting: bool = False
@@ -106,8 +122,33 @@ class State(rx.State):
     def set_min_cap_label(self, value: str):
         self.min_cap_label = value
 
+    def set_budget_input(self, value: str):
+        self.budget_input = value
+
     def set_tab(self, tab: str):
         self.active_tab = tab
+
+    def calc_buy_plan(self):
+        """예산 입력 후 분할 매수 플랜 계산."""
+        target = next((r for r in self.scan_results if r.name == self.selected_name), None)
+        if not target:
+            return
+        try:
+            from utils.strategy_engine import calculate_pullback_plan
+            budget = float(self.budget_input.replace(",", ""))
+            result = calculate_pullback_plan(
+                current_price=target.close,
+                vwap_price=target.vwap_price,
+                mfi=target.mfi,
+                total_budget=budget,
+            )
+            self.buy_plan_steps = [BuyPlanStep(**s) for s in result["steps"]]
+            self.plan_type = result["plan_type"]
+            self.plan_avg_price = result["avg_price"]
+            self.plan_stop_loss = result["stop_loss"]
+            self.plan_stop_loss_pct = result["stop_loss_pct"]
+        except Exception as e:
+            self.plan_type = f"계산 오류: {e}"
 
     async def select_stock(self, name: str):
         self.selected_name = name
@@ -567,6 +608,110 @@ def price_chart() -> rx.Component:
     )
 
 
+def buy_plan_panel() -> rx.Component:
+    """분할 매수 플랜 패널."""
+    return rx.box(
+        rx.vstack(
+            # 헤더
+            rx.hstack(
+                rx.text("분할 매수 플랜", weight="bold", size="3"),
+                rx.cond(
+                    State.plan_type != "",
+                    rx.badge(State.plan_type, color_scheme="indigo"),
+                ),
+                spacing="3",
+                align_items="center",
+            ),
+            # 예산 입력 + 계산 버튼
+            rx.hstack(
+                rx.text("투자 예산", size="2", color="gray", width="70px"),
+                rx.input(
+                    value=State.budget_input,
+                    on_change=State.set_budget_input,
+                    placeholder="예: 10000000",
+                    type="number",
+                    width="200px",
+                ),
+                rx.button(
+                    "계산하기",
+                    on_click=State.calc_buy_plan,
+                    color_scheme="indigo",
+                    size="2",
+                ),
+                spacing="3",
+                align_items="center",
+            ),
+            # 플랜 테이블
+            rx.cond(
+                State.buy_plan_steps.length() > 0,
+                rx.vstack(
+                    rx.table.root(
+                        rx.table.header(
+                            rx.table.row(
+                                rx.table.column_header_cell("매수 단계"),
+                                rx.table.column_header_cell("목표 단가"),
+                                rx.table.column_header_cell("비중"),
+                                rx.table.column_header_cell("배정 금액"),
+                                rx.table.column_header_cell("예상 수량"),
+                            )
+                        ),
+                        rx.table.body(
+                            rx.foreach(
+                                State.buy_plan_steps,
+                                lambda s: rx.table.row(
+                                    rx.table.cell(rx.text(s.level, size="2")),
+                                    rx.table.cell(rx.text(s.price)),
+                                    rx.table.cell(rx.badge(rx.text(s.weight_pct, "%"), color_scheme="blue")),
+                                    rx.table.cell(rx.text(s.amount)),
+                                    rx.table.cell(rx.text(s.shares, "주")),
+                                ),
+                            )
+                        ),
+                        variant="surface",
+                        width="100%",
+                    ),
+                    # 요약 정보
+                    rx.grid(
+                        rx.box(
+                            rx.text("예상 평균 단가", size="1", color="gray"),
+                            rx.text(State.plan_avg_price, weight="bold", size="4", color="blue"),
+                            padding="12px",
+                            border_radius="6px",
+                            background="var(--blue-2)",
+                            border="1px solid var(--blue-4)",
+                        ),
+                        rx.box(
+                            rx.text("손절 가격 (VWAP -4%)", size="1", color="gray"),
+                            rx.hstack(
+                                rx.text(State.plan_stop_loss, weight="bold", size="4", color="red"),
+                                rx.badge(rx.text(State.plan_stop_loss_pct, "%"), color_scheme="red"),
+                                spacing="2",
+                                align_items="center",
+                            ),
+                            padding="12px",
+                            border_radius="6px",
+                            background="var(--red-2)",
+                            border="1px solid var(--red-4)",
+                        ),
+                        columns="2",
+                        spacing="3",
+                        width="100%",
+                    ),
+                    width="100%",
+                    spacing="3",
+                ),
+            ),
+            spacing="4",
+            width="100%",
+        ),
+        padding="16px",
+        border_radius="8px",
+        background="var(--indigo-2)",
+        border="1px solid var(--indigo-5)",
+        width="100%",
+    )
+
+
 def psr_chart() -> rx.Component:
     """분기별 PSR 추이 바 차트."""
     return rx.cond(
@@ -624,7 +769,9 @@ def analysis_tab() -> rx.Component:
                 border="1px solid var(--green-6)",
                 width="100%",
             ),
-            # 1-1. MFI / OBV 지표 설명
+            # 1-1. 분할 매수 플랜
+            buy_plan_panel(),
+            # 1-2. MFI / OBV 지표 설명
             rx.box(
                 rx.vstack(
                     rx.text("지표 해석 가이드", weight="bold", size="2", color="blue"),
