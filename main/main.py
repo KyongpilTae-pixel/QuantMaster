@@ -593,7 +593,7 @@ def psr_chart() -> rx.Component:
                     y=1,
                     stroke="#ef4444",
                     stroke_dasharray="4 4",
-                    label={"value": "PSR=1", "fontSize": 10, "fill": "#ef4444"},
+                    label="PSR=1",
                 ),
                 data=State.psr_chart_data,
                 width="100%",
