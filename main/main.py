@@ -257,8 +257,38 @@ class State(rx.State):
     # ------------------------------------------------------------------
 
     def export_pdf(self):
-        """분석 탭 내용을 PDF로 저장 (브라우저 인쇄 대화상자)."""
-        return rx.call_script("window.print()")
+        """분석 영역만 새 창에 복사해 인쇄 대화상자 실행."""
+        return rx.call_script("""
+(function() {
+    var el = document.getElementById('analysis-print-area');
+    if (!el) { window.print(); return; }
+
+    // 현재 페이지의 모든 스타일시트 수집 (Radix CSS 변수 포함)
+    var styles = Array.from(
+        document.querySelectorAll('style, link[rel="stylesheet"]')
+    ).map(function(s) { return s.outerHTML; }).join('');
+
+    var w = window.open('', '_blank');
+    w.document.open();
+    w.document.write(
+        '<!DOCTYPE html><html><head>' +
+        '<meta charset="utf-8">' +
+        '<title>QuantMaster - 분석 리포트</title>' +
+        styles +
+        '<style>' +
+        '@page { size: A4 portrait; margin: 1.5cm; }' +
+        'body { padding: 24px; background: white; }' +
+        '.recharts-wrapper, table { page-break-inside: avoid; break-inside: avoid; }' +
+        '.no-print { display: none !important; }' +
+        '</style>' +
+        '</head><body>' +
+        el.outerHTML +
+        '</body></html>'
+    );
+    w.document.close();
+    setTimeout(function() { w.print(); }, 800);
+})();
+""")
 
     async def run_scan(self):
         self.is_scanning = True
