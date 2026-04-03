@@ -238,6 +238,7 @@ class State(rx.State):
                     "MA20": _v(row["TWAP_20"]),
                     "MA60": _v(row["TWAP_60"]),
                     "MA120": _v(row["TWAP_120"]),
+                    "SMA120": _v(row["SMA_120"]),
                 }
                 for d, row in display_df.iterrows()
             ]
@@ -656,6 +657,7 @@ def price_chart() -> rx.Component:
                         rx.badge("TWAP20", color_scheme="green"),
                         rx.badge("TWAP60", color_scheme="red"),
                         rx.badge("TWAP120", color_scheme="purple"),
+                        rx.badge("SMA120", color_scheme="orange"),
                         spacing="2",
                         align_items="center",
                     ),
@@ -700,6 +702,15 @@ def price_chart() -> rx.Component:
                             type_="monotone",
                             name="TWAP120",
                             stroke_width=1,
+                        ),
+                        rx.recharts.line(
+                            data_key="SMA120",
+                            stroke="#ea580c",
+                            dot=False,
+                            type_="monotone",
+                            name="SMA120",
+                            stroke_width=1,
+                            stroke_dasharray="4 2",
                         ),
                         rx.recharts.x_axis(data_key="date", tick={"fontSize": 9}),
                         rx.recharts.y_axis(tick={"fontSize": 9}),

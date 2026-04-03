@@ -12,6 +12,7 @@ class TechnicalIndicators:
         for w in windows:
             df[f"VWAP_{w}"] = pv.rolling(window=w).sum() / df["Volume"].rolling(window=w).sum()
             df[f"TWAP_{w}"] = tp.rolling(window=w).mean()
+            df[f"SMA_{w}"] = df["Close"].rolling(window=w).mean()
 
         # MFI (Money Flow Index)
         mf = tp * df["Volume"]
