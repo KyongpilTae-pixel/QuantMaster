@@ -95,6 +95,7 @@ class State(rx.State):
     # 분석 차트 데이터 (종가 + VWAP)
     price_chart_data: List[dict] = []
     psr_chart_data: List[dict] = []
+    close_date: str = ""
     is_loading_chart: bool = False
 
     # 분할 매수 플랜
@@ -210,6 +211,7 @@ class State(rx.State):
         self.trades_data = []
         self.price_chart_data = []
         self.psr_chart_data = []
+        self.close_date = ""
         self.is_loading_chart = True
         self.active_tab = "analysis"
         yield
@@ -238,6 +240,7 @@ class State(rx.State):
                 }
                 for d, row in display_df.iterrows()
             ]
+            self.close_date = str(display_df.index[-1].date())
             # 분기별 PSR
             psr_data = await asyncio.to_thread(
                 loader.get_quarterly_psr, target.symbol, target.market_raw
@@ -817,9 +820,17 @@ def analysis_tab() -> rx.Component:
         State.selected_name != "",
         rx.box(
             rx.vstack(
-                # 상단 헤더 (종목명 + PDF 버튼)
+                # 상단 헤더 (종목명 + 기준일 + PDF 버튼)
                 rx.hstack(
                     rx.heading(State.selected_name, size="5"),
+                    rx.cond(
+                        State.close_date != "",
+                        rx.badge(
+                            "종가 기준: " + State.close_date,
+                            color_scheme="gray",
+                            variant="soft",
+                        ),
+                    ),
                     rx.spacer(),
                     rx.button(
                         "PDF 저장",
@@ -831,6 +842,7 @@ def analysis_tab() -> rx.Component:
                     ),
                     width="100%",
                     align_items="center",
+                    spacing="3",
                 ),
                 # 1. 매수 근거
                 rx.box(
