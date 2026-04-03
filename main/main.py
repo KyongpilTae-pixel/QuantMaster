@@ -223,7 +223,7 @@ class State(rx.State):
             vwap = int(self.vwap_period)
             loader = QuantDataLoader()
             df = await asyncio.to_thread(loader.get_ohlcv, target.symbol, 600)
-            df = TechnicalIndicators.calculate_all(df, [vwap, 20, 60])
+            df = TechnicalIndicators.calculate_all(df, [vwap, 20, 60, 120])
             display_df = df.tail(200)
             vwap_col = f"VWAP_{vwap}"
 
@@ -237,6 +237,7 @@ class State(rx.State):
                     "VWAP": _v(row[vwap_col]),
                     "MA20": _v(row["TWAP_20"]),
                     "MA60": _v(row["TWAP_60"]),
+                    "MA120": _v(row["TWAP_120"]),
                 }
                 for d, row in display_df.iterrows()
             ]
@@ -654,6 +655,7 @@ def price_chart() -> rx.Component:
                         rx.badge("VWAP " + State.vwap_period + "일", color_scheme="amber"),
                         rx.badge("TWAP20", color_scheme="green"),
                         rx.badge("TWAP60", color_scheme="red"),
+                        rx.badge("TWAP120", color_scheme="purple"),
                         spacing="2",
                         align_items="center",
                     ),
@@ -689,6 +691,14 @@ def price_chart() -> rx.Component:
                             dot=False,
                             type_="monotone",
                             name="TWAP60",
+                            stroke_width=1,
+                        ),
+                        rx.recharts.line(
+                            data_key="MA120",
+                            stroke="#7c3aed",
+                            dot=False,
+                            type_="monotone",
+                            name="TWAP120",
                             stroke_width=1,
                         ),
                         rx.recharts.x_axis(data_key="date", tick={"fontSize": 9}),
