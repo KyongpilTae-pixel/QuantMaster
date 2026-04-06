@@ -3,7 +3,12 @@
 import numpy as np
 import pandas as pd
 
-SIGNAL_THRESHOLD = 70  # 매수 신호 기준 점수
+# 시장별 동적 threshold
+# - KR(공매도 데이터 없음): 최대 OBV(30)+Alpha(35)=65 → threshold=55
+# - US(공매도 포함):        최대 OBV(30)+Alpha(35)+Short(35)=100 → threshold=70
+SIGNAL_THRESHOLD_KR = 55   # 한국 시장 (공매도 잔고 데이터 없음)
+SIGNAL_THRESHOLD_US = 70   # 미국 시장 (공매도 포함)
+SIGNAL_THRESHOLD = SIGNAL_THRESHOLD_US  # 하위 호환용 alias
 
 
 def analyze_whale_with_options(
@@ -11,6 +16,7 @@ def analyze_whale_with_options(
     index_df: pd.DataFrame,
     use_alpha: bool = True,
     use_short_filter: bool = False,
+    threshold: int = SIGNAL_THRESHOLD_US,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
     세력 매집 / 숏커버링 시그널 탐지.
@@ -21,6 +27,7 @@ def analyze_whale_with_options(
     index_df         : 지수 OHLCV (Close 포함)
     use_alpha        : 지수 대비 상대강도 필터 사용 여부
     use_short_filter : 공매도 잔고 급감 필터 사용 여부
+    threshold        : 신호 기준 점수 (KR=55, US=70)
 
     Returns
     -------
@@ -29,18 +36,20 @@ def analyze_whale_with_options(
     df = df.copy()
     df["Accum_Score"] = 0
 
-    # 1. OBV + 매집봉 (가중치 30)
+    # 1. OBV + 매집봉 (가중치 30) — 거래량 2배 이상 + 위꼬리 존재
     df["OBV"] = np.where(
         df["Close"] > df["Close"].shift(1), df["Volume"],
         np.where(df["Close"] < df["Close"].shift(1), -df["Volume"], 0),
     ).cumsum()
     vol_avg = df["Volume"].rolling(window=20).mean()
     df["Is_Whale_Spike"] = (
-        (df["Volume"] > vol_avg * 3) & (df["High"] > df["Close"])
+        (df["Volume"] > vol_avg * 2) & (df["High"] > df["Close"])
     )
     df["Accum_Score"] += df["Is_Whale_Spike"].astype(int) * 30
 
     # 2. 지수 대비 상대강도 (Alpha, 가중치 35)
+    #    - 지수 하락일에 종목 양의 알파 (방어적 강도): 고전적 매집 패턴
+    #    - 또는 지수 대비 2%+ 강세 아무날 (강한 모멘텀 알파)
     if use_alpha and not index_df.empty:
         df["Stock_Ret"] = df["Close"].pct_change()
         index_ret = (
@@ -50,7 +59,8 @@ def analyze_whale_with_options(
         )
         df["Alpha"] = df["Stock_Ret"] - index_ret
         df["Alpha_Sig"] = (
-            (index_ret < 0) & (df["Alpha"] > 0)
+            ((index_ret < 0) & (df["Alpha"] > 0))   # 지수 하락일 방어 알파
+            | (df["Alpha"] > 0.02)                   # 2%+ 강한 모멘텀 알파
         ).astype(int)
         df["Accum_Score"] += df["Alpha_Sig"] * 35
 
@@ -62,16 +72,19 @@ def analyze_whale_with_options(
         ).astype(int)
         df["Accum_Score"] += df["Short_Sig"] * 35
 
-    buy_signals = df[df["Accum_Score"] >= SIGNAL_THRESHOLD].copy()
+    buy_signals = df[df["Accum_Score"] >= threshold].copy()
     return df, buy_signals
 
 
-def extract_highlights(df: pd.DataFrame) -> list[dict]:
+def extract_highlights(
+    df: pd.DataFrame,
+    threshold: int = SIGNAL_THRESHOLD_US,
+) -> list[dict]:
     """
-    Accum_Score >= SIGNAL_THRESHOLD 인 날짜를 연속 구간으로 묶어 반환.
+    Accum_Score >= threshold 인 날짜를 연속 구간으로 묶어 반환.
     recharts reference_area x1/x2 용.
     """
-    signal_dates = df[df["Accum_Score"] >= SIGNAL_THRESHOLD].index
+    signal_dates = df[df["Accum_Score"] >= threshold].index
     if len(signal_dates) == 0:
         return []
 

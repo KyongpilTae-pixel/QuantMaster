@@ -8,7 +8,11 @@ import numpy as np
 import pandas as pd
 
 from utils.data_loader import QuantDataLoader
-from utils.accumulation_indicators import analyze_whale_with_options, SIGNAL_THRESHOLD
+from utils.accumulation_indicators import (
+    analyze_whale_with_options,
+    SIGNAL_THRESHOLD_KR,
+    SIGNAL_THRESHOLD_US,
+)
 
 _INDEX_FDR = {
     "KOSPI":  "KS11",
@@ -45,7 +49,7 @@ class AccumulationScanner:
         use_alpha: bool = True,
         use_short_filter: bool = True,
         lookback_days: int = 60,
-        signal_window: int = 5,
+        signal_window: int = 15,
         max_stocks: int = 80,
         top_n: int = 10,
     ) -> pd.DataFrame:
@@ -64,6 +68,8 @@ class AccumulationScanner:
         """
         is_us = market in _US_MARKETS
         has_short = use_short_filter and is_us  # KR은 공매도 데이터 없음
+        # KR(공매도 없음): max=65 → threshold=55 / US(공매도 포함): threshold=70
+        threshold = SIGNAL_THRESHOLD_US if has_short else SIGNAL_THRESHOLD_KR
 
         loader = QuantDataLoader()
         snapshot = loader.get_market_snapshot(market=market, max_pages=4)
@@ -105,11 +111,12 @@ class AccumulationScanner:
                     df, index_df,
                     use_alpha=use_alpha,
                     use_short_filter=has_short,
+                    threshold=threshold,
                 )
 
                 recent = full_df.tail(signal_window)
                 max_score = int(recent["Accum_Score"].max())
-                if max_score < SIGNAL_THRESHOLD:
+                if max_score < threshold:
                     return None
 
                 sig_idx = recent["Accum_Score"].idxmax()

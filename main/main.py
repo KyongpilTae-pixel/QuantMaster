@@ -261,7 +261,10 @@ class State(rx.State):
                 from datetime import timedelta
                 from utils.data_loader import QuantDataLoader
                 from utils.indicators import TechnicalIndicators
-                from utils.accumulation_indicators import analyze_whale_with_options, extract_highlights
+                from utils.accumulation_indicators import (
+                    analyze_whale_with_options, extract_highlights,
+                    SIGNAL_THRESHOLD_KR, SIGNAL_THRESHOLD_US,
+                )
 
                 vwap = int(self.vwap_period)
                 loader = QuantDataLoader()
@@ -289,6 +292,7 @@ class State(rx.State):
 
                 # 세력 탐지 보조 차트
                 is_us = w_target.market in {"SP500", "NASDAQ"}
+                hl_threshold = SIGNAL_THRESHOLD_US if (self.use_short_filter and is_us) else SIGNAL_THRESHOLD_KR
                 _INDEX_FDR = {"KOSPI": "KS11", "KOSDAQ": "KQ11", "SP500": "^GSPC", "NASDAQ": "^IXIC"}
                 end_dt = display_df.index[-1]
                 start_dt = end_dt - timedelta(days=250)
@@ -305,8 +309,9 @@ class State(rx.State):
                     df.tail(200), idx_df,
                     use_alpha=self.use_alpha,
                     use_short_filter=self.use_short_filter and is_us,
+                    threshold=hl_threshold,
                 )
-                self.whale_highlights = extract_highlights(whale_full)
+                self.whale_highlights = extract_highlights(whale_full, threshold=hl_threshold)
                 self.whale_chart_data = [
                     {
                         "date": str(d.date()),
