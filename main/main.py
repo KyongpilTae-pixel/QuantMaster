@@ -69,6 +69,20 @@ class SavedRun(BaseModel):
     label: str = ""
 
 
+class WhaleScanResult(BaseModel):
+    name: str = ""
+    symbol: str = ""
+    market: str = "KOSPI"
+    signal_date: str = ""
+    score: int = 0
+    signal_type: str = ""
+    obv_spike: bool = False
+    alpha: bool = False
+    short_cover: bool = False
+    close: float = 0.0
+    volume_ratio: float = 0.0
+
+
 # ---------------------------------------------------------------------------
 # App State
 # ---------------------------------------------------------------------------
@@ -111,6 +125,15 @@ class State(rx.State):
     selected_run_id: str = ""
     history_results: List[ScanResult] = []
 
+    # 세력 탐지 스캔
+    scan_mode: str = "quant"          # "quant" | "whale"
+    use_alpha: bool = True
+    use_short_filter: bool = True
+    whale_results: List[WhaleScanResult] = []
+    # 세력 탐지 분석 차트 데이터
+    whale_chart_data: List[dict] = []      # date, OBV, Short_Balance
+    whale_highlights: List[dict] = []      # [{x1, x2}] 매집 구간 음영
+
     # UI state
     is_scanning: bool = False
     is_backtesting: bool = False
@@ -136,6 +159,18 @@ class State(rx.State):
 
     def set_budget_input(self, value: str):
         self.budget_input = value
+
+    def set_scan_mode(self, value: str):
+        self.scan_mode = value
+        self.scan_results = []
+        self.whale_results = []
+        self.status_msg = ""
+
+    def set_use_alpha(self, checked: bool):
+        self.use_alpha = checked
+
+    def set_use_short_filter(self, checked: bool):
+        self.use_short_filter = checked
 
     def set_tab(self, tab: str):
         self.active_tab = tab
@@ -172,6 +207,10 @@ class State(rx.State):
             next((r for r in self.history_results if r.name == name), None),
         )
 
+    def _find_whale_result(self, name: str):
+        """whale_results에서 종목 검색."""
+        return next((r for r in self.whale_results if r.name == name), None)
+
     def calc_buy_plan(self):
         """예산 입력 후 분할 매수 플랜 계산."""
         target = self._find_result(self.selected_name)
@@ -196,6 +235,96 @@ class State(rx.State):
 
     async def select_stock(self, name: str):
         self.selected_name = name
+
+        # whale 모드: whale_results에서 검색
+        if self.scan_mode == "whale":
+            w_target = self._find_whale_result(name)
+            if not w_target:
+                return
+            self.buy_msg = ""
+            self.sell_msg = ""
+            self.bt_summary = BacktestSummary()
+            self.equity_data = []
+            self.trades_data = []
+            self.price_chart_data = []
+            self.psr_chart_data = []
+            self.close_date = ""
+            self.whale_chart_data = []
+            self.whale_highlights = []
+            self.is_loading_chart = True
+            self.active_tab = "analysis"
+            yield
+
+            try:
+                import pandas as pd
+                import FinanceDataReader as fdr
+                from datetime import timedelta
+                from utils.data_loader import QuantDataLoader
+                from utils.indicators import TechnicalIndicators
+                from utils.accumulation_indicators import analyze_whale_with_options, extract_highlights
+
+                vwap = int(self.vwap_period)
+                loader = QuantDataLoader()
+                df = await asyncio.to_thread(loader.get_ohlcv, w_target.symbol, 600)
+                df = TechnicalIndicators.calculate_all(df, [vwap, 20, 60, 120])
+                display_df = df.tail(200)
+                vwap_col = f"VWAP_{vwap}"
+
+                def _v(val):
+                    return round(float(val), 0) if not pd.isna(val) else None
+
+                self.price_chart_data = [
+                    {
+                        "date": str(d.date()),
+                        "종가": _v(row["Close"]),
+                        "VWAP": _v(row[vwap_col]),
+                        "MA20": _v(row["TWAP_20"]),
+                        "MA60": _v(row["TWAP_60"]),
+                        "MA120": _v(row["TWAP_120"]),
+                        "SMA120": _v(row["SMA_120"]),
+                    }
+                    for d, row in display_df.iterrows()
+                ]
+                self.close_date = str(display_df.index[-1].date())
+
+                # 세력 탐지 보조 차트
+                is_us = w_target.market in {"SP500", "NASDAQ"}
+                _INDEX_FDR = {"KOSPI": "KS11", "KOSDAQ": "KQ11", "SP500": "^GSPC", "NASDAQ": "^IXIC"}
+                end_dt = display_df.index[-1]
+                start_dt = end_dt - timedelta(days=250)
+                try:
+                    idx_df = fdr.DataReader(
+                        _INDEX_FDR.get(w_target.market, "KS11"),
+                        start_dt.strftime("%Y-%m-%d"),
+                        end_dt.strftime("%Y-%m-%d"),
+                    )
+                except Exception:
+                    idx_df = pd.DataFrame()
+
+                whale_full, _ = analyze_whale_with_options(
+                    df.tail(200), idx_df,
+                    use_alpha=self.use_alpha,
+                    use_short_filter=self.use_short_filter and is_us,
+                )
+                self.whale_highlights = extract_highlights(whale_full)
+                self.whale_chart_data = [
+                    {
+                        "date": str(d.date()),
+                        "OBV": round(float(row["OBV"]), 0) if not pd.isna(row.get("OBV", float("nan"))) else None,
+                        "Short_Balance": round(float(row["Short_Balance"]), 0)
+                            if "Short_Balance" in row and not pd.isna(row["Short_Balance"]) else None,
+                        "Score": int(row.get("Accum_Score", 0)),
+                    }
+                    for d, row in whale_full.iterrows()
+                ]
+            except Exception:
+                pass
+            finally:
+                self.is_loading_chart = False
+            yield
+            return
+
+        # 퀀트 모드
         target = self._find_result(name)
         if not target:
             return
@@ -212,6 +341,8 @@ class State(rx.State):
         self.price_chart_data = []
         self.psr_chart_data = []
         self.close_date = ""
+        self.whale_chart_data = []
+        self.whale_highlights = []
         self.is_loading_chart = True
         self.active_tab = "analysis"
         yield
@@ -248,6 +379,7 @@ class State(rx.State):
                 loader.get_quarterly_psr, target.symbol, target.market_raw
             )
             self.psr_chart_data = psr_data
+
         except Exception:
             pass
         finally:
@@ -293,6 +425,49 @@ class State(rx.State):
 """)
 
     async def run_scan(self):
+        if self.scan_mode == "whale":
+            # ── 세력 탐지 스캔 ───────────────────────────────────────────
+            self.is_scanning = True
+            self.status_msg = "세력 탐지 스캔 중..."
+            self.whale_results = []
+            yield
+            try:
+                from accumulation_scanner import AccumulationScanner
+                scanner = AccumulationScanner()
+                results = await asyncio.to_thread(
+                    scanner.run_scan,
+                    self.market,
+                    self.use_alpha,
+                    self.use_short_filter,
+                )
+                if results.empty:
+                    self.status_msg = "탐지된 세력 매집 종목 없음"
+                else:
+                    self.whale_results = [
+                        WhaleScanResult(
+                            name=str(row["Name"]),
+                            symbol=str(row["Symbol"]),
+                            market=str(row["Market"]),
+                            signal_date=str(row["Signal_Date"]),
+                            score=int(row["Score"]),
+                            signal_type=str(row["Signal_Type"]),
+                            obv_spike=bool(row["OBV_Spike"]),
+                            alpha=bool(row["Alpha"]),
+                            short_cover=bool(row["Short_Cover"]),
+                            close=float(row["Close"]),
+                            volume_ratio=float(row["Volume_Ratio"]),
+                        )
+                        for _, row in results.iterrows()
+                    ]
+                    self.status_msg = f"{len(self.whale_results)}개 세력 매집 종목 탐지"
+            except Exception as e:
+                self.status_msg = f"오류: {e}"
+            finally:
+                self.is_scanning = False
+            yield
+            return
+
+        # ── 퀀트 스캔 ────────────────────────────────────────────────────
         self.is_scanning = True
         self.status_msg = "시장 데이터 수집 중..."
         self.scan_results = []
@@ -405,6 +580,18 @@ def sidebar() -> rx.Component:
             rx.text("Hybrid Quant & Technical Scanner", size="1", color="gray"),
             rx.divider(),
 
+            rx.text("스캔 모드", size="2", color="gray"),
+            rx.select.root(
+                rx.select.trigger(placeholder="모드 선택"),
+                rx.select.content(
+                    rx.select.item("퀀트 스캔", value="quant"),
+                    rx.select.item("세력 탐지", value="whale"),
+                ),
+                value=State.scan_mode,
+                on_change=State.set_scan_mode,
+                width="100%",
+            ),
+
             rx.text("시장", size="2", color="gray"),
             rx.select.root(
                 rx.select.trigger(placeholder="시장 선택"),
@@ -426,44 +613,79 @@ def sidebar() -> rx.Component:
                 width="100%",
             ),
 
-            rx.hstack(
-                rx.text("PBR 한도: ", size="2", color="gray"),
-                rx.text(State.pbr_limit[0], size="2"),
-            ),
-            rx.slider(
-                min=0.5,
-                max=2.0,
-                step=0.1,
-                value=State.pbr_limit,
-                on_change=State.set_pbr_limit,
-                width="100%",
-            ),
-
-            rx.text("최소 시가총액", size="2", color="gray"),
-            rx.select.root(
-                rx.select.trigger(placeholder="시가총액 선택"),
-                rx.select.content(
-                    rx.select.item("전체", value="전체"),
-                    rx.select.item("소형주+ (KR:300억 / US:$2B)", value="소형주+"),
-                    rx.select.item("중형주+ (KR:3000억 / US:$10B)", value="중형주+"),
-                    rx.select.item("대형주+ (KR:1조 / US:$50B)", value="대형주+"),
+            rx.cond(
+                State.scan_mode == "quant",
+                # ── 퀀트 전용 옵션 ───────────────────────────────────
+                rx.vstack(
+                    rx.hstack(
+                        rx.text("PBR 한도: ", size="2", color="gray"),
+                        rx.text(State.pbr_limit[0], size="2"),
+                    ),
+                    rx.slider(
+                        min=0.5,
+                        max=2.0,
+                        step=0.1,
+                        value=State.pbr_limit,
+                        on_change=State.set_pbr_limit,
+                        width="100%",
+                    ),
+                    rx.text("최소 시가총액", size="2", color="gray"),
+                    rx.select.root(
+                        rx.select.trigger(placeholder="시가총액 선택"),
+                        rx.select.content(
+                            rx.select.item("전체", value="전체"),
+                            rx.select.item("소형주+ (KR:300억 / US:$2B)", value="소형주+"),
+                            rx.select.item("중형주+ (KR:3000억 / US:$10B)", value="중형주+"),
+                            rx.select.item("대형주+ (KR:1조 / US:$50B)", value="대형주+"),
+                        ),
+                        value=State.min_cap_label,
+                        on_change=State.set_min_cap_label,
+                        width="100%",
+                    ),
+                    rx.text("VWAP 기간", size="2", color="gray"),
+                    rx.select.root(
+                        rx.select.trigger(placeholder="기간 선택"),
+                        rx.select.content(
+                            rx.select.item("20일", value="20"),
+                            rx.select.item("60일", value="60"),
+                            rx.select.item("120일", value="120"),
+                        ),
+                        value=State.vwap_period,
+                        on_change=State.set_vwap_period,
+                        width="100%",
+                    ),
+                    spacing="3",
+                    width="100%",
                 ),
-                value=State.min_cap_label,
-                on_change=State.set_min_cap_label,
-                width="100%",
-            ),
-
-            rx.text("VWAP 기간", size="2", color="gray"),
-            rx.select.root(
-                rx.select.trigger(placeholder="기간 선택"),
-                rx.select.content(
-                    rx.select.item("20일", value="20"),
-                    rx.select.item("60일", value="60"),
-                    rx.select.item("120일", value="120"),
+                # ── 세력 탐지 전용 옵션 ──────────────────────────────
+                rx.vstack(
+                    rx.text("세력 탐지 옵션", size="2", color="gray"),
+                    rx.hstack(
+                        rx.checkbox(
+                            checked=State.use_alpha,
+                            on_change=State.set_use_alpha,
+                        ),
+                        rx.text("지수 대비 알파 필터", size="2"),
+                        spacing="2",
+                        align_items="center",
+                    ),
+                    rx.hstack(
+                        rx.checkbox(
+                            checked=State.use_short_filter,
+                            on_change=State.set_use_short_filter,
+                        ),
+                        rx.vstack(
+                            rx.text("공매도 잔고 필터", size="2"),
+                            rx.text("(미국 시장만 적용)", size="1", color="gray"),
+                            spacing="0",
+                            align_items="start",
+                        ),
+                        spacing="2",
+                        align_items="center",
+                    ),
+                    spacing="3",
+                    width="100%",
                 ),
-                value=State.vwap_period,
-                on_change=State.set_vwap_period,
-                width="100%",
             ),
 
             rx.button(
@@ -477,13 +699,16 @@ def sidebar() -> rx.Component:
                 color_scheme="blue",
                 width="100%",
             ),
-            rx.button(
-                "결과 저장",
-                on_click=State.save_scan,
-                disabled=State.scan_results.length() == 0,
-                color_scheme="green",
-                variant="soft",
-                width="100%",
+            rx.cond(
+                State.scan_mode == "quant",
+                rx.button(
+                    "결과 저장",
+                    on_click=State.save_scan,
+                    disabled=State.scan_results.length() == 0,
+                    color_scheme="green",
+                    variant="soft",
+                    width="100%",
+                ),
             ),
 
             rx.cond(
@@ -505,12 +730,15 @@ def sidebar() -> rx.Component:
 
 def scanner_tab() -> rx.Component:
     return rx.cond(
-        State.scan_results.length() == 0,
-        rx.center(
-            rx.text("왼쪽 사이드바에서 스캔을 실행하세요.", color="gray"),
-            height="200px",
-        ),
-        rx.table.root(
+        State.scan_mode == "whale",
+        whale_scanner_table(),
+        rx.cond(
+            State.scan_results.length() == 0,
+            rx.center(
+                rx.text("왼쪽 사이드바에서 스캔을 실행하세요.", color="gray"),
+                height="200px",
+            ),
+            rx.table.root(
             rx.table.header(
                 rx.table.row(
                     rx.table.column_header_cell("종목명"),
@@ -549,6 +777,79 @@ def scanner_tab() -> rx.Component:
                                 ),
                             )
                         ),
+                        rx.table.cell(
+                            rx.button(
+                                "분석",
+                                size="1",
+                                variant="soft",
+                                on_click=State.select_stock(r.name),
+                            )
+                        ),
+                    ),
+                )
+            ),
+            width="100%",
+            variant="surface",
+        ),
+        ),
+    )
+
+
+def whale_scanner_table() -> rx.Component:
+    """세력 탐지 스캔 결과 테이블."""
+    return rx.cond(
+        State.whale_results.length() == 0,
+        rx.center(
+            rx.text("왼쪽 사이드바에서 세력 탐지 스캔을 실행하세요.", color="gray"),
+            height="200px",
+        ),
+        rx.table.root(
+            rx.table.header(
+                rx.table.row(
+                    rx.table.column_header_cell("종목명"),
+                    rx.table.column_header_cell("심볼"),
+                    rx.table.column_header_cell("시그널일"),
+                    rx.table.column_header_cell("점수"),
+                    rx.table.column_header_cell("시그널 타입"),
+                    rx.table.column_header_cell("매집봉"),
+                    rx.table.column_header_cell("알파"),
+                    rx.table.column_header_cell("숏커버"),
+                    rx.table.column_header_cell("현재가"),
+                    rx.table.column_header_cell("거래량 비율"),
+                    rx.table.column_header_cell(""),
+                )
+            ),
+            rx.table.body(
+                rx.foreach(
+                    State.whale_results,
+                    lambda r: rx.table.row(
+                        rx.table.cell(r.name),
+                        rx.table.cell(r.symbol),
+                        rx.table.cell(r.signal_date),
+                        rx.table.cell(
+                            rx.badge(
+                                r.score,
+                                color_scheme=rx.cond(r.score >= 100, "green", "orange"),
+                            )
+                        ),
+                        rx.table.cell(
+                            rx.cond(
+                                r.signal_type != "-",
+                                rx.badge(r.signal_type, color_scheme="blue"),
+                                rx.text("-", color="gray"),
+                            )
+                        ),
+                        rx.table.cell(
+                            rx.cond(r.obv_spike, rx.badge("✓", color_scheme="green"), rx.text("-", color="gray"))
+                        ),
+                        rx.table.cell(
+                            rx.cond(r.alpha, rx.badge("✓", color_scheme="blue"), rx.text("-", color="gray"))
+                        ),
+                        rx.table.cell(
+                            rx.cond(r.short_cover, rx.badge("✓", color_scheme="violet"), rx.text("-", color="gray"))
+                        ),
+                        rx.table.cell(r.close),
+                        rx.table.cell(r.volume_ratio),
                         rx.table.cell(
                             rx.button(
                                 "분석",
@@ -661,7 +962,7 @@ def price_chart() -> rx.Component:
                         spacing="2",
                         align_items="center",
                     ),
-                    rx.recharts.line_chart(
+                    rx.recharts.composed_chart(
                         rx.recharts.line(
                             data_key="종가",
                             stroke="#2563eb",
@@ -711,6 +1012,16 @@ def price_chart() -> rx.Component:
                             name="SMA120",
                             stroke_width=1,
                             stroke_dasharray="4 2",
+                        ),
+                        rx.foreach(
+                            State.whale_highlights,
+                            lambda h: rx.recharts.reference_area(
+                                x1=h["x1"],
+                                x2=h["x2"],
+                                fill="#f59e0b",
+                                fill_opacity=0.15,
+                                stroke="none",
+                            ),
                         ),
                         rx.recharts.x_axis(data_key="date", tick={"fontSize": 9}),
                         rx.recharts.y_axis(tick={"fontSize": 9}),
@@ -881,6 +1192,92 @@ def psr_chart() -> rx.Component:
     )
 
 
+def whale_chart_panel() -> rx.Component:
+    """세력 탐지 보조 차트: OBV + 공매도 잔고."""
+    return rx.cond(
+        State.whale_chart_data.length() > 0,
+        rx.vstack(
+            # OBV 차트
+            rx.box(
+                rx.vstack(
+                    rx.hstack(
+                        rx.text("OBV (On-Balance Volume)", weight="bold", size="2"),
+                        rx.badge("매집 강도", color_scheme="violet"),
+                        spacing="2",
+                        align_items="center",
+                    ),
+                    rx.recharts.line_chart(
+                        rx.recharts.line(
+                            data_key="OBV",
+                            stroke="#7c3aed",
+                            dot=False,
+                            type_="monotone",
+                            stroke_width=2,
+                            name="OBV",
+                        ),
+                        rx.recharts.x_axis(data_key="date", tick={"fontSize": 9}),
+                        rx.recharts.y_axis(tick={"fontSize": 9}),
+                        rx.recharts.cartesian_grid(stroke_dasharray="3 3"),
+                        rx.recharts.tooltip(),
+                        data=State.whale_chart_data,
+                        width="100%",
+                        height=200,
+                    ),
+                    width="100%",
+                    spacing="2",
+                ),
+                padding="16px",
+                border_radius="8px",
+                background="var(--violet-2)",
+                border="1px solid var(--violet-5)",
+                width="100%",
+            ),
+            # 공매도 잔고 차트 (US만 데이터 있음)
+            rx.cond(
+                State.whale_chart_data.length() > 0,
+                rx.box(
+                    rx.vstack(
+                        rx.hstack(
+                            rx.text("공매도 잔고 추이", weight="bold", size="2"),
+                            rx.badge("Short Balance", color_scheme="red"),
+                            rx.badge("미국 시장만", color_scheme="gray", variant="soft"),
+                            spacing="2",
+                            align_items="center",
+                        ),
+                        rx.recharts.line_chart(
+                            rx.recharts.line(
+                                data_key="Short_Balance",
+                                stroke="#ef4444",
+                                dot=False,
+                                type_="monotone",
+                                stroke_width=2,
+                                name="공매도 잔고",
+                            ),
+                            rx.recharts.x_axis(data_key="date", tick={"fontSize": 9}),
+                            rx.recharts.y_axis(tick={"fontSize": 9}),
+                            rx.recharts.cartesian_grid(stroke_dasharray="3 3"),
+                            rx.recharts.tooltip(),
+                            data=State.whale_chart_data,
+                            width="100%",
+                            height=180,
+                        ),
+                        width="100%",
+                        spacing="2",
+                    ),
+                    padding="16px",
+                    border_radius="8px",
+                    background="var(--red-2)",
+                    border="1px solid var(--red-5)",
+                    width="100%",
+                ),
+            ),
+            width="100%",
+            spacing="3",
+        ),
+        rx.box(),
+    )
+
+
 def analysis_tab() -> rx.Component:
     return rx.cond(
         State.selected_name != "",
@@ -910,92 +1307,129 @@ def analysis_tab() -> rx.Component:
                     align_items="center",
                     spacing="3",
                 ),
-                # 1. 매수 근거
-                rx.box(
-                    rx.text("매수 근거", weight="bold", color="green", size="2"),
-                    rx.text(State.buy_msg, size="2"),
-                    padding="16px",
-                    border_radius="8px",
-                    background="var(--green-2)",
-                    border="1px solid var(--green-6)",
-                    width="100%",
-                ),
-                # 1-1. 분할 매수 플랜
-                buy_plan_panel(),
-                # 1-2. MFI / OBV 지표 설명
-                rx.box(
+                # 퀀트 모드: 매수 근거 / 분할 매수 플랜 / 지표 가이드 / 매도 가이드
+                rx.cond(
+                    State.scan_mode == "quant",
                     rx.vstack(
-                        rx.text("지표 해석 가이드", weight="bold", size="2", color="blue"),
-                        rx.grid(
-                            rx.vstack(
-                                rx.hstack(
-                                    rx.badge("MFI", color_scheme="blue"),
-                                    rx.text("Money Flow Index", size="2", weight="bold"),
-                                    spacing="2",
-                                ),
-                                rx.text(
-                                    "거래량을 반영한 0~100 범위의 수급 강도 지표. "
-                                    "50 초과 → 매수 우위(스마트 머니 유입), "
-                                    "80 이상 → 과매수 주의, "
-                                    "20 이하 → 과매도 반등 가능성.",
-                                    size="1", color="gray",
-                                ),
-                                align_items="start", spacing="1",
-                            ),
-                            rx.vstack(
-                                rx.hstack(
-                                    rx.badge("OBV", color_scheme="violet"),
-                                    rx.text("On-Balance Volume", size="2", weight="bold"),
-                                    spacing="2",
-                                ),
-                                rx.text(
-                                    "누적 거래량으로 자금 흐름 방향을 측정. "
-                                    "OBV > OBV신호선(20일MA) → 매수세 우위, "
-                                    "주가 상승 + OBV 상승 → 추세 신뢰도 높음, "
-                                    "주가 상승 + OBV 하락 → 다이버전스 경고.",
-                                    size="1", color="gray",
-                                ),
-                                align_items="start", spacing="1",
-                            ),
-                            columns="2",
-                            spacing="4",
+                        rx.box(
+                            rx.text("매수 근거", weight="bold", color="green", size="2"),
+                            rx.text(State.buy_msg, size="2"),
+                            padding="16px",
+                            border_radius="8px",
+                            background="var(--green-2)",
+                            border="1px solid var(--green-6)",
                             width="100%",
                         ),
-                        spacing="3",
+                        buy_plan_panel(),
+                        rx.box(
+                            rx.vstack(
+                                rx.text("지표 해석 가이드", weight="bold", size="2", color="blue"),
+                                rx.grid(
+                                    rx.vstack(
+                                        rx.hstack(
+                                            rx.badge("MFI", color_scheme="blue"),
+                                            rx.text("Money Flow Index", size="2", weight="bold"),
+                                            spacing="2",
+                                        ),
+                                        rx.text(
+                                            "거래량을 반영한 0~100 범위의 수급 강도 지표. "
+                                            "50 초과 → 매수 우위(스마트 머니 유입), "
+                                            "80 이상 → 과매수 주의, "
+                                            "20 이하 → 과매도 반등 가능성.",
+                                            size="1", color="gray",
+                                        ),
+                                        align_items="start", spacing="1",
+                                    ),
+                                    rx.vstack(
+                                        rx.hstack(
+                                            rx.badge("OBV", color_scheme="violet"),
+                                            rx.text("On-Balance Volume", size="2", weight="bold"),
+                                            spacing="2",
+                                        ),
+                                        rx.text(
+                                            "누적 거래량으로 자금 흐름 방향을 측정. "
+                                            "OBV > OBV신호선(20일MA) → 매수세 우위, "
+                                            "주가 상승 + OBV 상승 → 추세 신뢰도 높음, "
+                                            "주가 상승 + OBV 하락 → 다이버전스 경고.",
+                                            size="1", color="gray",
+                                        ),
+                                        align_items="start", spacing="1",
+                                    ),
+                                    columns="2",
+                                    spacing="4",
+                                    width="100%",
+                                ),
+                                spacing="3",
+                                width="100%",
+                            ),
+                            padding="16px",
+                            border_radius="8px",
+                            background="var(--blue-2)",
+                            border="1px solid var(--blue-5)",
+                            width="100%",
+                        ),
+                        rx.box(
+                            rx.text("매도 가이드", weight="bold", color="red", size="2"),
+                            rx.text(State.sell_msg, size="2"),
+                            padding="16px",
+                            border_radius="8px",
+                            background="var(--red-2)",
+                            border="1px solid var(--red-6)",
+                            width="100%",
+                        ),
+                        width="100%",
+                        spacing="4",
+                    ),
+                    # 세력 탐지 모드: 시그널 요약 박스
+                    rx.box(
+                        rx.vstack(
+                            rx.hstack(
+                                rx.badge("세력 매집 탐지", color_scheme="amber"),
+                                rx.text("매집 구간은 가격 차트에 황금색 음영으로 표시됩니다.", size="2", color="gray"),
+                                spacing="2",
+                                align_items="center",
+                            ),
+                            rx.text(
+                                "OBV 급증(30pt) + 지수 대비 알파(35pt) + 공매도 잔고 급감(35pt) 합산 점수 ≥ 70 기준",
+                                size="1", color="gray",
+                            ),
+                            spacing="2",
+                            width="100%",
+                        ),
+                        padding="16px",
+                        border_radius="8px",
+                        background="var(--amber-2)",
+                        border="1px solid var(--amber-5)",
                         width="100%",
                     ),
-                    padding="16px",
-                    border_radius="8px",
-                    background="var(--blue-2)",
-                    border="1px solid var(--blue-5)",
-                    width="100%",
                 ),
-                # 2. 매도 가이드
-                rx.box(
-                    rx.text("매도 가이드", weight="bold", color="red", size="2"),
-                    rx.text(State.sell_msg, size="2"),
-                    padding="16px",
-                    border_radius="8px",
-                    background="var(--red-2)",
-                    border="1px solid var(--red-6)",
-                    width="100%",
-                ),
-                # 3. 차트
+                # 가격 차트 (공통)
                 price_chart(),
-                # 3-1. 분기별 PSR 추이
-                psr_chart(),
-                # 4 & 5. 적용된 스캔 조건 / 실제 측정값
-                rx.foreach(
-                    State.scan_results,
-                    lambda r: rx.cond(
-                        r.name == State.selected_name,
-                        rx.vstack(
-                            scan_conditions_panel(r),
-                            actual_values_panel(r),
-                            width="100%",
-                            spacing="3",
+                # 세력 탐지 보조 차트 (OBV + 공매도 잔고)
+                rx.cond(
+                    State.scan_mode == "whale",
+                    whale_chart_panel(),
+                ),
+                # 분기별 PSR 추이 (퀀트 모드만)
+                rx.cond(
+                    State.scan_mode == "quant",
+                    psr_chart(),
+                ),
+                # 적용된 스캔 조건 / 실제 측정값 (퀀트 모드만)
+                rx.cond(
+                    State.scan_mode == "quant",
+                    rx.foreach(
+                        State.scan_results,
+                        lambda r: rx.cond(
+                            r.name == State.selected_name,
+                            rx.vstack(
+                                scan_conditions_panel(r),
+                                actual_values_panel(r),
+                                width="100%",
+                                spacing="3",
+                            ),
+                            rx.box(),
                         ),
-                        rx.box(),
                     ),
                 ),
                 rx.button(
