@@ -12,6 +12,8 @@ from utils.accumulation_indicators import (
     analyze_whale_with_options,
     SIGNAL_THRESHOLD_KR,
     SIGNAL_THRESHOLD_US,
+    DEFAULT_OBV_MULTIPLIER,
+    DEFAULT_ALPHA_MOMENTUM_THRESHOLD,
 )
 
 _INDEX_FDR = {
@@ -22,6 +24,18 @@ _INDEX_FDR = {
 }
 
 _US_MARKETS = {"SP500", "NASDAQ"}
+
+# 점진적 완화 단계: (라벨, OBV배수, Alpha모멘텀임계값, signal_window)
+# 각 단계마다 OBV·Alpha 약 10% 완화, signal_window 약 10% 확대
+_RELAXATION_STEPS = [
+    ("원본",   2.0, 0.020, 15),
+    ("2단계",  1.8, 0.018, 17),
+    ("3단계",  1.6, 0.016, 19),
+    ("4단계",  1.5, 0.014, 21),
+    ("5단계",  1.3, 0.012, 23),
+    ("6단계",  1.2, 0.010, 25),
+    ("7단계",  1.1, 0.008, 30),
+]
 
 
 def _fetch_us_short(symbol: str, n: int) -> pd.Series | None:
@@ -49,12 +63,14 @@ class AccumulationScanner:
         use_alpha: bool = True,
         use_short_filter: bool = True,
         lookback_days: int = 60,
-        signal_window: int = 15,
         max_stocks: int = 80,
         top_n: int = 10,
     ) -> pd.DataFrame:
         """
-        세력 매집 / 숏커버링 시그널 스캔.
+        세력 매집 / 숏커버링 시그널 스캔 (점진적 완화).
+
+        초기 조건(_RELAXATION_STEPS[0])부터 시작하여 top_n개 확보 시 중단.
+        각 단계마다 OBV배수·Alpha임계값 ~10% 완화, signal_window ~10% 확대.
 
         Parameters
         ----------
@@ -62,13 +78,11 @@ class AccumulationScanner:
         use_alpha       : 지수 대비 상대강도 사용
         use_short_filter: 공매도 잔고 필터 (US만 실데이터, KR 자동 비활성)
         lookback_days   : OHLCV 조회 기간
-        signal_window   : 최근 N일 이내 시그널 체크
         max_stocks      : 처리 최대 종목 수
         top_n           : 반환 최대 종목 수 (기본 10)
         """
         is_us = market in _US_MARKETS
-        has_short = use_short_filter and is_us  # KR은 공매도 데이터 없음
-        # KR(공매도 없음): max=65 → threshold=55 / US(공매도 포함): threshold=70
+        has_short = use_short_filter and is_us
         threshold = SIGNAL_THRESHOLD_US if has_short else SIGNAL_THRESHOLD_KR
 
         loader = QuantDataLoader()
@@ -93,9 +107,79 @@ class AccumulationScanner:
         except Exception:
             pass
 
-        results = []
+        found: dict[str, dict] = {}   # symbol → result dict
+        remaining = list(symbols)     # 아직 탐지 안된 종목
 
-        def _process(symbol: str) -> dict | None:
+        workers = 8 if is_us else 4
+
+        for step_label, obv_mult, alpha_thresh, sig_win in _RELAXATION_STEPS:
+            if len(found) >= top_n or not remaining:
+                break
+
+            step_results = self._scan_batch(
+                symbols=remaining,
+                loader=loader,
+                index_df=index_df,
+                names=names,
+                has_short=has_short,
+                use_alpha=use_alpha,
+                threshold=threshold,
+                lookback_days=lookback_days,
+                obv_mult=obv_mult,
+                alpha_thresh=alpha_thresh,
+                sig_win=sig_win,
+                step_label=step_label,
+                market=market,
+                workers=workers,
+            )
+
+            for r in step_results:
+                sym = r["Symbol"]
+                if sym not in found:
+                    found[sym] = r
+
+            # 탐지된 종목은 다음 단계에서 제외
+            remaining = [s for s in remaining if s not in found]
+
+            if len(found) >= top_n:
+                break
+
+        if not found:
+            return pd.DataFrame()
+
+        return (
+            pd.DataFrame(found.values())
+            .sort_values("Score", ascending=False)
+            .head(top_n)
+            .reset_index(drop=True)
+        )
+
+    def _scan_batch(
+        self,
+        symbols: list[str],
+        loader: QuantDataLoader,
+        index_df: pd.DataFrame,
+        names: dict,
+        has_short: bool,
+        use_alpha: bool,
+        threshold: int,
+        lookback_days: int,
+        obv_mult: float,
+        alpha_thresh: float,
+        sig_win: int,
+        step_label: str,
+        market: str,
+        workers: int,
+    ) -> list[dict]:
+        """지정 파라미터로 종목 배치 스캔."""
+
+        def _process(
+            symbol: str,
+            _obv=obv_mult,
+            _alpha=alpha_thresh,
+            _win=sig_win,
+            _step=step_label,
+        ) -> dict | None:
             try:
                 df = loader.get_ohlcv(symbol, lookback_days=lookback_days + 40)
                 if len(df) < 25:
@@ -112,9 +196,11 @@ class AccumulationScanner:
                     use_alpha=use_alpha,
                     use_short_filter=has_short,
                     threshold=threshold,
+                    obv_multiplier=_obv,
+                    alpha_momentum_threshold=_alpha,
                 )
 
-                recent = full_df.tail(signal_window)
+                recent = full_df.tail(_win)
                 max_score = int(recent["Accum_Score"].max())
                 if max_score < threshold:
                     return None
@@ -146,24 +232,16 @@ class AccumulationScanner:
                     "Short_Cover": bool(sig_row.get("Short_Sig", 0)),
                     "Close": round(float(latest["Close"]), 0),
                     "Volume_Ratio": vol_ratio,
+                    "Applied_Step": _step,
                 }
             except Exception:
                 return None
 
-        workers = 8 if is_us else 4
+        results = []
         with ThreadPoolExecutor(max_workers=workers) as ex:
             futures = {ex.submit(_process, s): s for s in symbols}
             for f in as_completed(futures):
                 r = f.result()
                 if r:
                     results.append(r)
-
-        if not results:
-            return pd.DataFrame()
-
-        return (
-            pd.DataFrame(results)
-            .sort_values("Score", ascending=False)
-            .head(top_n)
-            .reset_index(drop=True)
-        )
+        return results

@@ -81,6 +81,7 @@ class WhaleScanResult(BaseModel):
     short_cover: bool = False
     close: float = 0.0
     volume_ratio: float = 0.0
+    applied_step: str = "원본"
 
 
 # ---------------------------------------------------------------------------
@@ -461,6 +462,7 @@ class State(rx.State):
                             short_cover=bool(row["Short_Cover"]),
                             close=float(row["Close"]),
                             volume_ratio=float(row["Volume_Ratio"]),
+                            applied_step=str(row.get("Applied_Step", "원본")),
                         )
                         for _, row in results.iterrows()
                     ]
@@ -821,6 +823,7 @@ def whale_scanner_table() -> rx.Component:
                     rx.table.column_header_cell("숏커버"),
                     rx.table.column_header_cell("현재가"),
                     rx.table.column_header_cell("거래량 비율"),
+                    rx.table.column_header_cell("적용 단계"),
                     rx.table.column_header_cell(""),
                 )
             ),
@@ -855,6 +858,15 @@ def whale_scanner_table() -> rx.Component:
                         ),
                         rx.table.cell(r.close),
                         rx.table.cell(r.volume_ratio),
+                        rx.table.cell(
+                            rx.badge(
+                                r.applied_step,
+                                color_scheme=rx.cond(
+                                    r.applied_step == "원본", "green", "orange"
+                                ),
+                                variant="soft",
+                            )
+                        ),
                         rx.table.cell(
                             rx.button(
                                 "분석",

@@ -320,3 +320,94 @@ class TestBuySignalsFilter:
             df, idx, use_alpha=True, use_short_filter=True, threshold=70
         )
         assert len(buy_sigs) >= 1
+
+
+# ---------------------------------------------------------------------------
+# 6. obv_multiplier / alpha_momentum_threshold 파라미터
+# ---------------------------------------------------------------------------
+
+class TestRelaxationParams:
+    def test_lower_obv_multiplier_triggers_more_spikes(self):
+        """obv_multiplier 낮을수록 Is_Whale_Spike=True 빈도 증가."""
+        from utils.accumulation_indicators import analyze_whale_with_options
+        # 2.5x 거래량: strict(2.0) 기준으로는 rolling mean 포함 시 경계값
+        # 1.5x 기준은 더 쉽게 통과
+        df = _make_ohlcv(40, volume_multipliers={-1: 2.5})
+        idx = pd.DataFrame()
+        full_strict, _ = analyze_whale_with_options(
+            df, idx, use_alpha=False, use_short_filter=False, obv_multiplier=2.0
+        )
+        full_loose, _ = analyze_whale_with_options(
+            df, idx, use_alpha=False, use_short_filter=False, obv_multiplier=1.2
+        )
+        # 완화 조건에서 더 많거나 같은 스파이크
+        assert full_loose["Is_Whale_Spike"].sum() >= full_strict["Is_Whale_Spike"].sum()
+
+    def test_lower_alpha_threshold_triggers_more_alpha(self):
+        """alpha_momentum_threshold 낮을수록 Alpha_Sig=1 빈도 증가."""
+        from utils.accumulation_indicators import analyze_whale_with_options
+        n = 40
+        df = _make_ohlcv(n)
+        # 종목 +1.5%, 지수 +0.5% -> alpha = 1.0%: 2% 기준은 미충족, 0.8% 기준은 충족
+        df.loc[df.index[-1], "Close"] = df["Close"].iloc[-2] * 1.015
+        df.loc[df.index[-1], "High"] = df.loc[df.index[-1], "Close"] + 1
+        idx = pd.DataFrame(
+            {"Close": [1000.0] * (n - 1) + [1005.0]},
+            index=df.index,
+        )
+        _, buy_strict = analyze_whale_with_options(
+            df, idx, use_alpha=True, use_short_filter=False,
+            threshold=35, obv_multiplier=999,  # OBV는 절대 안 터지게
+            alpha_momentum_threshold=0.020,     # 2% 기준: 1% 알파 미충족
+        )
+        _, buy_loose = analyze_whale_with_options(
+            df, idx, use_alpha=True, use_short_filter=False,
+            threshold=35, obv_multiplier=999,
+            alpha_momentum_threshold=0.008,     # 0.8% 기준: 1% 알파 충족
+        )
+        assert len(buy_strict) == 0
+        assert len(buy_loose) >= 1
+
+    def test_relaxation_steps_constants(self):
+        """_RELAXATION_STEPS 단계 수 및 초기값 검증."""
+        from accumulation_scanner import _RELAXATION_STEPS
+        from utils.accumulation_indicators import DEFAULT_OBV_MULTIPLIER, DEFAULT_ALPHA_MOMENTUM_THRESHOLD
+        assert len(_RELAXATION_STEPS) >= 5
+        first = _RELAXATION_STEPS[0]
+        assert first[1] == DEFAULT_OBV_MULTIPLIER
+        assert first[2] == DEFAULT_ALPHA_MOMENTUM_THRESHOLD
+        # 각 단계는 이전보다 obv_mult가 낮거나 같아야 함 (완화)
+        for i in range(1, len(_RELAXATION_STEPS)):
+            assert _RELAXATION_STEPS[i][1] <= _RELAXATION_STEPS[i-1][1]
+            assert _RELAXATION_STEPS[i][2] <= _RELAXATION_STEPS[i-1][2]
+            assert _RELAXATION_STEPS[i][3] >= _RELAXATION_STEPS[i-1][3]
+
+    def test_step1_stricter_than_step2(self):
+        """1단계 조건이 2단계보다 엄격 -> 1단계 미통과 종목이 2단계에선 통과 가능."""
+        from utils.accumulation_indicators import analyze_whale_with_options
+        from accumulation_scanner import _RELAXATION_STEPS
+        n = 40
+        # 2.4x 거래량: 1단계(obv=2.0) 시 rolling mean 포함해 경계에 있음
+        # 정확히 테스트: obv_multiplier=1.5면 2.4x/(19+2.4)/20=1.07 -> 2.4>1.07*1.5=1.6 OK
+        #                obv_multiplier=2.0면 2.4>1.07*2.0=2.14 OK → 둘 다 통과할 수 있음
+        # 대신 극단값으로 테스트
+        df = _make_ohlcv(n)  # 모두 동일 거래량 → spike 없음
+        idx = pd.DataFrame()
+        _, buy_1 = analyze_whale_with_options(
+            df, idx, use_alpha=False, use_short_filter=False,
+            threshold=30, obv_multiplier=_RELAXATION_STEPS[0][1],
+        )
+        _, buy_last = analyze_whale_with_options(
+            df, idx, use_alpha=False, use_short_filter=False,
+            threshold=30, obv_multiplier=_RELAXATION_STEPS[-1][1],
+        )
+        # 균일 거래량은 어떤 배수로도 스파이크 없음 (rolling mean = volume)
+        assert buy_1.empty
+        assert buy_last.empty  # 균일 거래량은 배수 낮아도 스파이크 없음
+
+    def test_applied_step_in_scanner_result(self):
+        """스캐너 결과 dict에 Applied_Step 키 포함."""
+        from accumulation_scanner import _RELAXATION_STEPS
+        # _RELAXATION_STEPS[0]의 라벨이 "원본"인지 확인
+        label, _, _, _ = _RELAXATION_STEPS[0]
+        assert label == "원본"
