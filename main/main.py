@@ -527,9 +527,9 @@ class State(rx.State):
                 # 3. 결과 정리
                 elapsed = _time.monotonic() - start_t
                 if found:
-                    import pandas as _pd
+                    import pandas as pd
                     df_res = (
-                        _pd.DataFrame(found.values())
+                        pd.DataFrame(found.values())
                         .sort_values("Score", ascending=False)
                         .head(10)
                         .reset_index(drop=True)
