@@ -533,42 +533,49 @@ class State(rx.State):
                         step_label,
                         step_timeout,
                     )
+                    new_found = False
                     for r in new:
-                        found.setdefault(r["Symbol"], r)
+                        if r["Symbol"] not in found:
+                            found[r["Symbol"]] = r
+                            new_found = True
                     remaining = [s for s in remaining if s not in found]
+
+                    # 새 종목이 발견됐으면 즉시 테이블 갱신
+                    if new_found and found:
+                        import pandas as pd
+                        df_live = (
+                            pd.DataFrame(found.values())
+                            .sort_values("Score", ascending=False)
+                            .head(10)
+                            .reset_index(drop=True)
+                        )
+                        self.whale_results = [
+                            WhaleScanResult(
+                                name=str(row["Name"]),
+                                symbol=str(row["Symbol"]),
+                                market=str(row["Market"]),
+                                signal_date=str(row["Signal_Date"]),
+                                score=int(row["Score"]),
+                                signal_type=str(row["Signal_Type"]),
+                                obv_spike=bool(row["OBV_Spike"]),
+                                alpha=bool(row["Alpha"]),
+                                short_cover=bool(row["Short_Cover"]),
+                                close=float(row["Close"]),
+                                volume_ratio=float(row["Volume_Ratio"]),
+                                applied_step=str(row.get("Applied_Step", "원본")),
+                            )
+                            for _, row in df_live.iterrows()
+                        ]
+                        yield  # 즉시 UI 반영
 
                     if len(found) >= 10:
                         break
 
-                # 3. 결과 정리
+                # 3. 최종 상태 메시지
                 elapsed = _time.monotonic() - start_t
+                mins = int(elapsed // 60)
+                secs = int(elapsed % 60)
                 if found:
-                    import pandas as pd
-                    df_res = (
-                        pd.DataFrame(found.values())
-                        .sort_values("Score", ascending=False)
-                        .head(10)
-                        .reset_index(drop=True)
-                    )
-                    self.whale_results = [
-                        WhaleScanResult(
-                            name=str(row["Name"]),
-                            symbol=str(row["Symbol"]),
-                            market=str(row["Market"]),
-                            signal_date=str(row["Signal_Date"]),
-                            score=int(row["Score"]),
-                            signal_type=str(row["Signal_Type"]),
-                            obv_spike=bool(row["OBV_Spike"]),
-                            alpha=bool(row["Alpha"]),
-                            short_cover=bool(row["Short_Cover"]),
-                            close=float(row["Close"]),
-                            volume_ratio=float(row["Volume_Ratio"]),
-                            applied_step=str(row.get("Applied_Step", "원본")),
-                        )
-                        for _, row in df_res.iterrows()
-                    ]
-                    mins = int(elapsed // 60)
-                    secs = int(elapsed % 60)
                     self.status_msg = (
                         f"{len(self.whale_results)}개 세력 매집 종목 탐지 "
                         f"(소요 {mins}분 {secs:02d}초)"
