@@ -184,11 +184,12 @@ class State(rx.State):
         except (ValueError, TypeError):
             pass
 
-    def stop_whale_scan(self):
+    async def stop_whale_scan(self):
         """탐색 중단 요청 (다음 단계 시작 전 반영)."""
         self.whale_stop_requested = True
         self.whale_progress = "종목 분석을 마무리하는 중입니다. 잠시만 기다려 주세요..."
         self.status_msg = "탐색 중단 요청됨"
+        yield
 
     def set_tab(self, tab: str):
         self.active_tab = tab
@@ -484,7 +485,7 @@ class State(rx.State):
                 start_t = _time.monotonic()
 
                 # 2. 단계별 완화 루프
-                for step_idx, (step_label, obv_mult, alpha_thresh, sig_win) in enumerate(_RELAXATION_STEPS):
+                for step_idx, (step_label, obv_mult, alpha_thresh, sig_win, th_ratio) in enumerate(_RELAXATION_STEPS):
                     if len(found) >= 10 or not remaining:
                         break
 
@@ -512,12 +513,13 @@ class State(rx.State):
                     pct = int(processed / total * 100) if total else 0
                     mins = int(elapsed // 60)
                     secs = int(elapsed % 60)
+                    step_th = max(int(ctx["threshold"] * th_ratio), 25)
                     self.whale_progress = (
                         f"단계 {step_idx+1}/{n_steps} ({step_label})  |  "
                         f"종목 {processed}/{total} ({pct}%)  |  "
                         f"탐지 {len(found)}/10  |  "
-                        f"경과 {mins}분 {secs:02d}초  |  "
-                        f"제한 {self.whale_max_minutes}분"
+                        f"기준점수 {step_th}  |  "
+                        f"경과 {mins}분 {secs:02d}초"
                     )
                     self.status_msg = self.whale_progress
                     yield
@@ -532,6 +534,7 @@ class State(rx.State):
                         sig_win,
                         step_label,
                         step_timeout,
+                        th_ratio,
                     )
                     new_found = False
                     for r in new:

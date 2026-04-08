@@ -25,15 +25,17 @@ _INDEX_FDR = {
 
 _US_MARKETS = {"SP500", "NASDAQ"}
 
-# 점진적 완화 단계: (라벨, OBV배수, Alpha모멘텀임계값, signal_window)
+# 점진적 완화 단계: (라벨, OBV배수, Alpha모멘텀임계값, signal_window, threshold_ratio)
+# threshold_ratio: ctx["threshold"] 에 곱해 단계별 실효 threshold 산출
+# 최소값 25 (OBV 단독 탐지 하한) 로 클램핑
 _RELAXATION_STEPS = [
-    ("원본",   2.0, 0.020, 15),
-    ("2단계",  1.8, 0.018, 17),
-    ("3단계",  1.6, 0.016, 19),
-    ("4단계",  1.5, 0.014, 21),
-    ("5단계",  1.3, 0.012, 23),
-    ("6단계",  1.2, 0.010, 25),
-    ("7단계",  1.1, 0.008, 30),
+    ("원본",   2.0, 0.020, 15, 1.00),
+    ("2단계",  1.8, 0.018, 17, 0.88),
+    ("3단계",  1.6, 0.016, 19, 0.76),
+    ("4단계",  1.5, 0.014, 21, 0.64),
+    ("5단계",  1.3, 0.012, 23, 0.55),
+    ("6단계",  1.2, 0.010, 25, 0.46),
+    ("7단계",  1.1, 0.008, 30, 0.40),
 ]
 
 # 종목 1개당 최대 대기 시간 (초) — 네트워크 행 방지
@@ -130,19 +132,21 @@ class AccumulationScanner:
         sig_win: int,
         step_label: str,
         step_timeout: float,
+        threshold_ratio: float = 1.0,
     ) -> list[dict]:
         """
         지정 파라미터로 종목 배치 스캔.
 
         Parameters
         ----------
-        step_timeout : 이 배치 전체의 최대 대기 시간 (초). 초과 시 완료된 것만 반환.
+        step_timeout    : 이 배치 전체의 최대 대기 시간 (초). 초과 시 완료된 것만 반환.
+        threshold_ratio : ctx["threshold"] 에 곱해 단계별 실효 threshold 산출 (최소 25).
         """
         loader = ctx["loader"]
         index_df = ctx["index_df"]
         names = ctx["names"]
         has_short = ctx["has_short"]
-        threshold = ctx["threshold"]
+        threshold = max(int(ctx["threshold"] * threshold_ratio), 25)
         market = ctx["market"]
         workers = ctx["workers"]
         lookback_days = ctx["lookback_days"]
@@ -277,7 +281,7 @@ class AccumulationScanner:
         start = time.monotonic()
         n_steps = len(_RELAXATION_STEPS)
 
-        for step_idx, (step_label, obv_mult, alpha_thresh, sig_win) in enumerate(_RELAXATION_STEPS):
+        for step_idx, (step_label, obv_mult, alpha_thresh, sig_win, th_ratio) in enumerate(_RELAXATION_STEPS):
             if len(found) >= top_n or not remaining:
                 break
             elapsed = time.monotonic() - start
@@ -289,6 +293,7 @@ class AccumulationScanner:
             new = self._scan_batch(
                 remaining, ctx, use_alpha,
                 obv_mult, alpha_thresh, sig_win, step_label, step_timeout,
+                threshold_ratio=th_ratio,
             )
             for r in new:
                 found.setdefault(r["Symbol"], r)

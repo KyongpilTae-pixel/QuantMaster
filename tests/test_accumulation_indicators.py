@@ -376,11 +376,12 @@ class TestRelaxationParams:
         first = _RELAXATION_STEPS[0]
         assert first[1] == DEFAULT_OBV_MULTIPLIER
         assert first[2] == DEFAULT_ALPHA_MOMENTUM_THRESHOLD
-        # 각 단계는 이전보다 obv_mult가 낮거나 같아야 함 (완화)
+        # 각 단계는 이전보다 완화 (obv↓, alpha↓, sig_win↑, threshold_ratio↓)
         for i in range(1, len(_RELAXATION_STEPS)):
             assert _RELAXATION_STEPS[i][1] <= _RELAXATION_STEPS[i-1][1]
             assert _RELAXATION_STEPS[i][2] <= _RELAXATION_STEPS[i-1][2]
             assert _RELAXATION_STEPS[i][3] >= _RELAXATION_STEPS[i-1][3]
+            assert _RELAXATION_STEPS[i][4] <= _RELAXATION_STEPS[i-1][4]  # threshold_ratio↓
 
     def test_step1_stricter_than_step2(self):
         """1단계 조건이 2단계보다 엄격 -> 1단계 미통과 종목이 2단계에선 통과 가능."""
@@ -406,10 +407,11 @@ class TestRelaxationParams:
         assert buy_last.empty  # 균일 거래량은 배수 낮아도 스파이크 없음
 
     def test_applied_step_in_scanner_result(self):
-        """스캐너 결과 dict에 Applied_Step 키 포함."""
+        """스캐너 결과 dict에 Applied_Step 키 포함, 원본 threshold_ratio=1.0."""
         from accumulation_scanner import _RELAXATION_STEPS
-        label, _, _, _ = _RELAXATION_STEPS[0]
+        label, _, _, _, th_ratio = _RELAXATION_STEPS[0]
         assert label == "원본"
+        assert th_ratio == 1.0
 
 
 # ---------------------------------------------------------------------------
@@ -618,6 +620,37 @@ class TestAlphaOnShortOff:
 # ---------------------------------------------------------------------------
 # 10. 윈도우 집계 방식 -- OBV와 Alpha가 다른 날 발생해도 합산
 # ---------------------------------------------------------------------------
+
+class TestThresholdRelaxation:
+    """단계별 threshold_ratio 완화 검증."""
+
+    def test_step7_threshold_reaches_25_floor(self):
+        """7단계 ratio=0.40 적용 시 threshold≥25 (floor) 보장."""
+        from accumulation_scanner import _RELAXATION_STEPS
+        from utils.accumulation_indicators import compute_threshold
+        _, _, _, _, th_ratio = _RELAXATION_STEPS[-1]
+        for ua in (True, False):
+            for us in (True, False):
+                base = compute_threshold(ua, us)
+                effective = max(int(base * th_ratio), 25)
+                assert effective >= 25
+
+    def test_later_steps_have_lower_effective_threshold(self):
+        """나중 단계일수록 실효 threshold가 낮거나 같음."""
+        from accumulation_scanner import _RELAXATION_STEPS
+        from utils.accumulation_indicators import compute_threshold
+        base = compute_threshold(True, False)  # 55
+        thresholds = [max(int(base * s[4]), 25) for s in _RELAXATION_STEPS]
+        for i in range(1, len(thresholds)):
+            assert thresholds[i] <= thresholds[i-1]
+
+    def test_scan_batch_accepts_threshold_ratio(self):
+        """_scan_batch 시그니처에 threshold_ratio 파라미터 존재."""
+        import inspect
+        from accumulation_scanner import AccumulationScanner
+        sig = inspect.signature(AccumulationScanner._scan_batch)
+        assert "threshold_ratio" in sig.parameters
+
 
 class TestWindowScoring:
     """_scan_batch의 윈도우 내 독립 신호 집계 검증."""
