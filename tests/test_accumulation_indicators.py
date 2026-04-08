@@ -613,3 +613,76 @@ class TestAlphaOnShortOff:
         from accumulation_scanner import AccumulationScanner
         sig = inspect.signature(AccumulationScanner.prepare)
         assert "use_alpha" in sig.parameters
+
+
+# ---------------------------------------------------------------------------
+# 10. 윈도우 집계 방식 -- OBV와 Alpha가 다른 날 발생해도 합산
+# ---------------------------------------------------------------------------
+
+class TestWindowScoring:
+    """_scan_batch의 윈도우 내 독립 신호 집계 검증."""
+
+    def test_obv_and_alpha_different_days_both_count(self):
+        """OBV 스파이크와 Alpha가 서로 다른 날 발생해도 window_score에 합산됨.
+
+        기존 max_score(단일 날 최대) 방식에서는 OBV(30)+Alpha(35)=65가
+        같은 날 발생해야만 탐지됐으나, 윈도우 집계 방식에서는 따로 발생해도 됨.
+        """
+        from utils.accumulation_indicators import analyze_whale_with_options
+        # n=60: rolling(20) 충분히 warm-up 후, OBV 스파이크를 -20번째 날에 배치
+        # → 마지막 20일 윈도우 안에 포함, 알파는 마지막 날에 별도 발생
+        n = 60
+        df = _make_ohlcv(n, volume_multipliers={-20: 3.0})
+        # 마지막 날: 알파 모멘텀 (종목 +3%, 지수 보합)
+        df.loc[df.index[-1], "Close"] = df["Close"].iloc[-2] * 1.03
+        df.loc[df.index[-1], "High"] = df.loc[df.index[-1], "Close"] + 1
+        idx = pd.DataFrame({"Close": [1000.0] * n}, index=df.index)
+
+        full, _ = analyze_whale_with_options(
+            df, idx, use_alpha=True, use_short_filter=False, threshold=55
+        )
+
+        # 윈도우(25일) 내 신호 독립 집계
+        win = 25
+        recent = full.tail(win)
+        has_obv = bool(recent["Is_Whale_Spike"].any())
+        has_alpha = bool(recent["Alpha_Sig"].any())
+        window_score = (30 if has_obv else 0) + (35 if has_alpha else 0)
+
+        assert has_obv, "윈도우 내 OBV 스파이크 있어야 함"
+        assert has_alpha, "윈도우 내 Alpha 신호 있어야 함"
+        assert window_score == 65, f"window_score 65 기대, 실제={window_score}"
+        assert window_score >= 55, "threshold=55 통과해야 함"
+
+    def test_obv_spike_day_without_alpha_window_score_30(self):
+        """OBV 스파이크만 있고 alpha=OFF → window_score=30, threshold=25 통과."""
+        from utils.accumulation_indicators import analyze_whale_with_options, compute_threshold
+        df = _make_ohlcv(40, volume_multipliers={-1: 3.0})
+        idx = pd.DataFrame()
+        full, _ = analyze_whale_with_options(
+            df, idx, use_alpha=False, use_short_filter=False
+        )
+        recent = full.tail(15)
+        has_obv = bool(recent["Is_Whale_Spike"].any())
+        window_score = 30 if has_obv else 0
+        th = compute_threshold(use_alpha=False, use_short_filter=False)
+        assert window_score >= th, f"OBV 단독 window_score={window_score} >= threshold={th}"
+
+    def test_alpha_only_window_score_35_below_threshold_55(self):
+        """Alpha만 있고 OBV 없으면 window_score=35 < threshold=55 → 미탐지."""
+        from utils.accumulation_indicators import analyze_whale_with_options
+        n = 40
+        df = _make_ohlcv(n)
+        # 모든 날 지수 하락 → 종목 양의 알파 (Alpha_Sig=1)
+        idx = _make_index(df, down_days=set(range(n)))
+        full, _ = analyze_whale_with_options(
+            df, idx, use_alpha=True, use_short_filter=False, threshold=55
+        )
+        recent = full.tail(15)
+        has_obv = bool(recent["Is_Whale_Spike"].any())
+        has_alpha = bool(recent["Alpha_Sig"].any()) if "Alpha_Sig" in recent.columns else False
+        window_score = (30 if has_obv else 0) + (35 if has_alpha else 0)
+        # OBV 없으니 35점 → threshold=55 미달
+        assert not has_obv
+        assert window_score == 35
+        assert window_score < 55

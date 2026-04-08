@@ -175,12 +175,28 @@ class AccumulationScanner:
                 )
 
                 recent = full_df.tail(_win)
-                max_score = int(recent["Accum_Score"].max())
-                if max_score < threshold:
+
+                # 윈도우 내 신호별 독립 집계 (동일 날짜 불필요)
+                has_obv   = bool(recent["Is_Whale_Spike"].any())
+                has_alpha = bool(recent["Alpha_Sig"].any()) if "Alpha_Sig" in recent.columns else False
+                has_short = bool(recent["Short_Sig"].any()) if "Short_Sig" in recent.columns else False
+
+                window_score = (
+                    (30 if has_obv   else 0)
+                    + (35 if has_alpha else 0)
+                    + (35 if has_short else 0)
+                )
+                if window_score < threshold:
                     return None
 
-                sig_idx = recent["Accum_Score"].idxmax()
-                sig_row = full_df.loc[sig_idx]
+                # 대표 시그널 날짜: 가장 최근 신호 발생일
+                sig_mask = (
+                    recent["Is_Whale_Spike"]
+                    | (recent["Alpha_Sig"].astype(bool) if "Alpha_Sig" in recent.columns else False)
+                    | (recent["Short_Sig"].astype(bool) if "Short_Sig" in recent.columns else False)
+                )
+                sig_dates = recent.index[sig_mask]
+                sig_idx = sig_dates[-1] if len(sig_dates) else recent.index[-1]
                 latest = full_df.iloc[-1]
 
                 vol_ma20 = full_df["Volume"].rolling(20).mean().iloc[-1]
@@ -189,23 +205,20 @@ class AccumulationScanner:
                 )
 
                 tags = []
-                if sig_row.get("Is_Whale_Spike", False):
-                    tags.append("매집봉")
-                if sig_row.get("Alpha_Sig", 0):
-                    tags.append("알파")
-                if sig_row.get("Short_Sig", 0):
-                    tags.append("숏커버")
+                if has_obv:   tags.append("매집봉")
+                if has_alpha: tags.append("알파")
+                if has_short: tags.append("숏커버")
 
                 return {
                     "Name": names.get(symbol, symbol),
                     "Symbol": symbol,
                     "Market": market,
                     "Signal_Date": str(sig_idx.date()),
-                    "Score": max_score,
+                    "Score": window_score,
                     "Signal_Type": "+".join(tags) if tags else "-",
-                    "OBV_Spike": bool(sig_row.get("Is_Whale_Spike", False)),
-                    "Alpha": bool(sig_row.get("Alpha_Sig", 0)),
-                    "Short_Cover": bool(sig_row.get("Short_Sig", 0)),
+                    "OBV_Spike": has_obv,
+                    "Alpha": has_alpha,
+                    "Short_Cover": has_short,
                     "Close": round(float(latest["Close"]), 0),
                     "Volume_Ratio": vol_ratio,
                     "Applied_Step": _step,
