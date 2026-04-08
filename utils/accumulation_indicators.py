@@ -3,16 +3,42 @@
 import numpy as np
 import pandas as pd
 
-# 시장별 동적 threshold
-# - KR(공매도 데이터 없음): 최대 OBV(30)+Alpha(35)=65 → threshold=55
-# - US(공매도 포함):        최대 OBV(30)+Alpha(35)+Short(35)=100 → threshold=70
+# 시장별 동적 threshold (하위 호환용)
 SIGNAL_THRESHOLD_KR = 55
 SIGNAL_THRESHOLD_US = 70
-SIGNAL_THRESHOLD = SIGNAL_THRESHOLD_US  # 하위 호환용 alias
+SIGNAL_THRESHOLD = SIGNAL_THRESHOLD_US
 
 # 완화 단계별 초기 파라미터 기본값
 DEFAULT_OBV_MULTIPLIER = 2.0
 DEFAULT_ALPHA_MOMENTUM_THRESHOLD = 0.020
+
+
+def compute_threshold(use_alpha: bool, use_short_filter: bool) -> int:
+    """
+    활성 필터 조합에 따른 동적 threshold 산출.
+
+    최대 가능 점수:
+        OBV(30) + Alpha(35, 선택) + Short(35, 선택)
+    Threshold = 최대점수 × ~85%, 단 OBV 단독이면 25.
+
+    활성 조합        최대점수  threshold
+    OBV only            30      25
+    OBV + Alpha         65      55
+    OBV + Short         65      55
+    OBV + Alpha + Short 100     70
+    """
+    max_score = 30  # OBV 항상 포함
+    if use_alpha:
+        max_score += 35
+    if use_short_filter:
+        max_score += 35
+
+    if max_score == 30:
+        return 25   # OBV 단독 스파이크 탐지
+    elif max_score == 65:
+        return 55   # 두 신호 중 하나 이상 필요
+    else:           # 100
+        return 70   # Alpha+Short 또는 세 신호 조합
 
 
 def analyze_whale_with_options(

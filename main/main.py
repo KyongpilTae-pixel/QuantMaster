@@ -463,6 +463,7 @@ class State(rx.State):
                 ctx = await asyncio.to_thread(
                     scanner.prepare,
                     self.market,
+                    self.use_alpha,
                     self.use_short_filter,
                 )
                 if not ctx:

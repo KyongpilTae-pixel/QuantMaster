@@ -11,8 +11,7 @@ import pandas as pd
 from utils.data_loader import QuantDataLoader
 from utils.accumulation_indicators import (
     analyze_whale_with_options,
-    SIGNAL_THRESHOLD_KR,
-    SIGNAL_THRESHOLD_US,
+    compute_threshold,
     DEFAULT_OBV_MULTIPLIER,
     DEFAULT_ALPHA_MOMENTUM_THRESHOLD,
 )
@@ -65,7 +64,8 @@ class AccumulationScanner:
     def prepare(
         self,
         market: str,
-        use_short_filter: bool,
+        use_alpha: bool = True,
+        use_short_filter: bool = True,
         lookback_days: int = 60,
         max_stocks: int = 80,
     ) -> dict:
@@ -79,7 +79,7 @@ class AccumulationScanner:
         """
         is_us = market in _US_MARKETS
         has_short = use_short_filter and is_us
-        threshold = SIGNAL_THRESHOLD_US if has_short else SIGNAL_THRESHOLD_KR
+        threshold = compute_threshold(use_alpha, has_short)
 
         loader = QuantDataLoader()
         snapshot = loader.get_market_snapshot(market=market, max_pages=4)
@@ -108,6 +108,7 @@ class AccumulationScanner:
             "index_df": index_df,
             "loader": loader,
             "has_short": has_short,
+            "use_alpha": use_alpha,
             "threshold": threshold,
             "is_us": is_us,
             "workers": 8 if is_us else 4,
@@ -254,7 +255,7 @@ class AccumulationScanner:
         """
         세력 매집 스캔 (점진적 완화). State에서 직접 단계 루프를 돌 수 없을 때 사용.
         """
-        ctx = self.prepare(market, use_short_filter, lookback_days, max_stocks)
+        ctx = self.prepare(market, use_alpha, use_short_filter, lookback_days, max_stocks)
         if not ctx:
             return pd.DataFrame()
 
