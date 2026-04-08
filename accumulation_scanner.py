@@ -1,6 +1,7 @@
 """세력 매집 / 숏커버링 스캐너."""
 
-from concurrent.futures import ThreadPoolExecutor, as_completed
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FuturesTimeout
 from datetime import datetime, timedelta
 
 import FinanceDataReader as fdr
@@ -26,7 +27,6 @@ _INDEX_FDR = {
 _US_MARKETS = {"SP500", "NASDAQ"}
 
 # 점진적 완화 단계: (라벨, OBV배수, Alpha모멘텀임계값, signal_window)
-# 각 단계마다 OBV·Alpha 약 10% 완화, signal_window 약 10% 확대
 _RELAXATION_STEPS = [
     ("원본",   2.0, 0.020, 15),
     ("2단계",  1.8, 0.018, 17),
@@ -37,12 +37,11 @@ _RELAXATION_STEPS = [
     ("7단계",  1.1, 0.008, 30),
 ]
 
+# 종목 1개당 최대 대기 시간 (초) — 네트워크 행 방지
+_PER_STOCK_TIMEOUT = 15.0
+
 
 def _fetch_us_short(symbol: str, n: int) -> pd.Series | None:
-    """
-    yfinance sharesShort / sharesShortPriorMonth 를
-    n 영업일 선형 보간 시계열로 변환 (월별 데이터 근사).
-    """
     try:
         import yfinance as yf
         info = yf.Ticker(symbol).info
@@ -57,29 +56,26 @@ def _fetch_us_short(symbol: str, n: int) -> pd.Series | None:
 
 
 class AccumulationScanner:
-    def run_scan(
+    """세력 매집 / 숏커버링 스캐너 (점진적 완화 + 타임아웃)."""
+
+    # ------------------------------------------------------------------
+    # 공통 초기화 (State에서 단계별 호출 전 1회 실행)
+    # ------------------------------------------------------------------
+
+    def prepare(
         self,
-        market: str = "KOSPI",
-        use_alpha: bool = True,
-        use_short_filter: bool = True,
+        market: str,
+        use_short_filter: bool,
         lookback_days: int = 60,
         max_stocks: int = 80,
-        top_n: int = 10,
-    ) -> pd.DataFrame:
+    ) -> dict:
         """
-        세력 매집 / 숏커버링 시그널 스캔 (점진적 완화).
+        데이터 로드 등 공통 초기화.
 
-        초기 조건(_RELAXATION_STEPS[0])부터 시작하여 top_n개 확보 시 중단.
-        각 단계마다 OBV배수·Alpha임계값 ~10% 완화, signal_window ~10% 확대.
-
-        Parameters
-        ----------
-        market          : KOSPI / KOSDAQ / SP500 / NASDAQ
-        use_alpha       : 지수 대비 상대강도 사용
-        use_short_filter: 공매도 잔고 필터 (US만 실데이터, KR 자동 비활성)
-        lookback_days   : OHLCV 조회 기간
-        max_stocks      : 처리 최대 종목 수
-        top_n           : 반환 최대 종목 수 (기본 10)
+        Returns
+        -------
+        dict with keys: symbols, names, index_df, loader,
+                        has_short, threshold, is_us, workers, market
         """
         is_us = market in _US_MARKETS
         has_short = use_short_filter and is_us
@@ -88,12 +84,11 @@ class AccumulationScanner:
         loader = QuantDataLoader()
         snapshot = loader.get_market_snapshot(market=market, max_pages=4)
         if snapshot.empty:
-            return pd.DataFrame()
+            return {}
 
         symbols = snapshot["Symbol"].dropna().tolist()[:max_stocks]
         names = dict(zip(snapshot["Symbol"], snapshot["Name"]))
 
-        # 지수 데이터
         end = datetime.today()
         start = end - timedelta(days=lookback_days + 40)
         index_df = pd.DataFrame()
@@ -107,71 +102,49 @@ class AccumulationScanner:
         except Exception:
             pass
 
-        found: dict[str, dict] = {}   # symbol → result dict
-        remaining = list(symbols)     # 아직 탐지 안된 종목
+        return {
+            "symbols": symbols,
+            "names": names,
+            "index_df": index_df,
+            "loader": loader,
+            "has_short": has_short,
+            "threshold": threshold,
+            "is_us": is_us,
+            "workers": 8 if is_us else 4,
+            "market": market,
+            "lookback_days": lookback_days,
+        }
 
-        workers = 8 if is_us else 4
-
-        for step_label, obv_mult, alpha_thresh, sig_win in _RELAXATION_STEPS:
-            if len(found) >= top_n or not remaining:
-                break
-
-            step_results = self._scan_batch(
-                symbols=remaining,
-                loader=loader,
-                index_df=index_df,
-                names=names,
-                has_short=has_short,
-                use_alpha=use_alpha,
-                threshold=threshold,
-                lookback_days=lookback_days,
-                obv_mult=obv_mult,
-                alpha_thresh=alpha_thresh,
-                sig_win=sig_win,
-                step_label=step_label,
-                market=market,
-                workers=workers,
-            )
-
-            for r in step_results:
-                sym = r["Symbol"]
-                if sym not in found:
-                    found[sym] = r
-
-            # 탐지된 종목은 다음 단계에서 제외
-            remaining = [s for s in remaining if s not in found]
-
-            if len(found) >= top_n:
-                break
-
-        if not found:
-            return pd.DataFrame()
-
-        return (
-            pd.DataFrame(found.values())
-            .sort_values("Score", ascending=False)
-            .head(top_n)
-            .reset_index(drop=True)
-        )
+    # ------------------------------------------------------------------
+    # 단계별 배치 스캔 (타임아웃 지원)
+    # ------------------------------------------------------------------
 
     def _scan_batch(
         self,
         symbols: list[str],
-        loader: QuantDataLoader,
-        index_df: pd.DataFrame,
-        names: dict,
-        has_short: bool,
+        ctx: dict,
         use_alpha: bool,
-        threshold: int,
-        lookback_days: int,
         obv_mult: float,
         alpha_thresh: float,
         sig_win: int,
         step_label: str,
-        market: str,
-        workers: int,
+        step_timeout: float,
     ) -> list[dict]:
-        """지정 파라미터로 종목 배치 스캔."""
+        """
+        지정 파라미터로 종목 배치 스캔.
+
+        Parameters
+        ----------
+        step_timeout : 이 배치 전체의 최대 대기 시간 (초). 초과 시 완료된 것만 반환.
+        """
+        loader = ctx["loader"]
+        index_df = ctx["index_df"]
+        names = ctx["names"]
+        has_short = ctx["has_short"]
+        threshold = ctx["threshold"]
+        market = ctx["market"]
+        workers = ctx["workers"]
+        lookback_days = ctx["lookback_days"]
 
         def _process(
             symbol: str,
@@ -210,7 +183,9 @@ class AccumulationScanner:
                 latest = full_df.iloc[-1]
 
                 vol_ma20 = full_df["Volume"].rolling(20).mean().iloc[-1]
-                vol_ratio = round(float(latest["Volume"]) / vol_ma20, 2) if vol_ma20 > 0 else 0.0
+                vol_ratio = (
+                    round(float(latest["Volume"]) / vol_ma20, 2) if vol_ma20 > 0 else 0.0
+                )
 
                 tags = []
                 if sig_row.get("Is_Whale_Spike", False):
@@ -238,10 +213,81 @@ class AccumulationScanner:
                 return None
 
         results = []
+        # 종목별 타임아웃: 전체 step_timeout과 _PER_STOCK_TIMEOUT 중 작은 값
+        per_future = min(_PER_STOCK_TIMEOUT, step_timeout)
+
         with ThreadPoolExecutor(max_workers=workers) as ex:
             futures = {ex.submit(_process, s): s for s in symbols}
-            for f in as_completed(futures):
-                r = f.result()
-                if r:
-                    results.append(r)
+            deadline = time.monotonic() + step_timeout
+            try:
+                for f in as_completed(futures, timeout=step_timeout):
+                    try:
+                        r = f.result(timeout=per_future)
+                        if r:
+                            results.append(r)
+                    except Exception:
+                        pass
+                    # 개별 future 완료 후에도 deadline 재확인
+                    if time.monotonic() > deadline:
+                        break
+            except FuturesTimeout:
+                # step_timeout 초과 — 완료된 것만 사용, 나머지 취소
+                for f in futures:
+                    f.cancel()
+
         return results
+
+    # ------------------------------------------------------------------
+    # 전체 스캔 (편의용 — 타임아웃 없는 단순 호출)
+    # ------------------------------------------------------------------
+
+    def run_scan(
+        self,
+        market: str = "KOSPI",
+        use_alpha: bool = True,
+        use_short_filter: bool = True,
+        lookback_days: int = 60,
+        max_stocks: int = 80,
+        top_n: int = 10,
+        max_seconds: float = 300.0,
+    ) -> pd.DataFrame:
+        """
+        세력 매집 스캔 (점진적 완화). State에서 직접 단계 루프를 돌 수 없을 때 사용.
+        """
+        ctx = self.prepare(market, use_short_filter, lookback_days, max_stocks)
+        if not ctx:
+            return pd.DataFrame()
+
+        found: dict[str, dict] = {}
+        remaining = list(ctx["symbols"])
+        start = time.monotonic()
+        n_steps = len(_RELAXATION_STEPS)
+
+        for step_idx, (step_label, obv_mult, alpha_thresh, sig_win) in enumerate(_RELAXATION_STEPS):
+            if len(found) >= top_n or not remaining:
+                break
+            elapsed = time.monotonic() - start
+            if elapsed >= max_seconds:
+                break
+            remain = max_seconds - elapsed
+            step_timeout = remain / max(1, n_steps - step_idx)
+
+            new = self._scan_batch(
+                remaining, ctx, use_alpha,
+                obv_mult, alpha_thresh, sig_win, step_label, step_timeout,
+            )
+            for r in new:
+                found.setdefault(r["Symbol"], r)
+            remaining = [s for s in remaining if s not in found]
+            if len(found) >= top_n:
+                break
+
+        if not found:
+            return pd.DataFrame()
+
+        return (
+            pd.DataFrame(found.values())
+            .sort_values("Score", ascending=False)
+            .head(top_n)
+            .reset_index(drop=True)
+        )

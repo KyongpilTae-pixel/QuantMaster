@@ -131,6 +131,8 @@ class State(rx.State):
     use_alpha: bool = True
     use_short_filter: bool = True
     whale_results: List[WhaleScanResult] = []
+    whale_max_minutes: int = 5        # 최대 탐색 시간 (분)
+    whale_progress: str = ""          # 실시간 진행률 텍스트
     # 세력 탐지 분석 차트 데이터
     whale_chart_data: List[dict] = []      # date, OBV, Short_Balance
     whale_highlights: List[dict] = []      # [{x1, x2}] 매집 구간 음영
@@ -172,6 +174,14 @@ class State(rx.State):
 
     def set_use_short_filter(self, checked: bool):
         self.use_short_filter = checked
+
+    def set_whale_max_minutes(self, value: str):
+        try:
+            v = int(value)
+            if 1 <= v <= 30:
+                self.whale_max_minutes = v
+        except (ValueError, TypeError):
+            pass
 
     def set_tab(self, tab: str):
         self.active_tab = tab
@@ -432,23 +442,98 @@ class State(rx.State):
 
     async def run_scan(self):
         if self.scan_mode == "whale":
-            # ── 세력 탐지 스캔 ───────────────────────────────────────────
+            # ── 세력 탐지 스캔 (단계별 점진 완화 + 타임아웃) ────────────
+            import time as _time
+            from accumulation_scanner import AccumulationScanner, _RELAXATION_STEPS
+
             self.is_scanning = True
-            self.status_msg = "세력 탐지 스캔 중..."
             self.whale_results = []
+            self.whale_progress = ""
+            self.status_msg = "세력 탐지 준비 중..."
             yield
+
+            max_seconds = float(self.whale_max_minutes * 60)
+            scanner = AccumulationScanner()
+            found: dict = {}
+            remaining: list = []
+            ctx: dict = {}
+
             try:
-                from accumulation_scanner import AccumulationScanner
-                scanner = AccumulationScanner()
-                results = await asyncio.to_thread(
-                    scanner.run_scan,
+                # 1. 공통 초기화 (종목 목록 + 지수 데이터)
+                ctx = await asyncio.to_thread(
+                    scanner.prepare,
                     self.market,
-                    self.use_alpha,
                     self.use_short_filter,
                 )
-                if results.empty:
-                    self.status_msg = "탐지된 세력 매집 종목 없음"
-                else:
+                if not ctx:
+                    self.status_msg = "시장 데이터 로드 실패"
+                    return
+
+                remaining = list(ctx["symbols"])
+                total = len(remaining)
+                n_steps = len(_RELAXATION_STEPS)
+                start_t = _time.monotonic()
+
+                # 2. 단계별 완화 루프
+                for step_idx, (step_label, obv_mult, alpha_thresh, sig_win) in enumerate(_RELAXATION_STEPS):
+                    if len(found) >= 10 or not remaining:
+                        break
+
+                    elapsed = _time.monotonic() - start_t
+                    if elapsed >= max_seconds:
+                        self.status_msg = (
+                            f"시간 초과 ({self.whale_max_minutes}분). "
+                            f"{len(found)}개 탐지"
+                        )
+                        break
+
+                    remain_secs = max_seconds - elapsed
+                    steps_left = n_steps - step_idx
+                    step_timeout = remain_secs / max(1, steps_left)
+
+                    # 진행률 텍스트 업데이트
+                    processed = total - len(remaining)
+                    pct = int(processed / total * 100) if total else 0
+                    mins = int(elapsed // 60)
+                    secs = int(elapsed % 60)
+                    self.whale_progress = (
+                        f"단계 {step_idx+1}/{n_steps} ({step_label})  |  "
+                        f"종목 {processed}/{total} ({pct}%)  |  "
+                        f"탐지 {len(found)}/10  |  "
+                        f"경과 {mins}분 {secs:02d}초  |  "
+                        f"제한 {self.whale_max_minutes}분"
+                    )
+                    self.status_msg = self.whale_progress
+                    yield
+
+                    new = await asyncio.to_thread(
+                        scanner._scan_batch,
+                        remaining,
+                        ctx,
+                        self.use_alpha,
+                        obv_mult,
+                        alpha_thresh,
+                        sig_win,
+                        step_label,
+                        step_timeout,
+                    )
+                    for r in new:
+                        found.setdefault(r["Symbol"], r)
+                    remaining = [s for s in remaining if s not in found]
+
+                    if len(found) >= 10:
+                        break
+
+                # 3. 결과 정리
+                elapsed = _time.monotonic() - start_t
+                if found:
+                    import pandas as _pd
+                    df_res = (
+                        _pd.DataFrame(found.values())
+                        .sort_values("Score", ascending=False)
+                        .head(10)
+                        .reset_index(drop=True)
+                    )
                     self.whale_results = [
                         WhaleScanResult(
                             name=str(row["Name"]),
@@ -464,11 +549,21 @@ class State(rx.State):
                             volume_ratio=float(row["Volume_Ratio"]),
                             applied_step=str(row.get("Applied_Step", "원본")),
                         )
-                        for _, row in results.iterrows()
+                        for _, row in df_res.iterrows()
                     ]
-                    self.status_msg = f"{len(self.whale_results)}개 세력 매집 종목 탐지"
+                    mins = int(elapsed // 60)
+                    secs = int(elapsed % 60)
+                    self.status_msg = (
+                        f"{len(self.whale_results)}개 세력 매집 종목 탐지 "
+                        f"(소요 {mins}분 {secs:02d}초)"
+                    )
+                else:
+                    self.status_msg = "탐지된 세력 매집 종목 없음"
+                self.whale_progress = ""
+
             except Exception as e:
                 self.status_msg = f"오류: {e}"
+                self.whale_progress = ""
             finally:
                 self.is_scanning = False
             yield
@@ -689,6 +784,38 @@ def sidebar() -> rx.Component:
                         ),
                         spacing="2",
                         align_items="center",
+                    ),
+                    rx.divider(),
+                    rx.text("최대 탐색 시간", size="2", color="gray"),
+                    rx.hstack(
+                        rx.input(
+                            value=State.whale_max_minutes,
+                            on_change=State.set_whale_max_minutes,
+                            type="number",
+                            min="1",
+                            max="30",
+                            width="70px",
+                        ),
+                        rx.text("분 (1~30)", size="1", color="gray"),
+                        spacing="2",
+                        align_items="center",
+                    ),
+                    # 스캔 중 진행률
+                    rx.cond(
+                        State.whale_progress != "",
+                        rx.box(
+                            rx.text(
+                                State.whale_progress,
+                                size="1",
+                                color="blue",
+                                white_space="pre-wrap",
+                            ),
+                            padding="8px",
+                            border_radius="6px",
+                            background="var(--blue-2)",
+                            border="1px solid var(--blue-4)",
+                            width="100%",
+                        ),
                     ),
                     spacing="3",
                     width="100%",

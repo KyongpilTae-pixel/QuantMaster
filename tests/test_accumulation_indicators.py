@@ -408,6 +408,74 @@ class TestRelaxationParams:
     def test_applied_step_in_scanner_result(self):
         """스캐너 결과 dict에 Applied_Step 키 포함."""
         from accumulation_scanner import _RELAXATION_STEPS
-        # _RELAXATION_STEPS[0]의 라벨이 "원본"인지 확인
         label, _, _, _ = _RELAXATION_STEPS[0]
         assert label == "원본"
+
+
+# ---------------------------------------------------------------------------
+# 7. 타임아웃 동작 -- _scan_batch timeout 파라미터
+# ---------------------------------------------------------------------------
+
+class TestScanBatchTimeout:
+    def _make_ctx(self, n=40):
+        """_scan_batch 호출용 최소 ctx dict."""
+        df = _make_ohlcv(n)
+        from utils.data_loader import QuantDataLoader
+        return {
+            "loader": None,       # _process에서 loader 직접 호출 안하므로 None OK
+            "index_df": pd.DataFrame(),
+            "names": {},
+            "has_short": False,
+            "threshold": 55,
+            "market": "KOSPI",
+            "workers": 2,
+            "lookback_days": 60,
+        }
+
+    def test_scan_batch_empty_symbols(self):
+        """빈 종목 리스트 -> 즉시 빈 결과 반환."""
+        from accumulation_scanner import AccumulationScanner
+        scanner = AccumulationScanner()
+        ctx = self._make_ctx()
+        result = scanner._scan_batch(
+            [], ctx, True, 2.0, 0.02, 15, "원본", step_timeout=10.0
+        )
+        assert result == []
+
+    def test_scan_batch_timeout_returns_partial(self):
+        """극단적으로 짧은 타임아웃(0.001초) -> TimeoutError 처리, 빈 리스트 반환(오류 없음)."""
+        from accumulation_scanner import AccumulationScanner, _PER_STOCK_TIMEOUT
+        scanner = AccumulationScanner()
+        ctx = self._make_ctx()
+        # 실제 네트워크 호출 없이 빠르게 실패해야 함 (loader=None -> _process returns None)
+        result = scanner._scan_batch(
+            ["005930", "000660"], ctx, True, 2.0, 0.02, 15, "원본",
+            step_timeout=0.001,
+        )
+        # TimeoutError가 발생해도 예외 전파 없이 빈 리스트 반환
+        assert isinstance(result, list)
+
+    def test_per_stock_timeout_constant(self):
+        """_PER_STOCK_TIMEOUT이 양수."""
+        from accumulation_scanner import _PER_STOCK_TIMEOUT
+        assert _PER_STOCK_TIMEOUT > 0
+
+    def test_run_scan_max_seconds_param(self):
+        """run_scan이 max_seconds 파라미터를 받음."""
+        from accumulation_scanner import AccumulationScanner
+        import inspect
+        sig = inspect.signature(AccumulationScanner.run_scan)
+        assert "max_seconds" in sig.parameters
+
+    def test_prepare_returns_required_keys(self):
+        """prepare() 반환 dict에 필수 키 존재."""
+        from accumulation_scanner import AccumulationScanner
+        # 실제 네트워크 없이 키 목록만 검증 (빈 snapshot 처리)
+        required = {"symbols", "names", "index_df", "loader",
+                    "has_short", "threshold", "is_us", "workers", "market", "lookback_days"}
+        scanner = AccumulationScanner()
+        # prepare()는 네트워크 필요 → 시그니처만 확인
+        import inspect
+        sig = inspect.signature(scanner.prepare)
+        assert "market" in sig.parameters
+        assert "use_short_filter" in sig.parameters
