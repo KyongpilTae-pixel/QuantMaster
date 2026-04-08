@@ -163,17 +163,28 @@ class AccumulationScanner:
                 if len(df) < 25:
                     return None
 
+                # 공매도 데이터 로드 시도 (has_short=True여도 데이터 없으면 미사용)
+                short_loaded = False
                 if has_short:
                     sb = _fetch_us_short(symbol, len(df))
                     if sb is not None:
                         df = df.copy()
                         df["Short_Balance"] = sb.reindex(df.index, method="ffill")
+                        short_loaded = True
+
+                # 실효 threshold: short 데이터 없으면 short 제외 기준으로 재산출
+                if has_short and not short_loaded:
+                    eff_threshold = max(
+                        int(compute_threshold(use_alpha, False) * threshold_ratio), 25
+                    )
+                else:
+                    eff_threshold = threshold  # 이미 threshold_ratio 적용됨
 
                 full_df, _ = analyze_whale_with_options(
                     df, index_df,
                     use_alpha=use_alpha,
-                    use_short_filter=has_short,
-                    threshold=threshold,
+                    use_short_filter=short_loaded,   # 실제 데이터 존재 여부로 결정
+                    threshold=eff_threshold,
                     obv_multiplier=_obv,
                     alpha_momentum_threshold=_alpha,
                 )
@@ -181,16 +192,16 @@ class AccumulationScanner:
                 recent = full_df.tail(_win)
 
                 # 윈도우 내 신호별 독립 집계 (동일 날짜 불필요)
-                has_obv   = bool(recent["Is_Whale_Spike"].any())
-                has_alpha = bool(recent["Alpha_Sig"].any()) if "Alpha_Sig" in recent.columns else False
-                has_short = bool(recent["Short_Sig"].any()) if "Short_Sig" in recent.columns else False
+                sig_obv   = bool(recent["Is_Whale_Spike"].any())
+                sig_alpha = bool(recent["Alpha_Sig"].any()) if "Alpha_Sig" in recent.columns else False
+                sig_short = bool(recent["Short_Sig"].any()) if "Short_Sig" in recent.columns else False
 
                 window_score = (
-                    (30 if has_obv   else 0)
-                    + (35 if has_alpha else 0)
-                    + (35 if has_short else 0)
+                    (30 if sig_obv   else 0)
+                    + (35 if sig_alpha else 0)
+                    + (35 if sig_short else 0)
                 )
-                if window_score < threshold:
+                if window_score < eff_threshold:
                     return None
 
                 # 대표 시그널 날짜: 가장 최근 신호 발생일
@@ -209,9 +220,9 @@ class AccumulationScanner:
                 )
 
                 tags = []
-                if has_obv:   tags.append("매집봉")
-                if has_alpha: tags.append("알파")
-                if has_short: tags.append("숏커버")
+                if sig_obv:   tags.append("매집봉")
+                if sig_alpha: tags.append("알파")
+                if sig_short: tags.append("숏커버")
 
                 return {
                     "Name": names.get(symbol, symbol),
@@ -220,9 +231,9 @@ class AccumulationScanner:
                     "Signal_Date": str(sig_idx.date()),
                     "Score": window_score,
                     "Signal_Type": "+".join(tags) if tags else "-",
-                    "OBV_Spike": has_obv,
-                    "Alpha": has_alpha,
-                    "Short_Cover": has_short,
+                    "OBV_Spike": sig_obv,
+                    "Alpha": sig_alpha,
+                    "Short_Cover": sig_short,
                     "Close": round(float(latest["Close"]), 0),
                     "Volume_Ratio": vol_ratio,
                     "Applied_Step": _step,

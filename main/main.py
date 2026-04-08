@@ -281,14 +281,18 @@ class State(rx.State):
                 from utils.data_loader import QuantDataLoader
                 from utils.indicators import TechnicalIndicators
                 from utils.accumulation_indicators import (
-                    analyze_whale_with_options, extract_highlights,
-                    SIGNAL_THRESHOLD_KR, SIGNAL_THRESHOLD_US,
+                    analyze_whale_with_options, extract_highlights, compute_threshold,
                 )
 
                 vwap = int(self.vwap_period)
                 loader = QuantDataLoader()
                 df = await asyncio.to_thread(loader.get_ohlcv, w_target.symbol, 600)
-                df = TechnicalIndicators.calculate_all(df, [vwap, 20, 60, 120])
+                if df.empty:
+                    self.status_msg = f"{w_target.name} 가격 데이터 없음"
+                    return
+
+                windows = sorted({vwap, 20, 60, 120})
+                df = TechnicalIndicators.calculate_all(df, windows)
                 display_df = df.tail(200)
                 vwap_col = f"VWAP_{vwap}"
 
@@ -299,11 +303,11 @@ class State(rx.State):
                     {
                         "date": str(d.date()),
                         "종가": _v(row["Close"]),
-                        "VWAP": _v(row[vwap_col]),
-                        "MA20": _v(row["TWAP_20"]),
-                        "MA60": _v(row["TWAP_60"]),
-                        "MA120": _v(row["TWAP_120"]),
-                        "SMA120": _v(row["SMA_120"]),
+                        "VWAP": _v(row.get(vwap_col)),
+                        "MA20": _v(row.get("TWAP_20")),
+                        "MA60": _v(row.get("TWAP_60")),
+                        "MA120": _v(row.get("TWAP_120")),
+                        "SMA120": _v(row.get("SMA_120")),
                     }
                     for d, row in display_df.iterrows()
                 ]
@@ -311,7 +315,9 @@ class State(rx.State):
 
                 # 세력 탐지 보조 차트
                 is_us = w_target.market in {"SP500", "NASDAQ"}
-                hl_threshold = SIGNAL_THRESHOLD_US if (self.use_short_filter and is_us) else SIGNAL_THRESHOLD_KR
+                use_short_chart = self.use_short_filter and is_us
+                hl_threshold = compute_threshold(self.use_alpha, use_short_chart)
+
                 _INDEX_FDR = {"KOSPI": "KS11", "KOSDAQ": "KQ11", "SP500": "^GSPC", "NASDAQ": "^IXIC"}
                 end_dt = display_df.index[-1]
                 start_dt = end_dt - timedelta(days=250)
@@ -327,7 +333,7 @@ class State(rx.State):
                 whale_full, _ = analyze_whale_with_options(
                     df.tail(200), idx_df,
                     use_alpha=self.use_alpha,
-                    use_short_filter=self.use_short_filter and is_us,
+                    use_short_filter=use_short_chart,
                     threshold=hl_threshold,
                 )
                 self.whale_highlights = extract_highlights(whale_full, threshold=hl_threshold)
@@ -336,13 +342,13 @@ class State(rx.State):
                         "date": str(d.date()),
                         "OBV": round(float(row["OBV"]), 0) if not pd.isna(row.get("OBV", float("nan"))) else None,
                         "Short_Balance": round(float(row["Short_Balance"]), 0)
-                            if "Short_Balance" in row and not pd.isna(row["Short_Balance"]) else None,
+                            if "Short_Balance" in row.index and not pd.isna(row["Short_Balance"]) else None,
                         "Score": int(row.get("Accum_Score", 0)),
                     }
                     for d, row in whale_full.iterrows()
                 ]
-            except Exception:
-                pass
+            except Exception as e:
+                self.status_msg = f"차트 로드 오류: {e}"
             finally:
                 self.is_loading_chart = False
             yield
