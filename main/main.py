@@ -133,6 +133,7 @@ class State(rx.State):
     whale_results: List[WhaleScanResult] = []
     whale_max_minutes: int = 5        # 최대 탐색 시간 (분)
     whale_progress: str = ""          # 실시간 진행률 텍스트
+    whale_stop_requested: bool = False  # 사용자 중단 요청 플래그
     # 세력 탐지 분석 차트 데이터
     whale_chart_data: List[dict] = []      # date, OBV, Short_Balance
     whale_highlights: List[dict] = []      # [{x1, x2}] 매집 구간 음영
@@ -182,6 +183,11 @@ class State(rx.State):
                 self.whale_max_minutes = v
         except (ValueError, TypeError):
             pass
+
+    def stop_whale_scan(self):
+        """탐색 중단 요청 (다음 단계 시작 전 반영)."""
+        self.whale_stop_requested = True
+        self.status_msg = "중단 요청됨 — 현재 배치 완료 후 중지합니다..."
 
     def set_tab(self, tab: str):
         self.active_tab = tab
@@ -447,6 +453,7 @@ class State(rx.State):
             from accumulation_scanner import AccumulationScanner, _RELAXATION_STEPS
 
             self.is_scanning = True
+            self.whale_stop_requested = False
             self.whale_results = []
             self.whale_progress = ""
             self.status_msg = "세력 탐지 준비 중..."
@@ -478,6 +485,13 @@ class State(rx.State):
                 # 2. 단계별 완화 루프
                 for step_idx, (step_label, obv_mult, alpha_thresh, sig_win) in enumerate(_RELAXATION_STEPS):
                     if len(found) >= 10 or not remaining:
+                        break
+
+                    # 사용자 중단 요청 확인
+                    if self.whale_stop_requested:
+                        self.status_msg = (
+                            f"사용자 중단. {len(found)}개 탐지 완료."
+                        )
                         break
 
                     elapsed = _time.monotonic() - start_t
@@ -567,6 +581,7 @@ class State(rx.State):
                 self.whale_progress = ""
             finally:
                 self.is_scanning = False
+                self.whale_stop_requested = False
             yield
             return
 
@@ -833,6 +848,17 @@ def sidebar() -> rx.Component:
                 disabled=State.is_scanning,
                 color_scheme="blue",
                 width="100%",
+            ),
+            rx.cond(
+                State.is_scanning & (State.scan_mode == "whale"),
+                rx.button(
+                    "탐색 중단",
+                    on_click=State.stop_whale_scan,
+                    disabled=State.whale_stop_requested,
+                    color_scheme="red",
+                    variant="soft",
+                    width="100%",
+                ),
             ),
             rx.cond(
                 State.scan_mode == "quant",
