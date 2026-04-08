@@ -187,7 +187,8 @@ class State(rx.State):
     def stop_whale_scan(self):
         """탐색 중단 요청 (다음 단계 시작 전 반영)."""
         self.whale_stop_requested = True
-        self.status_msg = "중단 요청됨 — 현재 배치 완료 후 중지합니다..."
+        self.whale_progress = "종목 분석을 마무리하는 중입니다. 잠시만 기다려 주세요..."
+        self.status_msg = "탐색 중단 요청됨"
 
     def set_tab(self, tab: str):
         self.active_tab = tab
@@ -490,7 +491,7 @@ class State(rx.State):
                     # 사용자 중단 요청 확인
                     if self.whale_stop_requested:
                         self.status_msg = (
-                            f"사용자 중단. {len(found)}개 탐지 완료."
+                            f"탐색이 중단되었습니다. 현재까지 {len(found)}개 종목을 탐지했습니다."
                         )
                         break
 
@@ -852,7 +853,11 @@ def sidebar() -> rx.Component:
             rx.cond(
                 State.is_scanning & (State.scan_mode == "whale"),
                 rx.button(
-                    "탐색 중단",
+                    rx.cond(
+                        State.whale_stop_requested,
+                        rx.hstack(rx.spinner(size="2"), rx.text("중단 중..."), spacing="2"),
+                        rx.text("탐색 중단"),
+                    ),
                     on_click=State.stop_whale_scan,
                     disabled=State.whale_stop_requested,
                     color_scheme="red",
