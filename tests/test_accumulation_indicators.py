@@ -479,3 +479,137 @@ class TestScanBatchTimeout:
         sig = inspect.signature(scanner.prepare)
         assert "market" in sig.parameters
         assert "use_short_filter" in sig.parameters
+
+
+# ---------------------------------------------------------------------------
+# 8. compute_threshold -- 필터 조합별 동적 threshold
+# ---------------------------------------------------------------------------
+
+class TestComputeThreshold:
+    """compute_threshold(use_alpha, use_short_filter) 반환값 및 스캔 연동 검증."""
+
+    def test_obv_only_returns_25(self):
+        """alpha=OFF, short=OFF -> threshold=25 (OBV 단독 최대 30 >= 25 탐지 가능)."""
+        from utils.accumulation_indicators import compute_threshold
+        assert compute_threshold(use_alpha=False, use_short_filter=False) == 25
+
+    def test_alpha_on_short_off_returns_55(self):
+        """alpha=ON, short=OFF -> threshold=55 (OBV+Alpha 최대 65 >= 55 탐지 가능)."""
+        from utils.accumulation_indicators import compute_threshold
+        assert compute_threshold(use_alpha=True, use_short_filter=False) == 55
+
+    def test_alpha_off_short_on_returns_55(self):
+        """alpha=OFF, short=ON -> threshold=55 (OBV+Short 최대 65 >= 55 탐지 가능)."""
+        from utils.accumulation_indicators import compute_threshold
+        assert compute_threshold(use_alpha=False, use_short_filter=True) == 55
+
+    def test_all_filters_returns_70(self):
+        """alpha=ON, short=ON -> threshold=70 (OBV+Alpha+Short 최대 100 >= 70 탐지 가능)."""
+        from utils.accumulation_indicators import compute_threshold
+        assert compute_threshold(use_alpha=True, use_short_filter=True) == 70
+
+    def test_threshold_always_reachable(self):
+        """모든 조합에서 최대 점수 >= threshold (탐지 가능성 보장)."""
+        from utils.accumulation_indicators import compute_threshold
+        for use_alpha in (True, False):
+            for use_short in (True, False):
+                th = compute_threshold(use_alpha, use_short)
+                max_score = 30 + (35 if use_alpha else 0) + (35 if use_short else 0)
+                assert max_score >= th, (
+                    f"use_alpha={use_alpha}, use_short={use_short}: "
+                    f"max_score={max_score} < threshold={th}"
+                )
+
+
+# ---------------------------------------------------------------------------
+# 9. alpha=ON, short=OFF 전체 스캔 시나리오 (KOSPI 동일 조건)
+# ---------------------------------------------------------------------------
+
+class TestAlphaOnShortOff:
+    """KOSPI: alpha=ON, short=OFF 조건 동작 검증."""
+
+    def _make_alpha_obv_stock(self, n: int = 40):
+        """OBV 스파이크 + 강한 알파 모두 발생하는 더미 데이터."""
+        df = _make_ohlcv(n, volume_multipliers={-1: 3.0})
+        # 마지막 날 +3% 상승 (알파 모멘텀 2% 초과)
+        df.loc[df.index[-1], "Close"] = df["Close"].iloc[-2] * 1.03
+        df.loc[df.index[-1], "High"] = df.loc[df.index[-1], "Close"] + 1
+        return df
+
+    def test_score_65_with_alpha_on_short_off(self):
+        """alpha=ON, short=OFF: OBV(30)+Alpha(35)=65 달성."""
+        from utils.accumulation_indicators import analyze_whale_with_options
+        df = self._make_alpha_obv_stock()
+        idx = _make_index(df, down_days={len(df) - 1})
+        full, _ = analyze_whale_with_options(
+            df, idx, use_alpha=True, use_short_filter=False, threshold=55
+        )
+        assert full["Accum_Score"].max() == 65
+
+    def test_threshold_55_detects_score_65(self):
+        """threshold=55 기준으로 score=65 -> buy_signals 포함."""
+        from utils.accumulation_indicators import analyze_whale_with_options, compute_threshold
+        df = self._make_alpha_obv_stock()
+        idx = _make_index(df, down_days={len(df) - 1})
+        th = compute_threshold(use_alpha=True, use_short_filter=False)
+        _, buy = analyze_whale_with_options(
+            df, idx, use_alpha=True, use_short_filter=False, threshold=th
+        )
+        assert len(buy) >= 1, f"threshold={th}으로 buy_signals 탐지되어야 함"
+
+    def test_alpha_momentum_detects_without_market_down(self):
+        """지수 상승일에도 2%+ 알파 모멘텀 -> Alpha_Sig=1 (모멘텀 알파)."""
+        from utils.accumulation_indicators import analyze_whale_with_options
+        n = 40
+        df = _make_ohlcv(n)
+        # 종목 +3%, 지수 +0.5% -> alpha=2.5% > 2% 임계값
+        df.loc[df.index[-1], "Close"] = df["Close"].iloc[-2] * 1.03
+        df.loc[df.index[-1], "High"] = df.loc[df.index[-1], "Close"] + 1
+        idx = pd.DataFrame(
+            {"Close": [1000.0] * (n - 1) + [1005.0]},  # 지수 +0.5% 상승
+            index=df.index,
+        )
+        full, _ = analyze_whale_with_options(
+            df, idx, use_alpha=True, use_short_filter=False, threshold=35
+        )
+        assert full["Alpha_Sig"].iloc[-1] == 1
+        assert full["Accum_Score"].iloc[-1] >= 35
+
+    def test_alpha_defensive_detects_on_market_down_day(self):
+        """지수 하락일에 종목 방어 -> Alpha_Sig=1 (방어 알파)."""
+        from utils.accumulation_indicators import analyze_whale_with_options
+        n = 40
+        df = _make_ohlcv(n)
+        # 종목 +0.5%, 지수 -2% -> 방어 알파 조건 충족 (alpha > 0, index_ret < 0)
+        df.loc[df.index[-1], "Close"] = df["Close"].iloc[-2] * 1.005
+        df.loc[df.index[-1], "High"] = df.loc[df.index[-1], "Close"] + 1
+        idx = _make_index(df, down_days={n - 1})  # 지수 마지막 날 -2%
+        full, _ = analyze_whale_with_options(
+            df, idx, use_alpha=True, use_short_filter=False, threshold=35
+        )
+        assert full["Alpha_Sig"].iloc[-1] == 1
+
+    def test_obv_only_still_detectable_with_threshold_25(self):
+        """alpha=OFF 에서도 OBV 스파이크(30점) >= threshold(25) -> 탐지."""
+        from utils.accumulation_indicators import analyze_whale_with_options, compute_threshold
+        df = _make_ohlcv(40, volume_multipliers={-1: 3.0})
+        idx = pd.DataFrame()
+        th = compute_threshold(use_alpha=False, use_short_filter=False)
+        _, buy = analyze_whale_with_options(
+            df, idx, use_alpha=False, use_short_filter=False, threshold=th
+        )
+        assert len(buy) >= 1, f"OBV 단독 threshold={th}으로 탐지되어야 함"
+
+    def test_scan_batch_uses_use_alpha_from_params(self):
+        """_scan_batch의 use_alpha 파라미터가 시그니처에 포함되어 있음."""
+        import inspect
+        from accumulation_scanner import AccumulationScanner
+        sig = inspect.signature(AccumulationScanner._scan_batch)
+        assert "use_alpha" in sig.parameters
+
+    def test_prepare_signature_has_use_alpha(self):
+        """prepare() 시그니처에 use_alpha 파라미터 존재."""
+        import inspect
+        from accumulation_scanner import AccumulationScanner
+        sig = inspect.signature(AccumulationScanner.prepare)
+        assert "use_alpha" in sig.parameters
