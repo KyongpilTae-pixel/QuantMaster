@@ -107,6 +107,9 @@ class State(rx.State):
     bt_summary: BacktestSummary = BacktestSummary()
     equity_data: List[dict] = []
     trades_data: List[dict] = []
+    bt_price_chart_data: List[dict] = []
+    bt_buy_points: List[dict] = []   # [{"date": "2024-01-15", "가격": 50000}, ...]
+    bt_sell_points: List[dict] = []
 
     # 분석 차트 데이터 (종가 + VWAP)
     price_chart_data: List[dict] = []
@@ -288,6 +291,9 @@ class State(rx.State):
             self.bt_summary = BacktestSummary()
             self.equity_data = []
             self.trades_data = []
+            self.bt_price_chart_data = []
+            self.bt_buy_points = []
+            self.bt_sell_points = []
             self.price_chart_data = []
             self.psr_chart_data = []
             self.close_date = ""
@@ -391,6 +397,9 @@ class State(rx.State):
         self.bt_summary = BacktestSummary()
         self.equity_data = []
         self.trades_data = []
+        self.bt_price_chart_data = []
+        self.bt_buy_points = []
+        self.bt_sell_points = []
         self.price_chart_data = []
         self.psr_chart_data = []
         self.close_date = ""
@@ -722,6 +731,41 @@ class State(rx.State):
                 trades_df = result["Trades_DF"]
                 if not trades_df.empty:
                     self.trades_data = trades_df.to_dict("records")
+
+                # 백테스트 가격 차트 데이터 빌드 (VWAP + MA)
+                ohlcv = result["OHLCV"]
+                vwap_col = result["VWAP_Col"]
+                from utils.indicators import TechnicalIndicators as _TI
+                ohlcv = _TI.calculate_all(ohlcv, [20, 60, 120])
+
+                import math as _math
+                def _v(val):
+                    return round(float(val), 0) if val is not None and not (isinstance(val, float) and _math.isnan(val)) else None
+
+                self.bt_price_chart_data = [
+                    {
+                        "date":   str(d.date()),
+                        "종가":   _v(row["Close"]),
+                        "VWAP":   _v(row.get(vwap_col)),
+                        "MA20":   _v(row.get("TWAP_20")),
+                        "MA60":   _v(row.get("TWAP_60")),
+                        "MA120":  _v(row.get("TWAP_120")),
+                        "SMA120": _v(row.get("SMA_120")),
+                    }
+                    for d, row in ohlcv.iterrows()
+                ]
+
+                # 매수/매도 마커 (ReferenceDot 용)
+                if not trades_df.empty:
+                    self.bt_buy_points = [
+                        {"date": str(row["Entry"]), "가격": float(row["Entry_Price"])}
+                        for _, row in trades_df.iterrows()
+                    ]
+                    self.bt_sell_points = [
+                        {"date": str(row["Exit"]), "가격": float(row["Exit_Price"])}
+                        for _, row in trades_df.iterrows()
+                    ]
+
                 self.status_msg = "백테스트 완료"
                 self.active_tab = "backtest"
             else:
@@ -1280,6 +1324,124 @@ def price_chart() -> rx.Component:
     )
 
 
+def bt_price_chart() -> rx.Component:
+    """백테스트 가격 차트 — 가격선 + ReferenceDot 매수▲/매도▽ 마커."""
+    return rx.cond(
+        State.bt_price_chart_data.length() > 0,
+        rx.box(
+            rx.vstack(
+                rx.hstack(
+                    rx.text("가격 차트", weight="bold", size="2"),
+                    rx.badge("종가", color_scheme="blue"),
+                    rx.badge("VWAP " + State.vwap_period + "일", color_scheme="amber"),
+                    rx.badge("TWAP20", color_scheme="green"),
+                    rx.badge("TWAP60", color_scheme="red"),
+                    rx.badge("TWAP120", color_scheme="purple"),
+                    rx.badge("SMA120", color_scheme="orange"),
+                    rx.badge("▲ 매수", color_scheme="grass"),
+                    rx.badge("▽ 매도", color_scheme="tomato"),
+                    spacing="2",
+                    align_items="center",
+                    flex_wrap="wrap",
+                ),
+                rx.recharts.composed_chart(
+                    rx.recharts.line(
+                        data_key="종가",
+                        stroke="#2563eb",
+                        dot=False,
+                        type_="monotone",
+                        name="종가",
+                        stroke_width=2,
+                    ),
+                    rx.recharts.line(
+                        data_key="VWAP",
+                        stroke="#f59e0b",
+                        dot=False,
+                        type_="monotone",
+                        stroke_dasharray="6 3",
+                        name="VWAP",
+                        stroke_width=2,
+                    ),
+                    rx.recharts.line(
+                        data_key="MA20",
+                        stroke="#16a34a",
+                        dot=False,
+                        type_="monotone",
+                        name="TWAP20",
+                        stroke_width=1,
+                    ),
+                    rx.recharts.line(
+                        data_key="MA60",
+                        stroke="#dc2626",
+                        dot=False,
+                        type_="monotone",
+                        name="TWAP60",
+                        stroke_width=1,
+                    ),
+                    rx.recharts.line(
+                        data_key="MA120",
+                        stroke="#7c3aed",
+                        dot=False,
+                        type_="monotone",
+                        name="TWAP120",
+                        stroke_width=1,
+                    ),
+                    rx.recharts.line(
+                        data_key="SMA120",
+                        stroke="#ea580c",
+                        dot=False,
+                        type_="monotone",
+                        name="SMA120",
+                        stroke_width=1,
+                        stroke_dasharray="4 2",
+                    ),
+                    # 매수 마커: 초록 점 + ▲ 라벨
+                    rx.foreach(
+                        State.bt_buy_points,
+                        lambda p: rx.recharts.reference_dot(
+                            x=p["date"],
+                            y=p["가격"],
+                            r=7,
+                            fill="#16a34a",
+                            stroke="#ffffff",
+                            stroke_width=2,
+                            label="▲",
+                        ),
+                    ),
+                    # 매도 마커: 빨간 점 + ▽ 라벨
+                    rx.foreach(
+                        State.bt_sell_points,
+                        lambda p: rx.recharts.reference_dot(
+                            x=p["date"],
+                            y=p["가격"],
+                            r=7,
+                            fill="#dc2626",
+                            stroke="#ffffff",
+                            stroke_width=2,
+                            label="▽",
+                        ),
+                    ),
+                    rx.recharts.x_axis(data_key="date", tick={"fontSize": 9}),
+                    rx.recharts.y_axis(tick={"fontSize": 9}),
+                    rx.recharts.cartesian_grid(stroke_dasharray="3 3"),
+                    rx.recharts.tooltip(),
+                    rx.recharts.legend(),
+                    data=State.bt_price_chart_data,
+                    width="100%",
+                    height=340,
+                ),
+                width="100%",
+                spacing="3",
+            ),
+            padding="16px",
+            border_radius="8px",
+            background="var(--gray-2)",
+            border="1px solid var(--gray-5)",
+            width="100%",
+        ),
+    )
+
+
 def buy_plan_panel() -> rx.Component:
     """분할 매수 플랜 패널."""
     return rx.box(
@@ -1797,6 +1959,7 @@ def backtest_tab() -> rx.Component:
                 spacing="4",
                 width="100%",
             ),
+            bt_price_chart(),
             rx.cond(
                 State.equity_data.length() > 0,
                 rx.vstack(

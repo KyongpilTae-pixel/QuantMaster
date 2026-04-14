@@ -192,3 +192,157 @@ def test_load_scan_results_applied_obv_bool(saved_run_id):
     results = scan_db.load_scan_results(saved_run_id)
     for r in results:
         assert isinstance(r["applied_obv"], bool)
+
+
+# ---------------------------------------------------------------------------
+# WhaleScanResult 헬퍼
+# ---------------------------------------------------------------------------
+
+
+class _FakeWhaleResult:
+    """WhaleScanResult 필드를 흉내 내는 간단한 객체."""
+    def __init__(self, name, symbol, **kwargs):
+        self.name = name
+        self.symbol = symbol
+        self.market = kwargs.get("market", "KOSPI")
+        self.signal_date = kwargs.get("signal_date", "2024-01-15")
+        self.score = kwargs.get("score", 60)
+        self.signal_type = kwargs.get("signal_type", "매집봉+돌파")
+        self.obv_spike = kwargs.get("obv_spike", True)
+        self.breakout = kwargs.get("breakout", True)
+        self.alpha = kwargs.get("alpha", False)
+        self.short_cover = kwargs.get("short_cover", False)
+        self.close = kwargs.get("close", 50_000.0)
+        self.volume_ratio = kwargs.get("volume_ratio", 2.5)
+        self.applied_step = kwargs.get("applied_step", "원본")
+
+
+@pytest.fixture
+def two_whale_results():
+    return [
+        _FakeWhaleResult("삼성전자", "005930", score=90, breakout=True, alpha=True),
+        _FakeWhaleResult("SK하이닉스", "000660", score=60, breakout=False),
+    ]
+
+
+@pytest.fixture
+def saved_whale_run_id(two_whale_results):
+    return scan_db.save_whale_scan(market="KOSPI", results=two_whale_results)
+
+
+# ---------------------------------------------------------------------------
+# save_whale_scan
+# ---------------------------------------------------------------------------
+
+
+def test_save_whale_scan_returns_positive_int(two_whale_results):
+    run_id = scan_db.save_whale_scan("KOSPI", two_whale_results)
+    assert isinstance(run_id, int) and run_id > 0
+
+
+def test_save_whale_scan_increments_id(two_whale_results):
+    id1 = scan_db.save_whale_scan("KOSPI", two_whale_results)
+    id2 = scan_db.save_whale_scan("KOSDAQ", two_whale_results)
+    assert id2 > id1
+
+
+def test_save_whale_scan_empty_results():
+    run_id = scan_db.save_whale_scan("KOSPI", [])
+    assert run_id > 0
+
+
+def test_save_whale_scan_mode_is_whale(two_whale_results):
+    run_id = scan_db.save_whale_scan("KOSPI", two_whale_results)
+    mode = scan_db.get_run_mode(run_id)
+    assert mode == "whale"
+
+
+# ---------------------------------------------------------------------------
+# get_run_mode
+# ---------------------------------------------------------------------------
+
+
+def test_get_run_mode_quant(saved_run_id):
+    assert scan_db.get_run_mode(saved_run_id) == "quant"
+
+
+def test_get_run_mode_whale(saved_whale_run_id):
+    assert scan_db.get_run_mode(saved_whale_run_id) == "whale"
+
+
+def test_get_run_mode_unknown_id_returns_quant():
+    assert scan_db.get_run_mode(99999) == "quant"
+
+
+# ---------------------------------------------------------------------------
+# load_whale_results
+# ---------------------------------------------------------------------------
+
+
+def test_load_whale_results_count(saved_whale_run_id):
+    results = scan_db.load_whale_results(saved_whale_run_id)
+    assert len(results) == 2
+
+
+def test_load_whale_results_names(saved_whale_run_id):
+    results = scan_db.load_whale_results(saved_whale_run_id)
+    names = {r["name"] for r in results}
+    assert "삼성전자" in names and "SK하이닉스" in names
+
+
+def test_load_whale_results_sorted_by_score_desc(saved_whale_run_id):
+    results = scan_db.load_whale_results(saved_whale_run_id)
+    scores = [r["score"] for r in results]
+    assert scores == sorted(scores, reverse=True)
+
+
+def test_load_whale_results_breakout_bool(saved_whale_run_id):
+    results = scan_db.load_whale_results(saved_whale_run_id)
+    for r in results:
+        assert isinstance(r["breakout"], bool)
+
+
+def test_load_whale_results_breakout_value(saved_whale_run_id):
+    results = scan_db.load_whale_results(saved_whale_run_id)
+    samsung = next(r for r in results if r["name"] == "삼성전자")
+    assert samsung["breakout"] is True
+    sk = next(r for r in results if r["name"] == "SK하이닉스")
+    assert sk["breakout"] is False
+
+
+def test_load_whale_results_score(saved_whale_run_id):
+    results = scan_db.load_whale_results(saved_whale_run_id)
+    samsung = next(r for r in results if r["name"] == "삼성전자")
+    assert samsung["score"] == 90
+
+
+def test_load_whale_results_empty_for_unknown_run():
+    results = scan_db.load_whale_results(99999)
+    assert results == []
+
+
+def test_load_whale_results_applied_step(saved_whale_run_id):
+    results = scan_db.load_whale_results(saved_whale_run_id)
+    for r in results:
+        assert isinstance(r["applied_step"], str)
+
+
+# ---------------------------------------------------------------------------
+# load_run_list — whale 모드 레이블
+# ---------------------------------------------------------------------------
+
+
+def test_load_run_list_whale_label(two_whale_results):
+    scan_db.save_whale_scan("KOSPI", two_whale_results)
+    runs = scan_db.load_run_list()
+    assert runs[0]["scan_mode"] == "whale"
+    assert "세력탐지" in runs[0]["label"]
+    assert "KOSPI" in runs[0]["label"]
+
+
+def test_load_run_list_mixed_modes(two_results, two_whale_results):
+    scan_db.save_scan("KOSPI", 120, 1.2, "전체", two_results)
+    scan_db.save_whale_scan("KOSDAQ", two_whale_results)
+    runs = scan_db.load_run_list()
+    modes = {r["scan_mode"] for r in runs}
+    assert modes == {"quant", "whale"}
