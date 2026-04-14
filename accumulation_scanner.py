@@ -81,7 +81,7 @@ class AccumulationScanner:
         """
         is_us = market in _US_MARKETS
         has_short = use_short_filter and is_us
-        threshold = compute_threshold(use_alpha, has_short)
+        threshold = compute_threshold(use_alpha, has_short, use_breakout=True)
 
         loader = QuantDataLoader()
         snapshot = loader.get_market_snapshot(market=market, max_pages=4)
@@ -184,6 +184,7 @@ class AccumulationScanner:
                     df, index_df,
                     use_alpha=use_alpha,
                     use_short_filter=short_loaded,   # 실제 데이터 존재 여부로 결정
+                    use_breakout=True,
                     threshold=eff_threshold,
                     obv_multiplier=_obv,
                     alpha_momentum_threshold=_alpha,
@@ -192,14 +193,16 @@ class AccumulationScanner:
                 recent = full_df.tail(_win)
 
                 # 윈도우 내 신호별 독립 집계 (동일 날짜 불필요)
-                sig_obv   = bool(recent["Is_Whale_Spike"].any())
-                sig_alpha = bool(recent["Alpha_Sig"].any()) if "Alpha_Sig" in recent.columns else False
-                sig_short = bool(recent["Short_Sig"].any()) if "Short_Sig" in recent.columns else False
+                sig_obv      = bool(recent["Is_Whale_Spike"].any())
+                sig_alpha    = bool(recent["Alpha_Sig"].any()) if "Alpha_Sig" in recent.columns else False
+                sig_short    = bool(recent["Short_Sig"].any()) if "Short_Sig" in recent.columns else False
+                sig_breakout = bool(recent["Breakout_Sig"].any()) if "Breakout_Sig" in recent.columns else False
 
                 window_score = (
-                    (30 if sig_obv   else 0)
-                    + (35 if sig_alpha else 0)
-                    + (35 if sig_short else 0)
+                    (30 if sig_obv      else 0)
+                    + (30 if sig_breakout else 0)
+                    + (35 if sig_alpha   else 0)
+                    + (35 if sig_short   else 0)
                 )
                 if window_score < eff_threshold:
                     return None
@@ -220,9 +223,10 @@ class AccumulationScanner:
                 )
 
                 tags = []
-                if sig_obv:   tags.append("매집봉")
-                if sig_alpha: tags.append("알파")
-                if sig_short: tags.append("숏커버")
+                if sig_obv:      tags.append("매집봉")
+                if sig_breakout: tags.append("돌파")
+                if sig_alpha:    tags.append("알파")
+                if sig_short:    tags.append("숏커버")
 
                 return {
                     "Name": names.get(symbol, symbol),
@@ -232,6 +236,7 @@ class AccumulationScanner:
                     "Score": window_score,
                     "Signal_Type": "+".join(tags) if tags else "-",
                     "OBV_Spike": sig_obv,
+                    "Breakout": sig_breakout,
                     "Alpha": sig_alpha,
                     "Short_Cover": sig_short,
                     "Close": round(float(latest["Close"]), 0),

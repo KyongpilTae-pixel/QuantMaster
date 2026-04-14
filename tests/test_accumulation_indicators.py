@@ -493,29 +493,29 @@ class TestComputeThreshold:
     def test_obv_only_returns_25(self):
         """alpha=OFF, short=OFF -> threshold=25 (OBV 단독 최대 30 >= 25 탐지 가능)."""
         from utils.accumulation_indicators import compute_threshold
-        assert compute_threshold(use_alpha=False, use_short_filter=False) == 25
+        assert compute_threshold(use_alpha=False, use_short_filter=False, use_breakout=False) == 25
 
     def test_alpha_on_short_off_returns_55(self):
         """alpha=ON, short=OFF -> threshold=55 (OBV+Alpha 최대 65 >= 55 탐지 가능)."""
         from utils.accumulation_indicators import compute_threshold
-        assert compute_threshold(use_alpha=True, use_short_filter=False) == 55
+        assert compute_threshold(use_alpha=True, use_short_filter=False, use_breakout=False) == 55
 
     def test_alpha_off_short_on_returns_55(self):
         """alpha=OFF, short=ON -> threshold=55 (OBV+Short 최대 65 >= 55 탐지 가능)."""
         from utils.accumulation_indicators import compute_threshold
-        assert compute_threshold(use_alpha=False, use_short_filter=True) == 55
+        assert compute_threshold(use_alpha=False, use_short_filter=True, use_breakout=False) == 55
 
     def test_all_filters_returns_70(self):
         """alpha=ON, short=ON -> threshold=70 (OBV+Alpha+Short 최대 100 >= 70 탐지 가능)."""
         from utils.accumulation_indicators import compute_threshold
-        assert compute_threshold(use_alpha=True, use_short_filter=True) == 70
+        assert compute_threshold(use_alpha=True, use_short_filter=True, use_breakout=False) == 70
 
     def test_threshold_always_reachable(self):
-        """모든 조합에서 최대 점수 >= threshold (탐지 가능성 보장)."""
+        """모든 조합에서 최대 점수 >= threshold (탐지 가능성 보장, breakout 제외)."""
         from utils.accumulation_indicators import compute_threshold
         for use_alpha in (True, False):
             for use_short in (True, False):
-                th = compute_threshold(use_alpha, use_short)
+                th = compute_threshold(use_alpha, use_short, use_breakout=False)
                 max_score = 30 + (35 if use_alpha else 0) + (35 if use_short else 0)
                 assert max_score >= th, (
                     f"use_alpha={use_alpha}, use_short={use_short}: "
@@ -596,9 +596,9 @@ class TestAlphaOnShortOff:
         from utils.accumulation_indicators import analyze_whale_with_options, compute_threshold
         df = _make_ohlcv(40, volume_multipliers={-1: 3.0})
         idx = pd.DataFrame()
-        th = compute_threshold(use_alpha=False, use_short_filter=False)
+        th = compute_threshold(use_alpha=False, use_short_filter=False, use_breakout=False)
         _, buy = analyze_whale_with_options(
-            df, idx, use_alpha=False, use_short_filter=False, threshold=th
+            df, idx, use_alpha=False, use_short_filter=False, use_breakout=False, threshold=th
         )
         assert len(buy) >= 1, f"OBV 단독 threshold={th}으로 탐지되어야 함"
 
@@ -698,7 +698,7 @@ class TestWindowScoring:
         recent = full.tail(15)
         has_obv = bool(recent["Is_Whale_Spike"].any())
         window_score = 30 if has_obv else 0
-        th = compute_threshold(use_alpha=False, use_short_filter=False)
+        th = compute_threshold(use_alpha=False, use_short_filter=False, use_breakout=False)
         assert window_score >= th, f"OBV 단독 window_score={window_score} >= threshold={th}"
 
     def test_alpha_only_window_score_35_below_threshold_55(self):

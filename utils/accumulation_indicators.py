@@ -13,32 +13,47 @@ DEFAULT_OBV_MULTIPLIER = 2.0
 DEFAULT_ALPHA_MOMENTUM_THRESHOLD = 0.020
 
 
-def compute_threshold(use_alpha: bool, use_short_filter: bool) -> int:
+def compute_threshold(
+    use_alpha: bool,
+    use_short_filter: bool,
+    use_breakout: bool = True,
+) -> int:
     """
     활성 필터 조합에 따른 동적 threshold 산출.
 
     최대 가능 점수:
-        OBV(30) + Alpha(35, 선택) + Short(35, 선택)
-    Threshold = 최대점수 × ~85%, 단 OBV 단독이면 25.
+        OBV(30) + Breakout(30, 기본ON) + Alpha(35, 선택) + Short(35, 선택)
 
-    활성 조합        최대점수  threshold
-    OBV only            30      25
-    OBV + Alpha         65      55
-    OBV + Short         65      55
-    OBV + Alpha + Short 100     70
+    활성 조합                    최대점수  threshold
+    OBV only                        30      25
+    OBV + Breakout                  60      45
+    OBV + Alpha                     65      55
+    OBV + Short                     65      55
+    OBV + Breakout + Alpha          95      65
+    OBV + Breakout + Short          95      65
+    OBV + Alpha + Short            100      70
+    OBV + Breakout + Alpha + Short 130      85
     """
     max_score = 30  # OBV 항상 포함
+    if use_breakout:
+        max_score += 30
     if use_alpha:
         max_score += 35
     if use_short_filter:
         max_score += 35
 
-    if max_score == 30:
-        return 25   # OBV 단독 스파이크 탐지
-    elif max_score == 65:
-        return 55   # 두 신호 중 하나 이상 필요
-    else:           # 100
-        return 70   # Alpha+Short 또는 세 신호 조합
+    if max_score <= 30:
+        return 25
+    elif max_score <= 60:
+        return 45
+    elif max_score <= 65:
+        return 55
+    elif max_score <= 95:
+        return 65
+    elif max_score <= 100:
+        return 70
+    else:           # 130
+        return 85
 
 
 def analyze_whale_with_options(
@@ -46,6 +61,7 @@ def analyze_whale_with_options(
     index_df: pd.DataFrame,
     use_alpha: bool = True,
     use_short_filter: bool = False,
+    use_breakout: bool = True,
     threshold: int = SIGNAL_THRESHOLD_US,
     obv_multiplier: float = DEFAULT_OBV_MULTIPLIER,
     alpha_momentum_threshold: float = DEFAULT_ALPHA_MOMENTUM_THRESHOLD,
@@ -59,6 +75,7 @@ def analyze_whale_with_options(
     index_df                 : 지수 OHLCV (Close 포함)
     use_alpha                : 지수 대비 상대강도 필터 사용 여부
     use_short_filter         : 공매도 잔고 급감 필터 사용 여부
+    use_breakout             : 전고점 돌파 + 매물 소화 필터 사용 여부
     threshold                : 신호 기준 점수 (KR=55, US=70)
     obv_multiplier           : OBV 스파이크 판정 거래량 배수 (기본 2.0)
     alpha_momentum_threshold : 강한 모멘텀 알파 임계값, 기본 0.02 (2%)
@@ -105,6 +122,26 @@ def analyze_whale_with_options(
             df["Short_Balance"] < short_avg * 0.8
         ).astype(int)
         df["Accum_Score"] += df["Short_Sig"] * 35
+
+    # 4. 매물대 소화 및 전고점 돌파 (Breakout & Absorption, 가중치 30)
+    #    - 60일 최고가 돌파 + 거래량 1.5배 수반
+    #    - 돌파 직전 10일 내 Squeeze(5~7일 변동폭 < 20일 평균의 80%) 선행
+    if use_breakout and len(df) >= 60:
+        with np.errstate(divide="ignore", invalid="ignore"):
+            daily_range = (df["High"] - df["Low"]) / df["Close"].replace(0, np.nan)
+        range_ma20 = daily_range.rolling(20).mean()
+        range_ma7  = daily_range.rolling(7).mean()
+        squeeze = (range_ma7 < range_ma20 * 0.8).astype(int)
+        # 돌파 직전 10일 내에 Squeeze가 한 번 이상 존재
+        squeeze_prior = squeeze.rolling(10).max().shift(1).fillna(0).astype(bool)
+
+        resistance = df["High"].rolling(60).max().shift(1)
+        df["Breakout_Sig"] = (
+            (df["Close"] > resistance)
+            & (df["Volume"] > vol_avg * 1.5)
+            & squeeze_prior
+        ).astype(int)
+        df["Accum_Score"] += df["Breakout_Sig"] * 30
 
     buy_signals = df[df["Accum_Score"] >= threshold].copy()
     return df, buy_signals

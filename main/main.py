@@ -77,6 +77,7 @@ class WhaleScanResult(BaseModel):
     score: int = 0
     signal_type: str = ""
     obv_spike: bool = False
+    breakout: bool = False
     alpha: bool = False
     short_cover: bool = False
     close: float = 0.0
@@ -124,7 +125,9 @@ class State(rx.State):
     # 히스토리 (저장된 스캔)
     saved_runs: List[SavedRun] = []
     selected_run_id: str = ""
+    selected_run_mode: str = "quant"        # 선택된 히스토리 항목의 scan_mode
     history_results: List[ScanResult] = []
+    history_whale_results: List[WhaleScanResult] = []
 
     # 세력 탐지 스캔
     scan_mode: str = "quant"          # "quant" | "whale"
@@ -200,13 +203,21 @@ class State(rx.State):
 
     def set_selected_run_id(self, value: str):
         self.selected_run_id = value
+        self.history_results = []
+        self.history_whale_results = []
         if value:
-            from utils.scan_db import load_scan_results
-            results = load_scan_results(int(value))
-            self.history_results = [ScanResult(**r) for r in results]
+            from utils.scan_db import get_run_mode, load_scan_results, load_whale_results
+            mode = get_run_mode(int(value))
+            self.selected_run_mode = mode
+            if mode == "whale":
+                rows = load_whale_results(int(value))
+                self.history_whale_results = [WhaleScanResult(**r) for r in rows]
+            else:
+                rows = load_scan_results(int(value))
+                self.history_results = [ScanResult(**r) for r in rows]
 
     def save_scan(self):
-        """현재 스캔 결과를 DB에 저장."""
+        """현재 퀀트 스캔 결과를 DB에 저장."""
         if not self.scan_results:
             return
         from utils.scan_db import save_scan as db_save
@@ -216,8 +227,20 @@ class State(rx.State):
             target_pbr=self.pbr_limit[0],
             min_cap_label=self.min_cap_label,
             results=self.scan_results,
+            scan_mode="quant",
         )
-        self.status_msg = f"저장 완료 (#{run_id})"
+        self.status_msg = f"퀀트 결과 저장 완료 (#{run_id})"
+
+    def save_whale_scan(self):
+        """현재 세력 탐지 결과를 DB에 저장."""
+        if not self.whale_results:
+            return
+        from utils.scan_db import save_whale_scan as db_save
+        run_id = db_save(
+            market=self.market,
+            results=self.whale_results,
+        )
+        self.status_msg = f"세력 탐지 결과 저장 완료 (#{run_id})"
 
     def _find_result(self, name: str):
         """scan_results와 history_results 모두에서 종목 검색."""
@@ -567,6 +590,7 @@ class State(rx.State):
                                 score=int(row["Score"]),
                                 signal_type=str(row["Signal_Type"]),
                                 obv_spike=bool(row["OBV_Spike"]),
+                                breakout=bool(row["Breakout"]),
                                 alpha=bool(row["Alpha"]),
                                 short_cover=bool(row["Short_Cover"]),
                                 close=float(row["Close"]),
@@ -655,23 +679,29 @@ class State(rx.State):
         yield
 
     async def run_backtest(self):
-        target = next(
-            (r for r in self.scan_results if r.name == self.selected_name), None
+        # 퀀트(현재+히스토리) 및 세력탐지(현재+히스토리) 모두에서 종목 검색
+        quant_target = self._find_result(self.selected_name)
+        whale_target = next(
+            (r for r in self.whale_results if r.name == self.selected_name),
+            next((r for r in self.history_whale_results if r.name == self.selected_name), None),
         )
-        if not target:
+        found = quant_target or whale_target
+        if not found:
             self.status_msg = "종목을 먼저 선택하세요."
             return
+        target_name   = found.name
+        target_symbol = found.symbol
 
         self.is_backtesting = True
-        self.status_msg = f"{target.name} 백테스트 실행 중..."
+        self.status_msg = f"{target_name} 백테스트 실행 중..."
         yield
 
         try:
             bt = Backtester()
             result = await asyncio.to_thread(
                 bt.run,
-                target.symbol,
-                target.name,
+                target_symbol,
+                target_name,
                 int(self.vwap_period),
             )
 
@@ -891,6 +921,14 @@ def sidebar() -> rx.Component:
                     variant="soft",
                     width="100%",
                 ),
+                rx.button(
+                    "결과 저장",
+                    on_click=State.save_whale_scan,
+                    disabled=State.whale_results.length() == 0,
+                    color_scheme="green",
+                    variant="soft",
+                    width="100%",
+                ),
             ),
 
             rx.cond(
@@ -994,6 +1032,7 @@ def whale_scanner_table() -> rx.Component:
                     rx.table.column_header_cell("점수"),
                     rx.table.column_header_cell("시그널 타입"),
                     rx.table.column_header_cell("매집봉"),
+                    rx.table.column_header_cell("돌파"),
                     rx.table.column_header_cell("알파"),
                     rx.table.column_header_cell("숏커버"),
                     rx.table.column_header_cell("현재가"),
@@ -1024,6 +1063,9 @@ def whale_scanner_table() -> rx.Component:
                         ),
                         rx.table.cell(
                             rx.cond(r.obv_spike, rx.badge("✓", color_scheme="green"), rx.text("-", color="gray"))
+                        ),
+                        rx.table.cell(
+                            rx.cond(r.breakout, rx.badge("✓", color_scheme="amber"), rx.text("-", color="gray"))
                         ),
                         rx.table.cell(
                             rx.cond(r.alpha, rx.badge("✓", color_scheme="blue"), rx.text("-", color="gray"))
@@ -1655,11 +1697,70 @@ def metric_card(label: str, value: rx.Component, color: str) -> rx.Component:
     )
 
 
+def backtest_strategy_info() -> rx.Component:
+    """백테스트 전략 설명 카드."""
+    return rx.box(
+        rx.vstack(
+            rx.hstack(
+                rx.icon("trending-up", size=16, color="var(--accent-9)"),
+                rx.text("VWAP 돌파 전략", weight="bold", size="3"),
+                align="center",
+                spacing="2",
+            ),
+            rx.separator(width="100%"),
+            rx.grid(
+                rx.vstack(
+                    rx.text("진입 조건", size="2", weight="bold", color="green"),
+                    rx.text("• 종가 > VWAP", size="2"),
+                    rx.text("• MFI > 50 (자금 유입 우세)", size="2"),
+                    rx.text("• OBV > OBV 신호선 (거래량 확인)", size="2"),
+                    align_items="start",
+                    spacing="1",
+                ),
+                rx.vstack(
+                    rx.text("청산 조건", size="2", weight="bold", color="red"),
+                    rx.text("• 종가 < VWAP (추세 이탈)", size="2"),
+                    rx.text("• 미청산 포지션은 기간 말 강제 청산", size="2"),
+                    align_items="start",
+                    spacing="1",
+                ),
+                rx.vstack(
+                    rx.text("기본 설정", size="2", weight="bold", color="blue"),
+                    rx.text("• 초기 자본: 1,000만 원", size="2"),
+                    rx.text(
+                        rx.hstack(
+                            rx.text("• VWAP 기간: ", size="2"),
+                            rx.text(State.vwap_period, size="2"),
+                            rx.text("일", size="2"),
+                            spacing="0",
+                        )
+                    ),
+                    rx.text("• 조회 기간: 최근 600 거래일", size="2"),
+                    align_items="start",
+                    spacing="1",
+                ),
+                columns="3",
+                spacing="4",
+                width="100%",
+            ),
+            spacing="3",
+            width="100%",
+            align_items="start",
+        ),
+        padding="16px",
+        border_radius="8px",
+        border="1px solid var(--gray-4)",
+        background="var(--gray-1)",
+        width="100%",
+    )
+
+
 def backtest_tab() -> rx.Component:
     s = State.bt_summary
     return rx.cond(
         State.bt_summary.trade_count > 0,
         rx.vstack(
+            backtest_strategy_info(),
             rx.heading("백테스트 결과", size="5"),
             rx.grid(
                 metric_card(
@@ -1756,9 +1857,14 @@ def backtest_tab() -> rx.Component:
             width="100%",
             spacing="5",
         ),
-        rx.center(
-            rx.text("분석 탭에서 백테스트를 실행하세요.", color="gray"),
-            height="150px",
+        rx.vstack(
+            backtest_strategy_info(),
+            rx.center(
+                rx.text("분석 탭에서 백테스트를 실행하세요.", color="gray"),
+                height="150px",
+            ),
+            width="100%",
+            spacing="4",
         ),
     )
 
@@ -1788,65 +1894,126 @@ def history_tab() -> rx.Component:
                     on_change=State.set_selected_run_id,
                     width="100%",
                 ),
-                # 결과 테이블
+                # 결과 테이블 — 퀀트 / 세력탐지 분기
                 rx.cond(
-                    State.history_results.length() > 0,
-                    rx.table.root(
-                        rx.table.header(
-                            rx.table.row(
-                                rx.table.column_header_cell("종목명"),
-                                rx.table.column_header_cell("심볼"),
-                                rx.table.column_header_cell("시가총액"),
-                                rx.table.column_header_cell("PBR"),
-                                rx.table.column_header_cell("PSR"),
-                                rx.table.column_header_cell("배당률"),
-                                rx.table.column_header_cell("MFI"),
-                                rx.table.column_header_cell("현재가"),
-                                rx.table.column_header_cell("VWAP"),
-                                rx.table.column_header_cell("괴리율(%)"),
-                                rx.table.column_header_cell("조건"),
-                                rx.table.column_header_cell(""),
-                            )
-                        ),
-                        rx.table.body(
-                            rx.foreach(
-                                State.history_results,
-                                lambda r: rx.table.row(
-                                    rx.table.cell(r.name),
-                                    rx.table.cell(r.symbol),
-                                    rx.table.cell(r.market_cap_str),
-                                    rx.table.cell(r.pbr),
-                                    rx.table.cell(r.psr),
-                                    rx.table.cell(r.div_yield),
-                                    rx.table.cell(r.mfi),
-                                    rx.table.cell(r.close),
-                                    rx.table.cell(r.vwap_price),
-                                    rx.table.cell(r.vwap_gap),
-                                    rx.table.cell(
-                                        rx.badge(
-                                            r.condition,
-                                            color_scheme=rx.cond(
-                                                r.condition == "원본", "green", "orange"
-                                            ),
-                                        )
+                    State.selected_run_mode == "whale",
+                    # 세력 탐지 히스토리
+                    rx.cond(
+                        State.history_whale_results.length() > 0,
+                        rx.table.root(
+                            rx.table.header(
+                                rx.table.row(
+                                    rx.table.column_header_cell("종목명"),
+                                    rx.table.column_header_cell("심볼"),
+                                    rx.table.column_header_cell("시장"),
+                                    rx.table.column_header_cell("시그널일"),
+                                    rx.table.column_header_cell("점수"),
+                                    rx.table.column_header_cell("시그널"),
+                                    rx.table.column_header_cell("현재가"),
+                                    rx.table.column_header_cell("거래량비율"),
+                                    rx.table.column_header_cell("적용단계"),
+                                    rx.table.column_header_cell(""),
+                                )
+                            ),
+                            rx.table.body(
+                                rx.foreach(
+                                    State.history_whale_results,
+                                    lambda r: rx.table.row(
+                                        rx.table.cell(r.name),
+                                        rx.table.cell(r.symbol),
+                                        rx.table.cell(r.market),
+                                        rx.table.cell(r.signal_date),
+                                        rx.table.cell(rx.badge(r.score, color_scheme="blue")),
+                                        rx.table.cell(r.signal_type),
+                                        rx.table.cell(r.close),
+                                        rx.table.cell(r.volume_ratio),
+                                        rx.table.cell(
+                                            rx.badge(
+                                                r.applied_step,
+                                                color_scheme=rx.cond(
+                                                    r.applied_step == "원본", "green", "orange"
+                                                ),
+                                            )
+                                        ),
+                                        rx.table.cell(
+                                            rx.button(
+                                                "분석",
+                                                size="1",
+                                                variant="soft",
+                                                on_click=State.select_stock(r.name),
+                                            )
+                                        ),
                                     ),
-                                    rx.table.cell(
-                                        rx.button(
-                                            "분석",
-                                            size="1",
-                                            variant="soft",
-                                            on_click=State.select_stock(r.name),
-                                        )
-                                    ),
-                                ),
-                            )
+                                )
+                            ),
+                            width="100%",
+                            variant="surface",
                         ),
-                        width="100%",
-                        variant="surface",
+                        rx.center(
+                            rx.text("날짜를 선택하면 결과가 표시됩니다.", color="gray"),
+                            height="100px",
+                        ),
                     ),
-                    rx.center(
-                        rx.text("날짜를 선택하면 결과가 표시됩니다.", color="gray"),
-                        height="100px",
+                    # 퀀트 히스토리
+                    rx.cond(
+                        State.history_results.length() > 0,
+                        rx.table.root(
+                            rx.table.header(
+                                rx.table.row(
+                                    rx.table.column_header_cell("종목명"),
+                                    rx.table.column_header_cell("심볼"),
+                                    rx.table.column_header_cell("시가총액"),
+                                    rx.table.column_header_cell("PBR"),
+                                    rx.table.column_header_cell("PSR"),
+                                    rx.table.column_header_cell("배당률"),
+                                    rx.table.column_header_cell("MFI"),
+                                    rx.table.column_header_cell("현재가"),
+                                    rx.table.column_header_cell("VWAP"),
+                                    rx.table.column_header_cell("괴리율(%)"),
+                                    rx.table.column_header_cell("조건"),
+                                    rx.table.column_header_cell(""),
+                                )
+                            ),
+                            rx.table.body(
+                                rx.foreach(
+                                    State.history_results,
+                                    lambda r: rx.table.row(
+                                        rx.table.cell(r.name),
+                                        rx.table.cell(r.symbol),
+                                        rx.table.cell(r.market_cap_str),
+                                        rx.table.cell(r.pbr),
+                                        rx.table.cell(r.psr),
+                                        rx.table.cell(r.div_yield),
+                                        rx.table.cell(r.mfi),
+                                        rx.table.cell(r.close),
+                                        rx.table.cell(r.vwap_price),
+                                        rx.table.cell(r.vwap_gap),
+                                        rx.table.cell(
+                                            rx.badge(
+                                                r.condition,
+                                                color_scheme=rx.cond(
+                                                    r.condition == "원본", "green", "orange"
+                                                ),
+                                            )
+                                        ),
+                                        rx.table.cell(
+                                            rx.button(
+                                                "분석",
+                                                size="1",
+                                                variant="soft",
+                                                on_click=State.select_stock(r.name),
+                                            )
+                                        ),
+                                    ),
+                                )
+                            ),
+                            width="100%",
+                            variant="surface",
+                        ),
+                        rx.center(
+                            rx.text("날짜를 선택하면 결과가 표시됩니다.", color="gray"),
+                            height="100px",
+                        ),
                     ),
                 ),
                 width="100%",
