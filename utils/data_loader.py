@@ -21,6 +21,9 @@ from bs4 import BeautifulSoup
 
 _MARKET_CODE = {"KOSPI": "0", "KOSDAQ": "1"}
 
+_ETF_API_URL = "https://finance.naver.com/api/sise/etfItemList.naver"
+_ETF_MARKETS = {"KR-ETF"}
+
 _HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -179,9 +182,53 @@ class QuantDataLoader:
           max_pages × 30종목 처리
         GPA_Score = ROE 백분위 (Novy-Marx GP/A 프록시).
         """
+        if market in _ETF_MARKETS:
+            return self._get_etf_kr_snapshot()
         if market in _US_MARKET_FDR:
             return self._get_us_snapshot(market, max_pages)
         return self._get_kr_snapshot(market, max_pages)
+
+    def _get_etf_kr_snapshot(self) -> pd.DataFrame:
+        """NAVER ETF API로 한국 ETF 스냅샷 반환.
+        PBR/GPA 없으므로 기술적 필터 전용으로 사용.
+        """
+        _empty = pd.DataFrame(
+            columns=["Symbol", "Name", "Close", "MarketCap", "GPA_Score", "PBR", "ROE"]
+        )
+        try:
+            r = requests.get(_ETF_API_URL, headers=_HEADERS, timeout=15)
+            items = r.json()["result"]["etfItemList"]
+        except Exception as e:
+            print(f"[DataLoader] ETF 목록 조회 실패: {e}")
+            return _empty
+
+        records: list[dict] = []
+        for item in items:
+            try:
+                price = item.get("nowVal") or 0
+                if price <= 0:
+                    continue
+                records.append({
+                    "Symbol":    str(item["itemcode"]),
+                    "Name":      item["itemname"],
+                    "Close":     float(price),
+                    "MarketCap": float(item.get("marketSum") or 0),  # 억원
+                    "Volume":    int(item.get("quant") or 0),
+                    # ETF에는 PBR/GPA 없음 → 퀀트 필터를 항상 통과하도록 설정
+                    "PBR":       0.0,
+                    "GPA_Score": 1.0,
+                    "ROE":       50.0,
+                    "PSR":       float("nan"),
+                    "DivYield":  float("nan"),
+                })
+            except Exception:
+                continue
+
+        if not records:
+            return _empty
+        df = pd.DataFrame(records)
+        df = df.sort_values("MarketCap", ascending=False).reset_index(drop=True)
+        return df
 
     def _get_kr_snapshot(self, market: str, max_pages: int) -> pd.DataFrame:
         sosok = _MARKET_CODE.get(market, "0")

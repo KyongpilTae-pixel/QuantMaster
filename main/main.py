@@ -347,7 +347,7 @@ class State(rx.State):
                 use_short_chart = self.use_short_filter and is_us
                 hl_threshold = compute_threshold(self.use_alpha, use_short_chart)
 
-                _INDEX_FDR = {"KOSPI": "KS11", "KOSDAQ": "KQ11", "SP500": "^GSPC", "NASDAQ": "^IXIC"}
+                _INDEX_FDR = {"KOSPI": "KS11", "KOSDAQ": "KQ11", "KR-ETF": "KS11", "SP500": "^GSPC", "NASDAQ": "^IXIC"}
                 end_dt = display_df.index[-1]
                 start_dt = end_dt - timedelta(days=250)
                 try:
@@ -806,9 +806,14 @@ def sidebar() -> rx.Component:
                 rx.select.trigger(placeholder="시장 선택"),
                 rx.select.content(
                     rx.select.group(
-                        rx.select.label("한국"),
+                        rx.select.label("한국 주식"),
                         rx.select.item("KOSPI", value="KOSPI"),
                         rx.select.item("KOSDAQ", value="KOSDAQ"),
+                    ),
+                    rx.select.separator(),
+                    rx.select.group(
+                        rx.select.label("한국 ETF"),
+                        rx.select.item("KR-ETF (기술적 스캔)", value="KR-ETF"),
                     ),
                     rx.select.separator(),
                     rx.select.group(

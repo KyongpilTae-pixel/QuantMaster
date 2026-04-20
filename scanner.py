@@ -23,7 +23,8 @@ _STEP_LABELS = {
 }
 
 
-_US_MARKETS = {"SP500", "NASDAQ"}
+_US_MARKETS  = {"SP500", "NASDAQ"}
+_ETF_MARKETS = {"KR-ETF"}
 
 # 시가총액 프리셋: KR=억원, US=billion USD
 _CAP_PRESETS = {
@@ -53,9 +54,10 @@ class QuantScanner:
         PBR 한도는 사용자 설정값(target_pbr)과 단계별 pbr_max 중 큰 값 사용.
         """
         loader = QuantDataLoader()
-        currency = "USD" if market in _US_MARKETS else "KRW"
-        cap_key = "US" if currency == "USD" else "KR"
-        min_cap = _CAP_PRESETS.get(min_cap_label, {"KR": 0, "US": 0})[cap_key]
+        is_etf    = market in _ETF_MARKETS
+        currency  = "USD" if market in _US_MARKETS else "KRW"
+        cap_key   = "US" if currency == "USD" else "KR"
+        min_cap   = _CAP_PRESETS.get(min_cap_label, {"KR": 0, "US": 0})[cap_key]
 
         stocks = loader.get_market_snapshot(market=market)
 
@@ -73,13 +75,17 @@ class QuantScanner:
             if len(final_candidates) >= min_count:
                 break
 
-            # 사용자가 지정한 PBR 한도와 단계별 한도 중 큰 값 적용
-            effective_pbr = max(target_pbr, pbr_max) if step > 1 else target_pbr
-
-            filtered = stocks[
-                (stocks["PBR"] <= effective_pbr)
-                & (stocks["GPA_Score"] >= gpa_min)
-            ].sort_values("PBR").head(60)
+            effective_pbr = float("nan")
+            if is_etf:
+                # ETF: PBR/GPA 퀀트 필터 없음 → 시가총액 상위 순으로 후보 선정
+                filtered = stocks.sort_values("MarketCap", ascending=False).head(200)
+            else:
+                # 사용자가 지정한 PBR 한도와 단계별 한도 중 큰 값 적용
+                effective_pbr = max(target_pbr, pbr_max) if step > 1 else target_pbr
+                filtered = stocks[
+                    (stocks["PBR"] <= effective_pbr)
+                    & (stocks["GPA_Score"] >= gpa_min)
+                ].sort_values("PBR").head(60)
 
             for _, row in filtered.iterrows():
                 if len(final_candidates) >= min_count:
@@ -117,7 +123,7 @@ class QuantScanner:
                                 "Name": row["Name"],
                                 "Symbol": row["Symbol"],
                                 "Market": market,
-                                "PBR": round(row["PBR"], 2),
+                                "PBR": round(row["PBR"], 2) if not is_etf else float("nan"),
                                 "PSR": round(psr_val, 2) if not math.isnan(psr_val) else float("nan"),
                                 "DivYield": div_str,
                                 "MFI": round(curr["MFI"], 1),
@@ -131,8 +137,8 @@ class QuantScanner:
                                 ),
                                 "MarketCap_Str": cap_str,
                                 # 적용된 임계값 정보
-                                "Applied_PBR": effective_pbr,
-                                "Applied_GPA": gpa_min,
+                                "Applied_PBR": effective_pbr if not is_etf else float("nan"),
+                                "Applied_GPA": gpa_min if not is_etf else float("nan"),
                                 "Applied_MFI": mfi_min,
                                 "Applied_OBV": require_obv,
                                 "Applied_MinCap": min_cap_label,

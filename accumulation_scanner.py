@@ -19,6 +19,7 @@ from utils.accumulation_indicators import (
 _INDEX_FDR = {
     "KOSPI":  "KS11",
     "KOSDAQ": "KQ11",
+    "KR-ETF": "KS11",   # ETF는 코스피 지수 기준
     "SP500":  "^GSPC",
     "NASDAQ": "^IXIC",
 }
