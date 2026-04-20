@@ -22,9 +22,10 @@ _INDEX_FDR = {
     "KR-ETF": "KS11",   # ETF는 코스피 지수 기준
     "SP500":  "^GSPC",
     "NASDAQ": "^IXIC",
+    "US-ETF": "^GSPC",  # 미국 ETF는 S&P500 지수 기준
 }
 
-_US_MARKETS = {"SP500", "NASDAQ"}
+_US_MARKETS = {"SP500", "NASDAQ", "US-ETF"}
 
 # 점진적 완화 단계: (라벨, OBV배수, Alpha모멘텀임계값, signal_window, threshold_ratio)
 # threshold_ratio: ctx["threshold"] 에 곱해 단계별 실효 threshold 산출

@@ -22,7 +22,8 @@ from bs4 import BeautifulSoup
 _MARKET_CODE = {"KOSPI": "0", "KOSDAQ": "1"}
 
 _ETF_API_URL = "https://finance.naver.com/api/sise/etfItemList.naver"
-_ETF_MARKETS = {"KR-ETF"}
+_ETF_MARKETS  = {"KR-ETF", "US-ETF"}
+_US_ETF_MARKETS = {"US-ETF"}
 
 _HEADERS = {
     "User-Agent": (
@@ -154,6 +155,33 @@ def _fetch_us_fundamentals(symbol: str) -> dict | None:
         return None
 
 
+def _fetch_us_etf_price(symbol: str) -> dict | None:
+    """yfinance로 미국 ETF 가격·시가총액 조회 (PBR 불필요)."""
+    try:
+        import yfinance as yf
+        info = yf.Ticker(symbol).info
+        price = info.get("currentPrice") or info.get("regularMarketPrice") or info.get("navPrice") or 0.0
+        if not price or price <= 0:
+            return None
+        name = info.get("shortName") or info.get("longName") or symbol
+        mktcap_raw = info.get("totalAssets") or info.get("marketCap")  # ETF는 totalAssets 우선
+        div_raw = info.get("dividendYield")
+        return {
+            "Symbol":   symbol,
+            "Name":     name,
+            "Close":    float(price),
+            "PBR":      0.0,        # ETF에는 PBR 없음
+            "GPA_Score":1.0,        # 퀀트 필터 항상 통과
+            "ROE":      50.0,
+            "PER":      np.nan,
+            "MarketCap":float(mktcap_raw / 1e9) if mktcap_raw else np.nan,  # billion USD
+            "PSR":      np.nan,
+            "DivYield": round(float(div_raw) * 100, 2) if div_raw else np.nan,
+        }
+    except Exception:
+        return None
+
+
 # ---------------------------------------------------------------------------
 # Main Loader
 # ---------------------------------------------------------------------------
@@ -182,6 +210,8 @@ class QuantDataLoader:
           max_pages × 30종목 처리
         GPA_Score = ROE 백분위 (Novy-Marx GP/A 프록시).
         """
+        if market in _US_ETF_MARKETS:
+            return self._get_etf_us_snapshot(max_pages)
         if market in _ETF_MARKETS:
             return self._get_etf_kr_snapshot()
         if market in _US_MARKET_FDR:
@@ -227,6 +257,40 @@ class QuantDataLoader:
         if not records:
             return _empty
         df = pd.DataFrame(records)
+        df = df.sort_values("MarketCap", ascending=False).reset_index(drop=True)
+        return df
+
+    def _get_etf_us_snapshot(self, max_pages: int) -> pd.DataFrame:
+        """FinanceDataReader ETF/US 목록 + yfinance 병렬 가격 조회."""
+        _empty = pd.DataFrame(
+            columns=["Symbol", "Name", "Close", "MarketCap", "GPA_Score", "PBR", "ROE"]
+        )
+        try:
+            listing = fdr.StockListing("ETF/US")
+            sym_col = next((c for c in listing.columns if c.lower() in ("symbol", "code")), None)
+            if sym_col is None:
+                raise ValueError("Symbol 열 없음")
+            symbols = listing[sym_col].dropna().astype(str).tolist()
+        except Exception as e:
+            print(f"[DataLoader] US ETF 목록 조회 실패: {e}")
+            return _empty
+
+        max_symbols = max_pages * 30
+        symbols = [s for s in symbols if s and "." not in s][:max_symbols]
+
+        records: list[dict] = []
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            futures = {executor.submit(_fetch_us_etf_price, sym): sym for sym in symbols}
+            for future in as_completed(futures):
+                result = future.result()
+                if result:
+                    records.append(result)
+
+        if not records:
+            return _empty
+
+        df = pd.DataFrame(records)
+        df["GPA_Score"] = 1.0   # 퀀트 필터 스킵용 고정값
         df = df.sort_values("MarketCap", ascending=False).reset_index(drop=True)
         return df
 

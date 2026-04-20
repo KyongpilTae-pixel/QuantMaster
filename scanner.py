@@ -23,8 +23,8 @@ _STEP_LABELS = {
 }
 
 
-_US_MARKETS  = {"SP500", "NASDAQ"}
-_ETF_MARKETS = {"KR-ETF"}
+_US_MARKETS  = {"SP500", "NASDAQ", "US-ETF"}
+_ETF_MARKETS = {"KR-ETF", "US-ETF"}
 
 # 시가총액 프리셋: KR=억원, US=billion USD
 _CAP_PRESETS = {
