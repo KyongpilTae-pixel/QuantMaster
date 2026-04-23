@@ -283,11 +283,11 @@ class State(rx.State):
             condition_text=condition_text,
             buy_price=buy_price, quantity=quantity, memo=self.holding_memo_input,
         )
-        self.show_add_holding_form = False
         self.holding_buy_price_input = ""
         self.holding_quantity_input = ""
         self.holding_memo_input = ""
         self.holding_status = "added"
+        self.load_holdings_from_db()
 
     def remove_holding(self, holding_id: int):
         from utils.scan_db import remove_holding as db_remove
