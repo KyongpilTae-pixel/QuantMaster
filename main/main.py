@@ -172,8 +172,6 @@ class State(rx.State):
 
     def set_scan_mode(self, value: str):
         self.scan_mode = value
-        self.scan_results = []
-        self.whale_results = []
         self.status_msg = ""
 
     def set_use_alpha(self, checked: bool):
