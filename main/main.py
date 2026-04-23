@@ -85,6 +85,27 @@ class WhaleScanResult(BaseModel):
     applied_step: str = "원본"
 
 
+class HoldingItem(BaseModel):
+    holding_id: int = 0
+    name: str = ""
+    symbol: str = ""
+    market: str = "KOSPI"
+    currency: str = "KRW"
+    market_cap_str: str = "-"
+    pbr: float = 0.0
+    psr: float = 0.0
+    div_yield: str = "-"
+    mfi: float = 0.0
+    close: float = 0.0
+    vwap_price: float = 0.0
+    vwap_gap: float = 0.0
+    condition_text: str = ""
+    buy_price: float = 0.0
+    quantity: float = 0.0
+    memo: str = ""
+    added_at: str = ""
+
+
 # ---------------------------------------------------------------------------
 # App State
 # ---------------------------------------------------------------------------
@@ -144,6 +165,14 @@ class State(rx.State):
     whale_chart_data: List[dict] = []      # date, OBV, Short_Balance
     whale_highlights: List[dict] = []      # [{x1, x2}] 매집 구간 음영
 
+    # 보유 종목
+    holdings: List[HoldingItem] = []
+    show_add_holding_form: bool = False
+    holding_buy_price_input: str = ""
+    holding_quantity_input: str = ""
+    holding_memo_input: str = ""
+    holding_status: str = ""               # "" | "added" | "already"
+
     # UI state
     is_scanning: bool = False
     is_backtesting: bool = False
@@ -187,6 +216,151 @@ class State(rx.State):
                 self.whale_max_minutes = v
         except (ValueError, TypeError):
             pass
+
+    def set_holding_buy_price_input(self, value: str):
+        self.holding_buy_price_input = value
+
+    def set_holding_quantity_input(self, value: str):
+        self.holding_quantity_input = value
+
+    def set_holding_memo_input(self, value: str):
+        self.holding_memo_input = value
+
+    def toggle_add_holding_form(self):
+        self.show_add_holding_form = not self.show_add_holding_form
+        self.holding_buy_price_input = ""
+        self.holding_quantity_input = ""
+        self.holding_memo_input = ""
+        self.holding_status = ""
+
+    def add_to_holdings(self):
+        if not self.selected_name:
+            return
+        target = self._find_result(self.selected_name)
+        if target:
+            symbol = target.symbol
+            market = target.market_raw
+            currency = target.currency
+            market_cap_str = target.market_cap_str
+            pbr, psr, div_yield, mfi = target.pbr, target.psr, target.div_yield, target.mfi
+            close, vwap_price, vwap_gap = target.close, target.vwap_price, target.vwap_gap
+            condition_text = target.condition
+        else:
+            w = self._find_whale_result(self.selected_name)
+            if not w:
+                w = next((r for r in self.history_whale_results if r.name == self.selected_name), None)
+            if not w:
+                return
+            symbol = w.symbol
+            market = w.market
+            currency = "USD" if market in ("SP500", "NASDAQ", "US-ETF") else "KRW"
+            market_cap_str, pbr, psr, div_yield, mfi = "-", 0.0, 0.0, "-", 0.0
+            close, vwap_price, vwap_gap = w.close, 0.0, 0.0
+            condition_text = w.applied_step
+
+        from utils.scan_db import add_holding, is_holding
+        if is_holding(symbol):
+            self.holding_status = "already"
+            return
+
+        buy_price = 0.0
+        try:
+            if self.holding_buy_price_input.strip():
+                buy_price = float(self.holding_buy_price_input.replace(",", ""))
+        except Exception:
+            pass
+        quantity = 0.0
+        try:
+            if self.holding_quantity_input.strip():
+                quantity = float(self.holding_quantity_input.replace(",", ""))
+        except Exception:
+            pass
+
+        add_holding(
+            name=self.selected_name, symbol=symbol, market=market, currency=currency,
+            market_cap_str=market_cap_str, pbr=pbr, psr=psr, div_yield=div_yield,
+            mfi=mfi, close=close, vwap_price=vwap_price, vwap_gap=vwap_gap,
+            condition_text=condition_text,
+            buy_price=buy_price, quantity=quantity, memo=self.holding_memo_input,
+        )
+        self.show_add_holding_form = False
+        self.holding_buy_price_input = ""
+        self.holding_quantity_input = ""
+        self.holding_memo_input = ""
+        self.holding_status = "added"
+
+    def remove_holding(self, holding_id: int):
+        from utils.scan_db import remove_holding as db_remove
+        db_remove(holding_id)
+        self.holdings = [h for h in self.holdings if h.holding_id != holding_id]
+
+    async def select_holding_for_analysis(self, holding_id: int):
+        holding = next((h for h in self.holdings if h.holding_id == holding_id), None)
+        if not holding:
+            return
+        buy, sell = InvestmentReasoning.generate_report(
+            holding.name, holding.pbr, int(self.vwap_period),
+            holding.mfi, holding.vwap_price, holding.currency,
+        )
+        self.buy_msg = buy
+        self.sell_msg = sell
+        self.selected_name = holding.name
+        self.scan_mode = "quant"
+        self.bt_summary = BacktestSummary()
+        self.equity_data = []
+        self.trades_data = []
+        self.bt_price_chart_data = []
+        self.bt_buy_points = []
+        self.bt_sell_points = []
+        self.price_chart_data = []
+        self.psr_chart_data = []
+        self.close_date = ""
+        self.whale_chart_data = []
+        self.whale_highlights = []
+        self.is_loading_chart = True
+        self.active_tab = "analysis"
+        yield
+        try:
+            import pandas as pd
+            from utils.data_loader import QuantDataLoader
+            from utils.indicators import TechnicalIndicators
+            vwap = int(self.vwap_period)
+            loader = QuantDataLoader()
+            df = await asyncio.to_thread(loader.get_ohlcv, holding.symbol, 600)
+            df = TechnicalIndicators.calculate_all(df, [vwap, 20, 60, 120])
+            display_df = df.tail(200)
+            vwap_col = f"VWAP_{vwap}"
+
+            def _v(val):
+                return round(float(val), 0) if not pd.isna(val) else None
+
+            self.price_chart_data = [
+                {
+                    "date": str(d.date()),
+                    "종가": _v(row["Close"]),
+                    "VWAP": _v(row[vwap_col]),
+                    "MA20": _v(row["TWAP_20"]),
+                    "MA60": _v(row["TWAP_60"]),
+                    "MA120": _v(row["TWAP_120"]),
+                    "SMA120": _v(row["SMA_120"]),
+                }
+                for d, row in display_df.iterrows()
+            ]
+            self.close_date = str(display_df.index[-1].date())
+            psr_data = await asyncio.to_thread(
+                loader.get_quarterly_psr, holding.symbol, holding.market
+            )
+            self.psr_chart_data = psr_data
+        except Exception:
+            pass
+        finally:
+            self.is_loading_chart = False
+        yield
+
+    def load_holdings_from_db(self):
+        from utils.scan_db import load_holdings
+        rows = load_holdings()
+        self.holdings = [HoldingItem(**r) for r in rows]
 
     async def stop_whale_scan(self):
         """탐색 중단 요청 (다음 단계 시작 전 반영)."""
@@ -1700,6 +1874,18 @@ def analysis_tab() -> rx.Component:
                     ),
                     rx.spacer(),
                     rx.button(
+                        rx.cond(
+                            State.show_add_holding_form,
+                            "취소",
+                            "+ 보유 추가",
+                        ),
+                        on_click=State.toggle_add_holding_form,
+                        color_scheme=rx.cond(State.show_add_holding_form, "gray", "green"),
+                        variant="soft",
+                        size="2",
+                        class_name="no-print",
+                    ),
+                    rx.button(
                         "PDF 저장",
                         on_click=State.export_pdf,
                         color_scheme="gray",
@@ -1710,6 +1896,81 @@ def analysis_tab() -> rx.Component:
                     width="100%",
                     align_items="center",
                     spacing="3",
+                ),
+                # 보유 추가 폼
+                rx.cond(
+                    State.show_add_holding_form,
+                    rx.box(
+                        rx.vstack(
+                            rx.text("보유 종목 등록", weight="bold", size="2"),
+                            rx.hstack(
+                                rx.vstack(
+                                    rx.text("매수가", size="1", color="gray"),
+                                    rx.input(
+                                        placeholder="예) 45000",
+                                        value=State.holding_buy_price_input,
+                                        on_change=State.set_holding_buy_price_input,
+                                        size="2",
+                                        width="140px",
+                                    ),
+                                    spacing="1",
+                                ),
+                                rx.vstack(
+                                    rx.text("수량", size="1", color="gray"),
+                                    rx.input(
+                                        placeholder="예) 100",
+                                        value=State.holding_quantity_input,
+                                        on_change=State.set_holding_quantity_input,
+                                        size="2",
+                                        width="100px",
+                                    ),
+                                    spacing="1",
+                                ),
+                                rx.vstack(
+                                    rx.text("메모", size="1", color="gray"),
+                                    rx.input(
+                                        placeholder="선택 입력",
+                                        value=State.holding_memo_input,
+                                        on_change=State.set_holding_memo_input,
+                                        size="2",
+                                        width="200px",
+                                    ),
+                                    spacing="1",
+                                ),
+                                rx.button(
+                                    "등록",
+                                    on_click=State.add_to_holdings,
+                                    color_scheme="green",
+                                    size="2",
+                                    margin_top="16px",
+                                ),
+                                align_items="flex-end",
+                                spacing="3",
+                                flex_wrap="wrap",
+                            ),
+                            rx.cond(
+                                State.holding_status == "already",
+                                rx.callout.root(
+                                    rx.callout.text("이미 보유 목록에 등록된 종목입니다."),
+                                    color_scheme="orange", variant="soft", size="1",
+                                ),
+                            ),
+                            rx.cond(
+                                State.holding_status == "added",
+                                rx.callout.root(
+                                    rx.callout.text("보유 목록에 추가됐습니다."),
+                                    color_scheme="green", variant="soft", size="1",
+                                ),
+                            ),
+                            spacing="3",
+                        ),
+                        padding="16px",
+                        border_radius="8px",
+                        background="var(--green-2)",
+                        border="1px solid var(--green-6)",
+                        width="100%",
+                        class_name="no-print",
+                    ),
                 ),
                 # 퀀트 모드: 매수 근거 / 분할 매수 플랜 / 지표 가이드 / 매도 가이드
                 rx.cond(
@@ -2196,6 +2457,106 @@ def history_tab() -> rx.Component:
     )
 
 
+def holdings_tab() -> rx.Component:
+    return rx.vstack(
+        rx.hstack(
+            rx.heading("보유 종목", size="4"),
+            rx.spacer(),
+            rx.text(
+                State.holdings.length(),
+                "개 종목",
+                size="2",
+                color="gray",
+            ),
+            width="100%",
+            align_items="center",
+        ),
+        rx.cond(
+            State.holdings.length() == 0,
+            rx.callout.root(
+                rx.callout.text("등록된 보유 종목이 없습니다. 분석 탭에서 '+ 보유 추가' 버튼을 누르세요."),
+                color_scheme="gray",
+                variant="soft",
+            ),
+            rx.table.root(
+                rx.table.header(
+                    rx.table.row(
+                        rx.table.column_header_cell("종목명"),
+                        rx.table.column_header_cell("시장"),
+                        rx.table.column_header_cell("현재가"),
+                        rx.table.column_header_cell("VWAP"),
+                        rx.table.column_header_cell("괴리율(%)"),
+                        rx.table.column_header_cell("MFI"),
+                        rx.table.column_header_cell("PBR"),
+                        rx.table.column_header_cell("매수가"),
+                        rx.table.column_header_cell("수량"),
+                        rx.table.column_header_cell("메모"),
+                        rx.table.column_header_cell("등록일"),
+                        rx.table.column_header_cell(""),
+                    )
+                ),
+                rx.table.body(
+                    rx.foreach(
+                        State.holdings,
+                        lambda h: rx.table.row(
+                            rx.table.cell(h.name),
+                            rx.table.cell(
+                                rx.badge(
+                                    h.market,
+                                    color_scheme=rx.cond(
+                                        (h.market == "SP500") | (h.market == "NASDAQ") | (h.market == "US-ETF"),
+                                        "blue",
+                                        "green",
+                                    ),
+                                    variant="soft",
+                                )
+                            ),
+                            rx.table.cell(h.close),
+                            rx.table.cell(h.vwap_price),
+                            rx.table.cell(h.vwap_gap),
+                            rx.table.cell(h.mfi),
+                            rx.table.cell(h.pbr),
+                            rx.table.cell(
+                                rx.cond(h.buy_price > 0, h.buy_price, rx.text("-", color="gray"))
+                            ),
+                            rx.table.cell(
+                                rx.cond(h.quantity > 0, h.quantity, rx.text("-", color="gray"))
+                            ),
+                            rx.table.cell(
+                                rx.cond(h.memo != "", h.memo, rx.text("-", color="gray"))
+                            ),
+                            rx.table.cell(h.added_at),
+                            rx.table.cell(
+                                rx.hstack(
+                                    rx.button(
+                                        "분석",
+                                        size="1",
+                                        variant="soft",
+                                        color_scheme="blue",
+                                        on_click=State.select_holding_for_analysis(h.holding_id),
+                                    ),
+                                    rx.button(
+                                        "삭제",
+                                        size="1",
+                                        variant="soft",
+                                        color_scheme="red",
+                                        on_click=State.remove_holding(h.holding_id),
+                                    ),
+                                    spacing="2",
+                                )
+                            ),
+                        ),
+                    )
+                ),
+                variant="surface",
+                width="100%",
+            ),
+        ),
+        width="100%",
+        spacing="4",
+    )
+
+
 def main_content() -> rx.Component:
     return rx.tabs.root(
         rx.tabs.list(
@@ -2203,6 +2564,7 @@ def main_content() -> rx.Component:
             rx.tabs.trigger("분석", value="analysis"),
             rx.tabs.trigger("백테스트", value="backtest"),
             rx.tabs.trigger("히스토리", value="history"),
+            rx.tabs.trigger("보유종목", value="holdings"),
         ),
         rx.tabs.content(
             rx.box(scanner_tab(), padding_top="16px"),
@@ -2219,6 +2581,10 @@ def main_content() -> rx.Component:
         rx.tabs.content(
             rx.box(history_tab(), padding_top="16px"),
             value="history",
+        ),
+        rx.tabs.content(
+            rx.box(holdings_tab(), padding_top="16px"),
+            value="holdings",
         ),
         value=State.active_tab,
         on_change=State.set_tab,
@@ -2253,4 +2619,4 @@ app = rx.App(
         radius="medium",
     )
 )
-app.add_page(index, title="QuantMaster Pro")
+app.add_page(index, title="QuantMaster Pro", on_load=State.load_holdings_from_db)

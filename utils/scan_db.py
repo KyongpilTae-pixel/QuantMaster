@@ -229,6 +229,112 @@ def load_scan_results(run_id: int) -> list[dict]:
     ]
 
 
+# ─────────────────────────────────────────────────
+# Holdings (보유 종목)
+# ─────────────────────────────────────────────────
+
+def _ensure_holdings(conn: sqlite3.Connection) -> None:
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS holdings (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            name            TEXT NOT NULL,
+            symbol          TEXT NOT NULL,
+            market          TEXT NOT NULL DEFAULT 'KOSPI',
+            currency        TEXT NOT NULL DEFAULT 'KRW',
+            market_cap_str  TEXT DEFAULT '-',
+            pbr             REAL DEFAULT 0.0,
+            psr             REAL DEFAULT 0.0,
+            div_yield       TEXT DEFAULT '-',
+            mfi             REAL DEFAULT 0.0,
+            close           REAL DEFAULT 0.0,
+            vwap_price      REAL DEFAULT 0.0,
+            vwap_gap        REAL DEFAULT 0.0,
+            condition_text  TEXT DEFAULT '',
+            buy_price       REAL DEFAULT 0.0,
+            quantity        REAL DEFAULT 0.0,
+            memo            TEXT DEFAULT '',
+            added_at        TEXT NOT NULL
+        );
+    """)
+    conn.commit()
+
+
+def is_holding(symbol: str) -> bool:
+    conn = _connect()
+    _ensure_tables(conn)
+    _ensure_holdings(conn)
+    row = conn.execute("SELECT id FROM holdings WHERE symbol = ?", (symbol,)).fetchone()
+    conn.close()
+    return row is not None
+
+
+def add_holding(
+    name: str, symbol: str, market: str, currency: str,
+    market_cap_str: str = "-", pbr: float = 0.0, psr: float = 0.0,
+    div_yield: str = "-", mfi: float = 0.0, close: float = 0.0,
+    vwap_price: float = 0.0, vwap_gap: float = 0.0, condition_text: str = "",
+    buy_price: float = 0.0, quantity: float = 0.0, memo: str = "",
+) -> int:
+    conn = _connect()
+    _ensure_tables(conn)
+    _ensure_holdings(conn)
+    now = datetime.now().isoformat(timespec="seconds")
+    cur = conn.execute(
+        """INSERT INTO holdings
+           (name, symbol, market, currency, market_cap_str, pbr, psr, div_yield,
+            mfi, close, vwap_price, vwap_gap, condition_text,
+            buy_price, quantity, memo, added_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (name, symbol, market, currency, market_cap_str, pbr, psr, div_yield,
+         mfi, close, vwap_price, vwap_gap, condition_text,
+         buy_price, quantity, memo, now),
+    )
+    holding_id = cur.lastrowid
+    conn.commit()
+    conn.close()
+    return holding_id
+
+
+def load_holdings() -> list[dict]:
+    conn = _connect()
+    _ensure_tables(conn)
+    _ensure_holdings(conn)
+    rows = conn.execute("SELECT * FROM holdings ORDER BY added_at DESC").fetchall()
+    conn.close()
+    return [
+        {
+            "holding_id": r["id"],
+            "name": r["name"] or "",
+            "symbol": r["symbol"] or "",
+            "market": r["market"] or "KOSPI",
+            "currency": r["currency"] or "KRW",
+            "market_cap_str": r["market_cap_str"] or "-",
+            "pbr": r["pbr"] or 0.0,
+            "psr": r["psr"] or 0.0,
+            "div_yield": r["div_yield"] or "-",
+            "mfi": r["mfi"] or 0.0,
+            "close": r["close"] or 0.0,
+            "vwap_price": r["vwap_price"] or 0.0,
+            "vwap_gap": r["vwap_gap"] or 0.0,
+            "condition_text": r["condition_text"] or "",
+            "buy_price": r["buy_price"] or 0.0,
+            "quantity": r["quantity"] or 0.0,
+            "memo": r["memo"] or "",
+            "added_at": (r["added_at"] or "")[:10],
+        }
+        for r in rows
+    ]
+
+
+def remove_holding(holding_id: int) -> None:
+    conn = _connect()
+    _ensure_tables(conn)
+    _ensure_holdings(conn)
+    conn.execute("DELETE FROM holdings WHERE id = ?", (holding_id,))
+    conn.commit()
+    conn.close()
+
+
 def load_whale_results(run_id: int) -> list[dict]:
     """특정 run_id의 세력 탐지 결과를 반환."""
     conn = _connect()
