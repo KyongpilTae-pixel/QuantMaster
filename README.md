@@ -82,17 +82,19 @@ QuantMaster/
 │   ├── __init__.py
 │   ├── data_loader.py   # 시장 데이터 수집 (NAVER Finance + FinanceDataReader + yfinance)
 │   ├── indicators.py    # 기술적 지표 계산 (VWAP · TWAP · MFI · OBV)
-│   └── reasoning.py     # 매수 근거 · 매도 가이드 텍스트 생성 (KRW/USD 지원)
+│   ├── reasoning.py     # 매수 근거 · 매도 가이드 텍스트 생성 (KRW/USD 지원)
+│   └── scan_db.py       # SQLite CRUD (스캔 저장 · 히스토리 · 보유 종목)
 ├── scanner.py           # 3단계 하이브리드 스캔 + 자동 임계값 완화
 ├── backtester.py        # VWAP 돌파 전략 백테스트 (MDD · Sharpe · 승률)
 ├── rxconfig.py          # Reflex 설정 (app_name = "main")
 ├── requirements.txt     # Python 의존성
 ├── tests/
-│   ├── conftest.py      # pytest fixtures (ohlcv_uptrend · downtrend · flat)
-│   ├── test_indicators.py   # TechnicalIndicators 단위 테스트 (15건)
-│   ├── test_backtester.py   # Backtester 단위 테스트 (13건)
-│   ├── test_scanner.py      # QuantScanner 단위 테스트 mock (10건)
-│   └── test_data_loader.py  # 통합 테스트 (실제 네트워크, @integration 마크)
+│   ├── conftest.py           # pytest fixtures (ohlcv_uptrend · downtrend · flat)
+│   ├── test_indicators.py    # TechnicalIndicators 단위 테스트 (15건)
+│   ├── test_backtester.py    # Backtester 단위 테스트 (13건)
+│   ├── test_scanner.py       # QuantScanner 단위 테스트 mock (10건)
+│   ├── test_scan_db.py       # scan_db CRUD 단위 테스트 (41건, 보유 종목 포함)
+│   └── test_data_loader.py   # 통합 테스트 (실제 네트워크, @integration 마크)
 └── .gitignore
 ```
 
@@ -117,11 +119,19 @@ QuantMaster/
 - `Backtester.run(symbol, name, vwap_period, initial_capital)` — VWAP 돌파 진입 / VWAP 이탈 청산 전략 시뮬레이션.
 - 반환: 총수익률 · MDD · 승률 · 평균수익 · Sharpe · 자본금 추이 · 매매 내역.
 
+### `utils/scan_db.py`
+- `save_scan / load_scan_results / load_run_list` — 퀀트 스캔 결과 SQLite 저장·로드.
+- `save_whale_scan / load_whale_results` — 세력 탐지 결과 저장·로드.
+- `add_holding / load_holdings / remove_holding / is_holding` — 보유 종목 CRUD.
+
 ### `main/main.py`
-- `State` — Reflex 앱 상태 (스캔 결과 · 선택 종목 · 차트 데이터 · 백테스트 요약).
+- `State` — Reflex 앱 상태 (스캔 결과 · 선택 종목 메타 · 차트 데이터 · 백테스트 요약 · 보유 종목).
 - `run_scan()` — 비동기 스캔 실행, 진행 상태 실시간 업데이트.
-- `select_stock()` — 종목 선택 시 투자 근거 생성 + 가격 차트 데이터 비동기 로드.
+- `select_stock()` — 종목 선택 시 투자 근거 생성 + 차트 데이터 비동기 로드 + selected_* 메타 저장.
 - `run_backtest()` — 선택 종목 백테스트 비동기 실행.
+- `add_to_holdings()` — 분석 탭에서 현재 종목을 보유 목록에 등록.
+- `remove_holding()` — 보유 종목 삭제 (DB + State 동시 갱신).
+- `select_holding_for_analysis()` — 보유종목 탭에서 분석 탭으로 이동.
 
 ---
 
@@ -187,8 +197,8 @@ reflex run
 conda activate quantmaster
 cd QuantMaster
 
-# 단위 테스트 실행 (네트워크 불필요, 38건)
-pytest tests/test_indicators.py tests/test_backtester.py tests/test_scanner.py -v
+# 단위 테스트 실행 (네트워크 불필요, 69건)
+pytest tests/ --ignore=tests/test_data_loader.py -v
 
 # 통합 테스트 실행 (실제 네트워크 필요)
 pytest tests/test_data_loader.py -m integration -v
@@ -201,6 +211,7 @@ pytest tests/test_data_loader.py -m integration -v
 | `test_indicators.py` | VWAP 수식·MFI 범위·OBV 방향성 | 15 | ✗ |
 | `test_backtester.py` | MDD·Sharpe·_simulate 로직 | 13 | ✗ |
 | `test_scanner.py` | 완화 단계 구조·스캔 로직(mock) | 10 | ✗ |
+| `test_scan_db.py` | 스캔 저장·히스토리·보유 종목 CRUD | 41 | ✗ |
 | `test_data_loader.py` | NAVER·FDR 실제 연결 | 9 | ✓ |
 
 ---
@@ -241,7 +252,8 @@ QuantMaster Pro
     │           매집봉 · 돌파 · 알파 · 숏커버 · 현재가 · 거래량비율 · [분석]
     │
     ├── 분석 탭 (종목 선택 후)
-    │   ├── 종목명 + 종가 기준일 + PDF 저장
+    │   ├── 종목명 + 종가 기준일 + 보유 추가 버튼 + PDF 저장
+    │   ├── 보유 추가 폼 (매수가 · 수량 · 메모 입력 → 등록)
     │   ├── [퀀트 모드]
     │   │   ├── 매수 근거
     │   │   ├── 분할 매수 플랜 (예산 입력 → 계산하기)
@@ -263,9 +275,15 @@ QuantMaster Pro
     │   ├── 자본금 추이 차트
     │   └── 매매 내역 테이블
     │
-    └── 히스토리 탭
-        ├── 저장된 스캔 선택 (드롭다운)
-        └── 결과 테이블
-            ├── [퀀트] 종목명 · PBR · PSR · 배당률 · MFI · 현재가 · VWAP · 조건 · [분석]
-            └── [세력 탐지] 종목명 · 시그널일 · 점수 · 시그널 · 현재가 · 거래량비율
+    ├── 히스토리 탭
+    │   ├── 저장된 스캔 선택 (드롭다운)
+    │   └── 결과 테이블
+    │       ├── [퀀트] 종목명 · PBR · PSR · 배당률 · MFI · 현재가 · VWAP · 조건 · [분석]
+    │       └── [세력 탐지] 종목명 · 시그널일 · 점수 · 시그널 · 현재가 · 거래량비율
+    │
+    └── 보유종목 탭
+        ├── 보유 종목 수 표시
+        └── 보유 종목 테이블
+            └── 종목명 · 시장 · 현재가 · VWAP · 괴리율 · MFI · PBR
+                매수가 · 수량 · 메모 · 등록일 · [분석] [삭제]
 ```

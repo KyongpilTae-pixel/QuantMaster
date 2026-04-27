@@ -299,7 +299,7 @@ def load_holdings() -> list[dict]:
     conn = _connect()
     _ensure_tables(conn)
     _ensure_holdings(conn)
-    rows = conn.execute("SELECT * FROM holdings ORDER BY added_at DESC").fetchall()
+    rows = conn.execute("SELECT * FROM holdings ORDER BY added_at DESC, id DESC").fetchall()
     conn.close()
     return [
         {

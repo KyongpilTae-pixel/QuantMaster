@@ -346,3 +346,132 @@ def test_load_run_list_mixed_modes(two_results, two_whale_results):
     runs = scan_db.load_run_list()
     modes = {r["scan_mode"] for r in runs}
     assert modes == {"quant", "whale"}
+
+
+# ---------------------------------------------------------------------------
+# Holdings (보유 종목) CRUD
+# ---------------------------------------------------------------------------
+
+
+def _add_samsung(**kwargs):
+    return scan_db.add_holding(
+        name="삼성전자", symbol="005930", market="KOSPI", currency="KRW",
+        market_cap_str="4,000,000억", pbr=1.2, psr=1.5, div_yield="2.10%",
+        mfi=62.0, close=75_000.0, vwap_price=72_000.0, vwap_gap=4.2,
+        condition_text="원본", **kwargs,
+    )
+
+
+def test_add_holding_returns_positive_int():
+    hid = _add_samsung()
+    assert isinstance(hid, int) and hid > 0
+
+
+def test_load_holdings_empty_initially():
+    assert scan_db.load_holdings() == []
+
+
+def test_add_holding_appears_in_load():
+    _add_samsung()
+    rows = scan_db.load_holdings()
+    assert len(rows) == 1
+    assert rows[0]["name"] == "삼성전자"
+    assert rows[0]["symbol"] == "005930"
+
+
+def test_add_holding_optional_fields_stored():
+    _add_samsung(buy_price=74_000.0, quantity=10.0, memo="1차 매수")
+    row = scan_db.load_holdings()[0]
+    assert abs(row["buy_price"] - 74_000.0) < 1e-6
+    assert abs(row["quantity"] - 10.0) < 1e-6
+    assert row["memo"] == "1차 매수"
+
+
+def test_add_holding_numeric_fields():
+    _add_samsung()
+    row = scan_db.load_holdings()[0]
+    assert abs(row["pbr"] - 1.2) < 1e-6
+    assert abs(row["mfi"] - 62.0) < 1e-6
+    assert abs(row["close"] - 75_000.0) < 1e-6
+    assert abs(row["vwap_price"] - 72_000.0) < 1e-6
+    assert abs(row["vwap_gap"] - 4.2) < 1e-6
+
+
+def test_add_holding_text_fields():
+    _add_samsung()
+    row = scan_db.load_holdings()[0]
+    assert row["market"] == "KOSPI"
+    assert row["currency"] == "KRW"
+    assert row["div_yield"] == "2.10%"
+    assert row["condition_text"] == "원본"
+
+
+def test_add_holding_added_at_is_date_string():
+    _add_samsung()
+    row = scan_db.load_holdings()[0]
+    assert len(row["added_at"]) == 10          # "YYYY-MM-DD"
+    assert row["added_at"][4] == "-"
+
+
+def test_add_holding_id_is_int():
+    _add_samsung()
+    row = scan_db.load_holdings()[0]
+    assert isinstance(row["holding_id"], int)
+
+
+def test_is_holding_false_initially():
+    assert scan_db.is_holding("005930") is False
+
+
+def test_is_holding_true_after_add():
+    _add_samsung()
+    assert scan_db.is_holding("005930") is True
+
+
+def test_is_holding_false_for_different_symbol():
+    _add_samsung()
+    assert scan_db.is_holding("000660") is False
+
+
+def test_remove_holding_decreases_count():
+    hid = _add_samsung()
+    scan_db.add_holding(name="SK하이닉스", symbol="000660", market="KOSPI", currency="KRW")
+    scan_db.remove_holding(hid)
+    rows = scan_db.load_holdings()
+    assert len(rows) == 1
+    assert rows[0]["symbol"] == "000660"
+
+
+def test_is_holding_false_after_remove():
+    hid = _add_samsung()
+    assert scan_db.is_holding("005930") is True
+    scan_db.remove_holding(hid)
+    assert scan_db.is_holding("005930") is False
+
+
+def test_remove_holding_unknown_id_no_error():
+    scan_db.remove_holding(99999)   # 예외 없이 통과해야 함
+
+
+def test_load_holdings_newest_first():
+    scan_db.add_holding(name="종목A", symbol="AAA", market="KOSPI", currency="KRW")
+    scan_db.add_holding(name="종목B", symbol="BBB", market="KOSPI", currency="KRW")
+    rows = scan_db.load_holdings()
+    assert rows[0]["name"] == "종목B"   # 나중에 추가된 것이 먼저
+
+
+def test_load_holdings_multiple():
+    for i in range(5):
+        scan_db.add_holding(name=f"종목{i}", symbol=f"SYM{i:03d}", market="KOSPI", currency="KRW")
+    assert len(scan_db.load_holdings()) == 5
+
+
+def test_add_holding_us_market():
+    hid = scan_db.add_holding(
+        name="Apple", symbol="AAPL", market="NASDAQ", currency="USD",
+        close=180.0, pbr=35.0,
+    )
+    rows = scan_db.load_holdings()
+    assert rows[0]["currency"] == "USD"
+    assert rows[0]["market"] == "NASDAQ"
+    assert abs(rows[0]["close"] - 180.0) < 1e-6
