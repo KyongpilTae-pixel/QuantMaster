@@ -121,6 +121,18 @@ class State(rx.State):
     # Scanner results
     scan_results: List[ScanResult] = []
     selected_name: str = ""
+    selected_symbol: str = ""
+    selected_market: str = "KOSPI"
+    selected_currency: str = "KRW"
+    selected_market_cap_str: str = "-"
+    selected_pbr: float = 0.0
+    selected_psr: float = 0.0
+    selected_div_yield: str = "-"
+    selected_mfi: float = 0.0
+    selected_close: float = 0.0
+    selected_vwap_price: float = 0.0
+    selected_vwap_gap: float = 0.0
+    selected_condition: str = ""
     buy_msg: str = ""
     sell_msg: str = ""
 
@@ -171,7 +183,7 @@ class State(rx.State):
     holding_buy_price_input: str = ""
     holding_quantity_input: str = ""
     holding_memo_input: str = ""
-    holding_status: str = ""               # "" | "added" | "already"
+    holding_status: str = ""               # "" | "added" | "already" | "error"
 
     # UI state
     is_scanning: bool = False
@@ -234,32 +246,12 @@ class State(rx.State):
         self.holding_status = ""
 
     def add_to_holdings(self):
-        if not self.selected_name:
+        if not self.selected_name or not self.selected_symbol:
+            self.holding_status = "error"
             return
-        target = self._find_result(self.selected_name)
-        if target:
-            symbol = target.symbol
-            market = target.market_raw
-            currency = target.currency
-            market_cap_str = target.market_cap_str
-            pbr, psr, div_yield, mfi = target.pbr, target.psr, target.div_yield, target.mfi
-            close, vwap_price, vwap_gap = target.close, target.vwap_price, target.vwap_gap
-            condition_text = target.condition
-        else:
-            w = self._find_whale_result(self.selected_name)
-            if not w:
-                w = next((r for r in self.history_whale_results if r.name == self.selected_name), None)
-            if not w:
-                return
-            symbol = w.symbol
-            market = w.market
-            currency = "USD" if market in ("SP500", "NASDAQ", "US-ETF") else "KRW"
-            market_cap_str, pbr, psr, div_yield, mfi = "-", 0.0, 0.0, "-", 0.0
-            close, vwap_price, vwap_gap = w.close, 0.0, 0.0
-            condition_text = w.applied_step
 
         from utils.scan_db import add_holding, is_holding
-        if is_holding(symbol):
+        if is_holding(self.selected_symbol):
             self.holding_status = "already"
             return
 
@@ -276,13 +268,28 @@ class State(rx.State):
         except Exception:
             pass
 
-        add_holding(
-            name=self.selected_name, symbol=symbol, market=market, currency=currency,
-            market_cap_str=market_cap_str, pbr=pbr, psr=psr, div_yield=div_yield,
-            mfi=mfi, close=close, vwap_price=vwap_price, vwap_gap=vwap_gap,
-            condition_text=condition_text,
-            buy_price=buy_price, quantity=quantity, memo=self.holding_memo_input,
-        )
+        try:
+            add_holding(
+                name=self.selected_name,
+                symbol=self.selected_symbol,
+                market=self.selected_market,
+                currency=self.selected_currency,
+                market_cap_str=self.selected_market_cap_str,
+                pbr=self.selected_pbr,
+                psr=self.selected_psr,
+                div_yield=self.selected_div_yield,
+                mfi=self.selected_mfi,
+                close=self.selected_close,
+                vwap_price=self.selected_vwap_price,
+                vwap_gap=self.selected_vwap_gap,
+                condition_text=self.selected_condition,
+                buy_price=buy_price,
+                quantity=quantity,
+                memo=self.holding_memo_input,
+            )
+        except Exception:
+            self.holding_status = "error"
+            return
         self.holding_buy_price_input = ""
         self.holding_quantity_input = ""
         self.holding_memo_input = ""
@@ -305,6 +312,18 @@ class State(rx.State):
         self.buy_msg = buy
         self.sell_msg = sell
         self.selected_name = holding.name
+        self.selected_symbol = holding.symbol
+        self.selected_market = holding.market
+        self.selected_currency = holding.currency
+        self.selected_market_cap_str = holding.market_cap_str
+        self.selected_pbr = holding.pbr
+        self.selected_psr = holding.psr
+        self.selected_div_yield = holding.div_yield
+        self.selected_mfi = holding.mfi
+        self.selected_close = holding.close
+        self.selected_vwap_price = holding.vwap_price
+        self.selected_vwap_gap = holding.vwap_gap
+        self.selected_condition = holding.condition_text
         self.scan_mode = "quant"
         self.bt_summary = BacktestSummary()
         self.equity_data = []
@@ -375,6 +394,8 @@ class State(rx.State):
             from utils.scan_db import load_run_list
             runs = load_run_list()
             self.saved_runs = [SavedRun(run_id=r["id"], label=r["label"]) for r in runs]
+        elif tab == "holdings":
+            self.load_holdings_from_db()
 
     def set_selected_run_id(self, value: str):
         self.selected_run_id = value
@@ -458,6 +479,18 @@ class State(rx.State):
             w_target = self._find_whale_result(name)
             if not w_target:
                 return
+            self.selected_symbol = w_target.symbol
+            self.selected_market = w_target.market
+            self.selected_currency = "USD" if w_target.market in ("SP500", "NASDAQ", "US-ETF") else "KRW"
+            self.selected_market_cap_str = "-"
+            self.selected_pbr = 0.0
+            self.selected_psr = 0.0
+            self.selected_div_yield = "-"
+            self.selected_mfi = 0.0
+            self.selected_close = w_target.close
+            self.selected_vwap_price = 0.0
+            self.selected_vwap_gap = 0.0
+            self.selected_condition = w_target.applied_step
             self.buy_msg = ""
             self.sell_msg = ""
             self.bt_summary = BacktestSummary()
@@ -559,6 +592,19 @@ class State(rx.State):
         target = self._find_result(name)
         if not target:
             return
+
+        self.selected_symbol = target.symbol
+        self.selected_market = target.market_raw
+        self.selected_currency = target.currency
+        self.selected_market_cap_str = target.market_cap_str
+        self.selected_pbr = target.pbr
+        self.selected_psr = target.psr
+        self.selected_div_yield = target.div_yield
+        self.selected_mfi = target.mfi
+        self.selected_close = target.close
+        self.selected_vwap_price = target.vwap_price
+        self.selected_vwap_gap = target.vwap_gap
+        self.selected_condition = target.condition
 
         buy, sell = InvestmentReasoning.generate_report(
             target.name, target.pbr, int(self.vwap_period),
@@ -1960,6 +2006,13 @@ def analysis_tab() -> rx.Component:
                                 rx.callout.root(
                                     rx.callout.text("보유 목록에 추가됐습니다."),
                                     color_scheme="green", variant="soft", size="1",
+                                ),
+                            ),
+                            rx.cond(
+                                State.holding_status == "error",
+                                rx.callout.root(
+                                    rx.callout.text("등록 실패: 종목 데이터를 찾을 수 없습니다. 스캔 후 다시 시도하세요."),
+                                    color_scheme="red", variant="soft", size="1",
                                 ),
                             ),
                             spacing="3",
