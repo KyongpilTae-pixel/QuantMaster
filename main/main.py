@@ -133,6 +133,10 @@ class State(rx.State):
     selected_vwap_price: float = 0.0
     selected_vwap_gap: float = 0.0
     selected_condition: str = ""
+    selected_holding_buy_price: float = 0.0
+    selected_holding_quantity: float = 0.0
+    selected_holding_memo: str = ""
+    selected_is_holding: bool = False
     buy_msg: str = ""
     sell_msg: str = ""
 
@@ -251,7 +255,8 @@ class State(rx.State):
             return
 
         from utils.scan_db import add_holding, is_holding
-        if is_holding(self.selected_symbol):
+        already = is_holding(self.selected_symbol)
+        if already:
             self.holding_status = "already"
             return
 
@@ -287,8 +292,8 @@ class State(rx.State):
                 quantity=quantity,
                 memo=self.holding_memo_input,
             )
-        except Exception:
-            self.holding_status = "error"
+        except Exception as e:
+            self.holding_status = f"오류: {e}"
             return
         self.holding_buy_price_input = ""
         self.holding_quantity_input = ""
@@ -324,6 +329,10 @@ class State(rx.State):
         self.selected_vwap_price = holding.vwap_price
         self.selected_vwap_gap = holding.vwap_gap
         self.selected_condition = holding.condition_text
+        self.selected_holding_buy_price = holding.buy_price
+        self.selected_holding_quantity = holding.quantity
+        self.selected_holding_memo = holding.memo
+        self.selected_is_holding = True
         self.scan_mode = "quant"
         self.bt_summary = BacktestSummary()
         self.equity_data = []
@@ -491,6 +500,10 @@ class State(rx.State):
             self.selected_vwap_price = 0.0
             self.selected_vwap_gap = 0.0
             self.selected_condition = w_target.applied_step
+            self.selected_holding_buy_price = 0.0
+            self.selected_holding_quantity = 0.0
+            self.selected_holding_memo = ""
+            self.selected_is_holding = False
             self.buy_msg = ""
             self.sell_msg = ""
             self.bt_summary = BacktestSummary()
@@ -605,6 +618,10 @@ class State(rx.State):
         self.selected_vwap_price = target.vwap_price
         self.selected_vwap_gap = target.vwap_gap
         self.selected_condition = target.condition
+        self.selected_holding_buy_price = 0.0
+        self.selected_holding_quantity = 0.0
+        self.selected_holding_memo = ""
+        self.selected_is_holding = False
 
         buy, sell = InvestmentReasoning.generate_report(
             target.name, target.pbr, int(self.vwap_period),
@@ -1943,87 +1960,132 @@ def analysis_tab() -> rx.Component:
                     align_items="center",
                     spacing="3",
                 ),
-                # 보유 추가 폼
+                # 보유 종목 정보 (보유종목 탭에서 분석 클릭 시 표시)
                 rx.cond(
-                    State.show_add_holding_form,
+                    State.selected_is_holding,
                     rx.box(
-                        rx.vstack(
-                            rx.text("보유 종목 등록", weight="bold", size="2"),
-                            rx.hstack(
-                                rx.vstack(
-                                    rx.text("매수가", size="1", color="gray"),
-                                    rx.input(
-                                        placeholder="예) 45000",
-                                        value=State.holding_buy_price_input,
-                                        on_change=State.set_holding_buy_price_input,
-                                        size="2",
-                                        width="140px",
+                        rx.hstack(
+                            rx.badge("보유중", color_scheme="green", variant="solid", size="1"),
+                            rx.cond(
+                                State.selected_holding_buy_price > 0,
+                                rx.text(
+                                    "매수가: ",
+                                    rx.text.span(
+                                        State.selected_holding_buy_price.to_string(),
+                                        weight="bold",
                                     ),
-                                    spacing="1",
-                                ),
-                                rx.vstack(
-                                    rx.text("수량", size="1", color="gray"),
-                                    rx.input(
-                                        placeholder="예) 100",
-                                        value=State.holding_quantity_input,
-                                        on_change=State.set_holding_quantity_input,
-                                        size="2",
-                                        width="100px",
-                                    ),
-                                    spacing="1",
-                                ),
-                                rx.vstack(
-                                    rx.text("메모", size="1", color="gray"),
-                                    rx.input(
-                                        placeholder="선택 입력",
-                                        value=State.holding_memo_input,
-                                        on_change=State.set_holding_memo_input,
-                                        size="2",
-                                        width="200px",
-                                    ),
-                                    spacing="1",
-                                ),
-                                rx.button(
-                                    "등록",
-                                    on_click=State.add_to_holdings,
-                                    color_scheme="green",
                                     size="2",
-                                    margin_top="16px",
-                                ),
-                                align_items="flex-end",
-                                spacing="3",
-                                flex_wrap="wrap",
-                            ),
-                            rx.cond(
-                                State.holding_status == "already",
-                                rx.callout.root(
-                                    rx.callout.text("이미 보유 목록에 등록된 종목입니다."),
-                                    color_scheme="orange", variant="soft", size="1",
                                 ),
                             ),
                             rx.cond(
-                                State.holding_status == "added",
-                                rx.callout.root(
-                                    rx.callout.text("보유 목록에 추가됐습니다."),
-                                    color_scheme="green", variant="soft", size="1",
+                                State.selected_holding_quantity > 0,
+                                rx.text(
+                                    "수량: ",
+                                    rx.text.span(
+                                        State.selected_holding_quantity.to_string(),
+                                        weight="bold",
+                                    ),
+                                    size="2",
                                 ),
                             ),
                             rx.cond(
-                                State.holding_status == "error",
-                                rx.callout.root(
-                                    rx.callout.text("등록 실패: 종목 데이터를 찾을 수 없습니다. 스캔 후 다시 시도하세요."),
-                                    color_scheme="red", variant="soft", size="1",
+                                State.selected_holding_memo != "",
+                                rx.text(
+                                    "메모: ",
+                                    rx.text.span(State.selected_holding_memo, weight="bold"),
+                                    size="2",
                                 ),
                             ),
-                            spacing="3",
+                            spacing="4",
+                            align_items="center",
+                            flex_wrap="wrap",
                         ),
-                        padding="16px",
+                        padding="10px 16px",
                         border_radius="8px",
                         background="var(--green-2)",
                         border="1px solid var(--green-6)",
                         width="100%",
                         class_name="no-print",
                     ),
+                ),
+                # 보유 추가 폼 — rx.cond 대신 display로 토글 (이벤트 핸들러 등록 보장)
+                rx.box(
+                    rx.vstack(
+                        rx.text("보유 종목 등록", weight="bold", size="2"),
+                        rx.hstack(
+                            rx.vstack(
+                                rx.text("매수가", size="1", color="gray"),
+                                rx.input(
+                                    placeholder="예) 45000",
+                                    value=State.holding_buy_price_input,
+                                    on_change=State.set_holding_buy_price_input,
+                                    size="2",
+                                    width="140px",
+                                ),
+                                spacing="1",
+                            ),
+                            rx.vstack(
+                                rx.text("수량", size="1", color="gray"),
+                                rx.input(
+                                    placeholder="예) 100",
+                                    value=State.holding_quantity_input,
+                                    on_change=State.set_holding_quantity_input,
+                                    size="2",
+                                    width="100px",
+                                ),
+                                spacing="1",
+                            ),
+                            rx.vstack(
+                                rx.text("메모", size="1", color="gray"),
+                                rx.input(
+                                    placeholder="선택 입력",
+                                    value=State.holding_memo_input,
+                                    on_change=State.set_holding_memo_input,
+                                    size="2",
+                                    width="200px",
+                                ),
+                                spacing="1",
+                            ),
+                            rx.button(
+                                "등록",
+                                on_click=State.add_to_holdings,
+                                color_scheme="green",
+                                size="2",
+                            ),
+                            align_items="flex-end",
+                            spacing="3",
+                            flex_wrap="wrap",
+                        ),
+                        rx.cond(
+                            State.holding_status == "already",
+                            rx.callout.root(
+                                rx.callout.text("이미 보유 목록에 등록된 종목입니다."),
+                                color_scheme="orange", variant="soft", size="1",
+                            ),
+                        ),
+                        rx.cond(
+                            State.holding_status == "added",
+                            rx.callout.root(
+                                rx.callout.text("보유 목록에 추가됐습니다."),
+                                color_scheme="green", variant="soft", size="1",
+                            ),
+                        ),
+                        rx.cond(
+                            State.holding_status == "debug",
+                            rx.callout.root(
+                                rx.callout.text(State.holding_status),
+                                color_scheme="red", variant="soft", size="1",
+                            ),
+                        ),
+                        spacing="3",
+                    ),
+                    padding="16px",
+                    border_radius="8px",
+                    background="var(--green-2)",
+                    border="1px solid var(--green-6)",
+                    width="100%",
+                    class_name="no-print",
+                    display=rx.cond(State.show_add_holding_form, "block", "none"),
                 ),
                 # 퀀트 모드: 매수 근거 / 분할 매수 플랜 / 지표 가이드 / 매도 가이드
                 rx.cond(
