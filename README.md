@@ -125,13 +125,14 @@ QuantMaster/
 - `add_holding / load_holdings / remove_holding / is_holding` — 보유 종목 CRUD.
 
 ### `main/main.py`
-- `State` — Reflex 앱 상태 (스캔 결과 · 선택 종목 메타 · 차트 데이터 · 백테스트 요약 · 보유 종목).
+- `State` — Reflex 앱 상태 (스캔 결과 · 선택 종목 메타 · 차트 데이터 · 백테스트 요약 · 보유 종목 · 포트폴리오 집계).
 - `run_scan()` — 비동기 스캔 실행, 진행 상태 실시간 업데이트.
 - `select_stock()` — 종목 선택 시 투자 근거 생성 + 차트 데이터 비동기 로드 + selected_* 메타 저장.
 - `run_backtest()` — 선택 종목 백테스트 비동기 실행.
 - `add_to_holdings()` — 분석 탭에서 현재 종목을 보유 목록에 등록.
-- `remove_holding()` — 보유 종목 삭제 (DB + State 동시 갱신).
+- `remove_holding()` — 보유 종목 삭제 후 포트폴리오 집계 재계산.
 - `select_holding_for_analysis()` — 보유종목 탭에서 분석 탭으로 이동.
+- `load_holdings_from_db()` — DB에서 보유 종목 로드 + 종목별 투자금/손익/손익률 계산 + 포트폴리오 집계(총 투자금·총 손익·손익률) 갱신.
 
 ---
 
@@ -197,7 +198,7 @@ reflex run
 conda activate quantmaster
 cd QuantMaster
 
-# 단위 테스트 실행 (네트워크 불필요, 69건)
+# 단위 테스트 실행 (네트워크 불필요, 199건)
 pytest tests/ --ignore=tests/test_data_loader.py -v
 
 # 통합 테스트 실행 (실제 네트워크 필요)
@@ -211,7 +212,11 @@ pytest tests/test_data_loader.py -m integration -v
 | `test_indicators.py` | VWAP 수식·MFI 범위·OBV 방향성 | 15 | ✗ |
 | `test_backtester.py` | MDD·Sharpe·_simulate 로직 | 13 | ✗ |
 | `test_scanner.py` | 완화 단계 구조·스캔 로직(mock) | 10 | ✗ |
-| `test_scan_db.py` | 스캔 저장·히스토리·보유 종목 CRUD | 41 | ✗ |
+| `test_psr.py` | 분기 PSR 계산 로직 | 5 | ✗ |
+| `test_strategy_engine.py` | 분할 매수 플랜 계산 | 19 | ✗ |
+| `test_breakout_filter.py` | 돌파 필터 로직 | 18 | ✗ |
+| `test_accumulation_indicators.py` | 세력 매집 지표 계산 | 59 | ✗ |
+| `test_scan_db.py` | 스캔 저장·히스토리·보유 종목 CRUD·포트폴리오 집계 | 60 | ✗ |
 | `test_data_loader.py` | NAVER·FDR 실제 연결 | 9 | ✓ |
 
 ---
@@ -281,9 +286,19 @@ QuantMaster Pro
     │       ├── [퀀트] 종목명 · PBR · PSR · 배당률 · MFI · 현재가 · VWAP · 조건 · [분석]
     │       └── [세력 탐지] 종목명 · 시그널일 · 점수 · 시그널 · 현재가 · 거래량비율
     │
-    └── 보유종목 탭
-        ├── 보유 종목 수 표시
-        └── 보유 종목 테이블
-            └── 종목명 · 시장 · 현재가 · VWAP · 괴리율 · MFI · PBR
-                매수가 · 수량 · 메모 · 등록일 · [분석] [삭제]
+    ├── 보유종목 탭
+    │   ├── 보유 종목 수 표시
+    │   └── 보유 종목 테이블
+    │       └── 종목명 · 시장 · 현재가 · VWAP · 괴리율 · MFI · PBR
+    │           매수가 · 수량 · 메모 · 등록일 · [분석] [삭제]
+    │
+    └── 보유종목분석 탭
+        ├── 포트폴리오 요약 카드 4종
+        │   ├── 총 종목 수
+        │   ├── 총 투자금
+        │   ├── 예상 손익 (양수=초록 / 음수=빨강)
+        │   └── 손익률 % (양수=초록 / 음수=빨강)
+        └── 종목별 손익 테이블
+            └── 종목명 · 시장 · 매수가 · 현재가 · 수량 · 투자금
+                손익금액 · 손익률(%) · MFI · VWAP괴리율 · 메모 · [분석]
 ```

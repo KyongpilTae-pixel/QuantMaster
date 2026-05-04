@@ -21,7 +21,8 @@ QuantMaster/
 │   ├── data_loader.py       # NAVER Finance(KR) + yfinance(US) 데이터 수집
 │   ├── indicators.py        # VWAP, TWAP, MFI, OBV 계산
 │   ├── reasoning.py         # 매수근거/매도가이드 텍스트 생성
-│   └── strategy_engine.py   # 3단계 분할 매수 플랜 계산
+│   ├── strategy_engine.py   # 3단계 분할 매수 플랜 계산
+│   └── scan_db.py           # SQLite CRUD (스캔·히스토리·보유종목)
 ├── scanner.py               # 3단계 하이브리드 스캔 + 자동 임계값 완화
 ├── backtester.py            # VWAP 돌파 전략 백테스트
 ├── rxconfig.py              # Reflex 설정 (app_name="main")
@@ -33,7 +34,10 @@ QuantMaster/
     ├── test_scanner.py
     ├── test_psr.py
     ├── test_strategy_engine.py
-    └── test_data_loader.py  # @integration 마크 (네트워크 필요)
+    ├── test_breakout_filter.py
+    ├── test_accumulation_indicators.py
+    ├── test_scan_db.py       # 보유종목 CRUD + 포트폴리오 집계 로직 (60건)
+    └── test_data_loader.py   # @integration 마크 (네트워크 필요)
 ```
 
 ---
@@ -90,23 +94,40 @@ QuantMaster/
 
 ---
 
-## 분석 탭 구성 순서
+## 탭 구성
 
-1. 매수 근거
-2. **분할 매수 플랜** (예산 입력 → 계산하기)
-3. MFI/OBV 지표 설명
-4. 매도 가이드
-5. 가격 차트 (종가 + VWAP + TWAP20 + TWAP60)
-6. 분기별 PSR 추이 (바 차트)
-7. 적용된 스캔 조건
-8. 실제 측정값
+### 분석 탭 순서
+1. 종목 헤더 (이름 + 종가 기준일 + `+ 보유 추가` / `PDF 저장`)
+2. 보유 정보 바 (보유중 뱃지 + 매수가/수량/메모) — 보유 종목 분석 시에만 표시
+3. 보유 추가 폼 (display toggle, rx.cond 미사용)
+4. 매수 근거 / **분할 매수 플랜** / 지표 가이드 / 매도 가이드 (퀀트 모드)
+5. 가격 차트 (종가 + VWAP + TWAP20/60/120 + SMA120)
+6. 분기별 PSR 추이 (바 차트, 퀀트 모드)
+7. 적용된 스캔 조건 + 실제 측정값 (퀀트 모드)
+8. 백테스트 실행 버튼
+
+### 메인 탭 목록
+| value | 탭명 | 설명 |
+|-------|------|------|
+| scanner | 스캐너 | 스캔 결과 테이블 |
+| analysis | 분석 | 선택 종목 상세 분석 |
+| backtest | 백테스트 | VWAP 전략 시뮬레이션 결과 |
+| history | 히스토리 | 저장된 스캔 기록 조회 |
+| holdings | 보유종목 | 보유 종목 목록 · 삭제 |
+| portfolio | 보유종목분석 | 포트폴리오 손익 집계 + 종목별 손익 |
+
+### 보유종목분석 탭 (portfolio)
+- 집계 카드 4개: 총 종목 수 / 총 투자금 / 예상 손익 / 손익률
+- 종목별 테이블: 매수가·현재가·수량·투자금·손익금액·손익률%·MFI·VWAP괴리율·메모·[분석]
+- 매수가/수량 미입력 시 손익 칸 `-` 표시
+- State.holdings_analysis: List[dict] — 각 항목에 `has_buy`, `pnl_positive`, `pct_positive`, `is_us` 등 **미리 계산된 bool 플래그** 포함 (rx.foreach 내에서 ObjectItemOperation 비교 불가 문제 우회)
 
 ---
 
 ## 테스트
 
 ```bash
-# 단위 테스트 (네트워크 불필요, 69건)
+# 단위 테스트 (네트워크 불필요, 199건)
 pytest tests/ --ignore=tests/test_data_loader.py -v
 
 # 통합 테스트 (실제 네트워크 필요)
@@ -124,4 +145,7 @@ pytest tests/test_data_loader.py -m integration -v
 | MFI 순수 상승 추세에서 NaN | `neg_mf=0`일 때 MFI=100으로 처리 |
 | Reflex 슬라이더 반응 없음 | `float` → `List[float]` 상태 변수로 변경 |
 | recharts reference_line label TypeError | dict → str로 변경 |
-| 포트 충돌 (3000/8000) | `taskkill /f /im python.exe & node.exe` |
+| 포트 충돌 (3000/8000) | PowerShell WMI `Terminate()` + `--backend-port 7500` |
+| rx.cond(False) 내 버튼 이벤트 미등록 | `display=rx.cond(...)` CSS 토글로 대체 |
+| rx.foreach 내 dict var 비교 (`> 0`) TypeError | List[dict]에 bool 플래그 미리 계산 후 저장 |
+| add_to_holdings 버튼 무반응 | selected_* 14개 필드에 선택 시점 메타 저장 방식으로 전환 |

@@ -475,3 +475,111 @@ def test_add_holding_us_market():
     assert rows[0]["currency"] == "USD"
     assert rows[0]["market"] == "NASDAQ"
     assert abs(rows[0]["close"] - 180.0) < 1e-6
+
+
+# ---------------------------------------------------------------------------
+# 포트폴리오 집계 계산 (load_holdings 반환값 기반)
+# ---------------------------------------------------------------------------
+
+
+def _portfolio_aggregate(rows: list) -> dict:
+    """load_holdings 결과에서 포트폴리오 집계를 계산하는 순수 함수 (State 로직 복제)."""
+    total_investment = 0.0
+    total_pnl = 0.0
+    items = []
+    for h in rows:
+        investment = pnl = pnl_pct = 0.0
+        if h["buy_price"] > 0 and h["quantity"] > 0:
+            investment = round(h["buy_price"] * h["quantity"], 0)
+            pnl = round((h["close"] - h["buy_price"]) * h["quantity"], 0)
+            pnl_pct = round((h["close"] - h["buy_price"]) / h["buy_price"] * 100, 1)
+            total_investment += investment
+            total_pnl += pnl
+        items.append({"investment": investment, "pnl": pnl, "pnl_pct": pnl_pct})
+    pnl_pct_total = round(total_pnl / total_investment * 100, 1) if total_investment > 0 else 0.0
+    return {
+        "count": len(rows),
+        "total_investment": round(total_investment, 0),
+        "total_pnl": round(total_pnl, 0),
+        "pnl_pct": pnl_pct_total,
+        "items": items,
+    }
+
+
+def test_portfolio_investment_calculation():
+    """투자금 = 매수가 × 수량."""
+    scan_db.add_holding(
+        name="삼성전자", symbol="005930", market="KOSPI", currency="KRW",
+        buy_price=70_000.0, quantity=10.0, close=75_000.0,
+    )
+    rows = scan_db.load_holdings()
+    agg = _portfolio_aggregate(rows)
+    assert abs(agg["total_investment"] - 700_000.0) < 1.0
+
+
+def test_portfolio_pnl_positive():
+    """현재가 > 매수가 → 손익 양수."""
+    scan_db.add_holding(
+        name="삼성전자", symbol="005930", market="KOSPI", currency="KRW",
+        buy_price=70_000.0, quantity=10.0, close=75_000.0,
+    )
+    rows = scan_db.load_holdings()
+    agg = _portfolio_aggregate(rows)
+    assert agg["total_pnl"] > 0
+    assert abs(agg["total_pnl"] - 50_000.0) < 1.0
+
+
+def test_portfolio_pnl_negative():
+    """현재가 < 매수가 → 손익 음수."""
+    scan_db.add_holding(
+        name="삼성전자", symbol="005930", market="KOSPI", currency="KRW",
+        buy_price=80_000.0, quantity=5.0, close=75_000.0,
+    )
+    rows = scan_db.load_holdings()
+    agg = _portfolio_aggregate(rows)
+    assert agg["total_pnl"] < 0
+    assert abs(agg["total_pnl"] - (-25_000.0)) < 1.0
+
+
+def test_portfolio_pnl_pct_accuracy():
+    """손익률 = (현재가 - 매수가) / 매수가 × 100."""
+    scan_db.add_holding(
+        name="삼성전자", symbol="005930", market="KOSPI", currency="KRW",
+        buy_price=100_000.0, quantity=1.0, close=110_000.0,
+    )
+    rows = scan_db.load_holdings()
+    agg = _portfolio_aggregate(rows)
+    assert abs(agg["items"][0]["pnl_pct"] - 10.0) < 0.01
+
+
+def test_portfolio_no_buy_price_excluded_from_aggregate():
+    """매수가 미입력 종목은 집계에서 제외."""
+    scan_db.add_holding(
+        name="삼성전자", symbol="005930", market="KOSPI", currency="KRW",
+        buy_price=70_000.0, quantity=10.0, close=75_000.0,
+    )
+    scan_db.add_holding(
+        name="SK하이닉스", symbol="000660", market="KOSPI", currency="KRW",
+        buy_price=0.0, quantity=0.0, close=200_000.0,   # 매수가 미입력
+    )
+    rows = scan_db.load_holdings()
+    agg = _portfolio_aggregate(rows)
+    assert abs(agg["total_investment"] - 700_000.0) < 1.0  # SK하이닉스 제외
+
+
+def test_portfolio_multi_holding_aggregate():
+    """복수 종목 합산 집계."""
+    scan_db.add_holding(
+        name="A", symbol="AAA", market="KOSPI", currency="KRW",
+        buy_price=10_000.0, quantity=10.0, close=12_000.0,
+    )
+    scan_db.add_holding(
+        name="B", symbol="BBB", market="KOSPI", currency="KRW",
+        buy_price=20_000.0, quantity=5.0, close=18_000.0,
+    )
+    rows = scan_db.load_holdings()
+    agg = _portfolio_aggregate(rows)
+    # 투자금 합산: 100,000 + 100,000 = 200,000
+    assert abs(agg["total_investment"] - 200_000.0) < 1.0
+    # 손익 합산: +20,000 + (-10,000) = +10,000
+    assert abs(agg["total_pnl"] - 10_000.0) < 1.0
