@@ -177,6 +177,13 @@ class State(rx.State):
     whale_max_minutes: int = 5        # 최대 탐색 시간 (분)
     whale_progress: str = ""          # 실시간 진행률 텍스트
     whale_stop_requested: bool = False  # 사용자 중단 요청 플래그
+
+    # 하락장 방어 스캔
+    defensive_results: List[dict] = []
+    defensive_period: int = 60           # 분석 기간 (일)
+    defensive_max_beta: List[float] = [0.8]  # slider → List[float]
+    defensive_min_mktcap: int = 10_000   # 최소 시가총액 (억원)
+
     # 세력 탐지 분석 차트 데이터
     whale_chart_data: List[dict] = []      # date, OBV, Short_Balance
     whale_highlights: List[dict] = []      # [{x1, x2}] 매집 구간 음영
@@ -276,6 +283,16 @@ class State(rx.State):
                 self.whale_max_minutes = v
         except (ValueError, TypeError):
             pass
+
+    def set_defensive_period(self, value: int):
+        self.defensive_period = value
+
+    def set_defensive_max_beta(self, values: list):
+        if values:
+            self.defensive_max_beta = [round(float(values[0]), 1)]
+
+    def set_defensive_min_mktcap(self, value: int):
+        self.defensive_min_mktcap = value
 
     def set_holding_buy_price_input(self, value: str):
         self.holding_buy_price_input = value
@@ -1134,6 +1151,35 @@ class State(rx.State):
             yield
             return
 
+        # ── 하락방어 스캔 ────────────────────────────────────────────────
+        if self.scan_mode == "defensive":
+            from utils.defensive_scanner import scan_defensive_stocks
+            self.is_scanning = True
+            self.defensive_results = []
+            mkt = self.market if self.market in ("KOSPI", "KOSDAQ") else "KOSPI"
+            self.status_msg = f"{mkt} 하락방어 종목 분석 중... (약 1~2분 소요)"
+            yield
+            try:
+                raw = await asyncio.to_thread(
+                    scan_defensive_stocks,
+                    mkt,
+                    self.defensive_period,
+                    self.defensive_max_beta[0],
+                    self.defensive_min_mktcap,
+                    30,
+                )
+                self.defensive_results = raw
+                cnt = len(raw)
+                self.status_msg = (
+                    f"하락방어 종목 {cnt}개 발굴 완료" if cnt else "조건을 만족하는 종목이 없습니다."
+                )
+            except Exception as e:
+                self.status_msg = f"오류: {e}"
+            finally:
+                self.is_scanning = False
+            yield
+            return
+
         # ── 퀀트 스캔 ────────────────────────────────────────────────────
         self.is_scanning = True
         self.status_msg = "시장 데이터 수집 중..."
@@ -1294,6 +1340,7 @@ def sidebar() -> rx.Component:
                 rx.select.content(
                     rx.select.item("퀀트 스캔", value="quant"),
                     rx.select.item("세력 탐지", value="whale"),
+                    rx.select.item("하락방어", value="defensive"),
                 ),
                 value=State.scan_mode,
                 on_change=State.set_scan_mode,
@@ -1375,66 +1422,135 @@ def sidebar() -> rx.Component:
                     spacing="3",
                     width="100%",
                 ),
-                # ── 세력 탐지 전용 옵션 ──────────────────────────────
-                rx.vstack(
-                    rx.text("세력 탐지 옵션", size="2", color="gray"),
-                    rx.hstack(
-                        rx.checkbox(
-                            checked=State.use_alpha,
-                            on_change=State.set_use_alpha,
-                        ),
-                        rx.text("지수 대비 알파 필터", size="2"),
-                        spacing="2",
-                        align_items="center",
-                    ),
-                    rx.hstack(
-                        rx.checkbox(
-                            checked=State.use_short_filter,
-                            on_change=State.set_use_short_filter,
-                        ),
-                        rx.vstack(
-                            rx.text("공매도 잔고 필터", size="2"),
-                            rx.text("(미국 시장만 적용)", size="1", color="gray"),
-                            spacing="0",
-                            align_items="start",
-                        ),
-                        spacing="2",
-                        align_items="center",
-                    ),
-                    rx.divider(),
-                    rx.text("최대 탐색 시간", size="2", color="gray"),
-                    rx.hstack(
-                        rx.input(
-                            value=State.whale_max_minutes,
-                            on_change=State.set_whale_max_minutes,
-                            type="number",
-                            min="1",
-                            max="30",
-                            width="70px",
-                        ),
-                        rx.text("분 (1~30)", size="1", color="gray"),
-                        spacing="2",
-                        align_items="center",
-                    ),
-                    # 스캔 중 진행률
-                    rx.cond(
-                        State.whale_progress != "",
-                        rx.box(
-                            rx.text(
-                                State.whale_progress,
-                                size="1",
-                                color="blue",
-                                white_space="pre-wrap",
+                rx.cond(
+                    State.scan_mode == "whale",
+                    # ── 세력 탐지 전용 옵션 ──────────────────────────────
+                    rx.vstack(
+                        rx.text("세력 탐지 옵션", size="2", color="gray"),
+                        rx.hstack(
+                            rx.checkbox(
+                                checked=State.use_alpha,
+                                on_change=State.set_use_alpha,
                             ),
-                            padding="8px",
-                            border_radius="6px",
-                            background="var(--blue-2)",
-                            border="1px solid var(--blue-4)",
+                            rx.text("지수 대비 알파 필터", size="2"),
+                            spacing="2",
+                            align_items="center",
+                        ),
+                        rx.hstack(
+                            rx.checkbox(
+                                checked=State.use_short_filter,
+                                on_change=State.set_use_short_filter,
+                            ),
+                            rx.vstack(
+                                rx.text("공매도 잔고 필터", size="2"),
+                                rx.text("(미국 시장만 적용)", size="1", color="gray"),
+                                spacing="0",
+                                align_items="start",
+                            ),
+                            spacing="2",
+                            align_items="center",
+                        ),
+                        rx.divider(),
+                        rx.text("최대 탐색 시간", size="2", color="gray"),
+                        rx.hstack(
+                            rx.input(
+                                value=State.whale_max_minutes,
+                                on_change=State.set_whale_max_minutes,
+                                type="number",
+                                min="1",
+                                max="30",
+                                width="70px",
+                            ),
+                            rx.text("분 (1~30)", size="1", color="gray"),
+                            spacing="2",
+                            align_items="center",
+                        ),
+                        # 스캔 중 진행률
+                        rx.cond(
+                            State.whale_progress != "",
+                            rx.box(
+                                rx.text(
+                                    State.whale_progress,
+                                    size="1",
+                                    color="blue",
+                                    white_space="pre-wrap",
+                                ),
+                                padding="8px",
+                                border_radius="6px",
+                                background="var(--blue-2)",
+                                border="1px solid var(--blue-4)",
+                                width="100%",
+                            ),
+                        ),
+                        spacing="3",
+                        width="100%",
+                    ),
+                    # ── 하락방어 전용 옵션 ───────────────────────────────
+                    rx.vstack(
+                        rx.text("분석 기간", size="2", color="gray"),
+                        rx.hstack(
+                            rx.button(
+                                "30일",
+                                size="1",
+                                variant=rx.cond(State.defensive_period == 30, "solid", "soft"),
+                                on_click=State.set_defensive_period(30),
+                            ),
+                            rx.button(
+                                "60일",
+                                size="1",
+                                variant=rx.cond(State.defensive_period == 60, "solid", "soft"),
+                                on_click=State.set_defensive_period(60),
+                            ),
+                            rx.button(
+                                "120일",
+                                size="1",
+                                variant=rx.cond(State.defensive_period == 120, "solid", "soft"),
+                                on_click=State.set_defensive_period(120),
+                            ),
+                            spacing="2",
+                        ),
+                        rx.hstack(
+                            rx.text("Beta 상한: ", size="2", color="gray"),
+                            rx.text(State.defensive_max_beta[0], size="2"),
+                        ),
+                        rx.slider(
+                            min=0.3,
+                            max=1.0,
+                            step=0.1,
+                            value=State.defensive_max_beta,
+                            on_change=State.set_defensive_max_beta,
                             width="100%",
                         ),
+                        rx.text("최소 시가총액", size="2", color="gray"),
+                        rx.hstack(
+                            rx.button(
+                                "1조+",
+                                size="1",
+                                variant=rx.cond(State.defensive_min_mktcap == 10_000, "solid", "soft"),
+                                on_click=State.set_defensive_min_mktcap(10_000),
+                            ),
+                            rx.button(
+                                "3천억+",
+                                size="1",
+                                variant=rx.cond(State.defensive_min_mktcap == 3_000, "solid", "soft"),
+                                on_click=State.set_defensive_min_mktcap(3_000),
+                            ),
+                            rx.button(
+                                "전체",
+                                size="1",
+                                variant=rx.cond(State.defensive_min_mktcap == 0, "solid", "soft"),
+                                on_click=State.set_defensive_min_mktcap(0),
+                            ),
+                            spacing="2",
+                        ),
+                        rx.text(
+                            "KOSPI/KOSDAQ만 지원 (약 1~2분 소요)",
+                            size="1",
+                            color="gray",
+                        ),
+                        spacing="3",
+                        width="100%",
                     ),
-                    spacing="3",
-                    width="100%",
                 ),
             ),
 
@@ -1503,15 +1619,18 @@ def sidebar() -> rx.Component:
 
 def scanner_tab() -> rx.Component:
     return rx.cond(
-        State.scan_mode == "whale",
-        whale_scanner_table(),
+        State.scan_mode == "defensive",
+        defensive_scanner_table(),
         rx.cond(
-            State.scan_results.length() == 0,
-            rx.center(
-                rx.text("왼쪽 사이드바에서 스캔을 실행하세요.", color="gray"),
-                height="200px",
-            ),
-            rx.table.root(
+            State.scan_mode == "whale",
+            whale_scanner_table(),
+            rx.cond(
+                State.scan_results.length() == 0,
+                rx.center(
+                    rx.text("왼쪽 사이드바에서 스캔을 실행하세요.", color="gray"),
+                    height="200px",
+                ),
+                rx.table.root(
             rx.table.header(
                 rx.table.row(
                     rx.table.column_header_cell("종목명"),
@@ -1564,6 +1683,70 @@ def scanner_tab() -> rx.Component:
             width="100%",
             variant="surface",
         ),
+        ),
+        ),
+    )
+
+
+def defensive_scanner_table() -> rx.Component:
+    """하락장 방어 스캔 결과 테이블."""
+    return rx.cond(
+        State.defensive_results.length() == 0,
+        rx.center(
+            rx.text("왼쪽 사이드바에서 하락방어 스캔을 실행하세요. (KOSPI/KOSDAQ)", color="gray"),
+            height="200px",
+        ),
+        rx.table.root(
+            rx.table.header(
+                rx.table.row(
+                    rx.table.column_header_cell("순위"),
+                    rx.table.column_header_cell("종목명"),
+                    rx.table.column_header_cell("시가총액"),
+                    rx.table.column_header_cell("Beta"),
+                    rx.table.column_header_cell("RS"),
+                    rx.table.column_header_cell("하락포착률"),
+                    rx.table.column_header_cell("하락일상승%"),
+                    rx.table.column_header_cell("현재가"),
+                    rx.table.column_header_cell(""),
+                )
+            ),
+            rx.table.body(
+                rx.foreach(
+                    State.defensive_results,
+                    lambda r: rx.table.row(
+                        rx.table.cell(r["rank"]),
+                        rx.table.cell(r["name"]),
+                        rx.table.cell(r["mktcap_str"]),
+                        rx.table.cell(r["beta_str"]),
+                        rx.table.cell(
+                            rx.badge(
+                                r["rs_str"],
+                                color_scheme=rx.cond(r["rs_positive"], "green", "gray"),
+                                variant="soft",
+                            )
+                        ),
+                        rx.table.cell(
+                            rx.badge(
+                                r["dc_str"],
+                                color_scheme=rx.cond(r["dc_good"], "green", "orange"),
+                                variant="soft",
+                            )
+                        ),
+                        rx.table.cell(r["up_str"]),
+                        rx.table.cell(r["close_str"]),
+                        rx.table.cell(
+                            rx.button(
+                                "분석",
+                                size="1",
+                                variant="soft",
+                                on_click=State.goto_lookup_from_leaders(r["code"], False),
+                            )
+                        ),
+                    ),
+                )
+            ),
+            width="100%",
+            variant="surface",
         ),
     )
 

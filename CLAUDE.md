@@ -108,10 +108,25 @@ QuantMaster/
 7. 적용된 스캔 조건 + 실제 측정값 (퀀트 모드)
 8. 백테스트 실행 버튼
 
+### 스캔 모드 (scan_mode 값)
+| value | 모드명 | 설명 |
+|-------|--------|------|
+| quant | 퀀트 스캔 | PBR+GPA+VWAP+MFI+OBV 필터 |
+| whale | 세력 탐지 | OBV스파이크+돌파+알파+숏커버 |
+| defensive | 하락방어 | Beta+RS+Downside Capture (KOSPI/KOSDAQ 전용) |
+
+### 하락방어 스캔 (defensive mode)
+- `utils/defensive_scanner.py`: `scan_defensive_stocks(market, period_days, max_beta, min_mktcap_eok, top_n)`
+- 지표: Beta(Cov/Var), RS(누적수익률 비율), Downside Capture(하락일 평균수익 비율), Up-on-Down(하락일 중 상승한 날 %)
+- 시가총액 필터: 기본 1조(10,000억). Marcap은 원 단위 → `min_mktcap_eok × 1e8`로 비교
+- 정렬: RS 내림차순 → Beta 오름차순 → DC 오름차순
+- bool 플래그: `rs_positive`(RS>1.0), `dc_good`(DC<80%) — rx.foreach 안전용
+- State: `defensive_results(List[dict])`, `defensive_period(int)`, `defensive_max_beta(List[float])`, `defensive_min_mktcap(int)`
+
 ### 메인 탭 목록
 | value | 탭명 | 설명 |
 |-------|------|------|
-| scanner | 스캐너 | 스캔 결과 테이블 |
+| scanner | 스캐너 | 스캔 결과 테이블 (퀀트/세력/하락방어) |
 | analysis | 분석 | 선택 종목 상세 분석 |
 | backtest | 백테스트 | VWAP 전략 시뮬레이션 결과 |
 | history | 히스토리 | 저장된 스캔 기록 조회 |
