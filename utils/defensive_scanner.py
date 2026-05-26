@@ -83,6 +83,14 @@ def _calc_one(args: tuple) -> dict | None:
         if beta is None or rs is None:
             return None
 
+        # 당일 / 5일 수익률
+        today_chg = round(float(stock_ret.iloc[-1]) * 100, 2) if len(stock_ret) >= 1 else None
+        five_day_chg = (
+            round(float((1 + stock_ret.tail(5)).prod() - 1) * 100, 2)
+            if len(stock_ret) >= 5
+            else None
+        )
+
         return {
             "code": code,
             "name": name,
@@ -93,6 +101,8 @@ def _calc_one(args: tuple) -> dict | None:
             "downside_capture": dc,
             "up_on_down_pct": up_on_down,
             "n_down_days": n_down,
+            "today_chg": today_chg,
+            "five_day_chg": five_day_chg,
         }
     except Exception:
         return None
@@ -175,6 +185,13 @@ def scan_defensive_stocks(
         r["up_str"] = (
             f"{r['up_on_down_pct']:.1f}%" if r["up_on_down_pct"] is not None else "-"
         )
+        # 당일/5일 표시 문자열 + bool 플래그
+        t = r["today_chg"]
+        f5 = r["five_day_chg"]
+        r["today_chg_str"] = f"{t:+.2f}%" if t is not None else "-"
+        r["five_day_chg_str"] = f"{f5:+.2f}%" if f5 is not None else "-"
+        r["today_chg_positive"] = t is not None and t > 0
+        r["five_day_chg_positive"] = f5 is not None and f5 > 0
         # rx.foreach bool flags
         r["rs_positive"] = r["rs"] > 1.0
         r["dc_good"] = r["downside_capture"] is not None and r["downside_capture"] < 80.0

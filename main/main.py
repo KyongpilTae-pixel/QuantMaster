@@ -1706,6 +1706,8 @@ def defensive_scanner_table() -> rx.Component:
                     rx.table.column_header_cell("RS"),
                     rx.table.column_header_cell("하락포착률"),
                     rx.table.column_header_cell("하락일상승%"),
+                    rx.table.column_header_cell("당일"),
+                    rx.table.column_header_cell("5일"),
                     rx.table.column_header_cell("현재가"),
                     rx.table.column_header_cell(""),
                 )
@@ -1733,6 +1735,20 @@ def defensive_scanner_table() -> rx.Component:
                             )
                         ),
                         rx.table.cell(r["up_str"]),
+                        rx.table.cell(
+                            rx.text(
+                                r["today_chg_str"],
+                                color=rx.cond(r["today_chg_positive"], "green", "red"),
+                                size="2",
+                            )
+                        ),
+                        rx.table.cell(
+                            rx.text(
+                                r["five_day_chg_str"],
+                                color=rx.cond(r["five_day_chg_positive"], "green", "red"),
+                                size="2",
+                            )
+                        ),
                         rx.table.cell(r["close_str"]),
                         rx.table.cell(
                             rx.button(
