@@ -1,12 +1,16 @@
 """
 NAVER Finance 기반 시장 데이터 로더 (한국 + 미국).
 한국: NAVER Finance 스크래핑 (pykrx KRX API 연결 불가로 대체)
-미국: FinanceDataReader + yfinance 병렬 조회
+미국: FinanceDataReader + yfinance 병렬 조회 + Yahoo Finance 스크리너
 """
 
+import json
+import os
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
+
+_CACHE_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "cache")
 
 import FinanceDataReader as fdr
 import numpy as np
@@ -420,3 +424,684 @@ class QuantDataLoader:
         df = df.dropna(subset=["Close", "Volume"])
         df = df[df["Volume"] > 0]
         return df
+
+
+# ---------------------------------------------------------------------------
+# 단일 종목 조회 (종목조회 탭용)
+# ---------------------------------------------------------------------------
+
+_kr_listing_cache: pd.DataFrame | None = None
+
+
+def _get_kr_listing() -> pd.DataFrame:
+    global _kr_listing_cache
+    if _kr_listing_cache is None:
+        _kr_listing_cache = fdr.StockListing("KRX")
+    return _kr_listing_cache
+
+
+def _search_kr_symbol(query: str) -> tuple[str, str]:
+    """종목명 또는 6자리 코드로 (심볼, 시장) 반환. 없으면 ("", "")."""
+    try:
+        listing = _get_kr_listing()
+        code_col = "Code" if "Code" in listing.columns else "Symbol"
+        name_col = next((c for c in ["Name", "회사명", "종목명"] if c in listing.columns), None)
+        mkt_col = next((c for c in ["Market", "시장구분"] if c in listing.columns), None)
+
+        q = query.strip()
+        match = listing[listing[code_col].str.strip() == q]
+        if match.empty and name_col:
+            match = listing[listing[name_col].str.contains(q, case=False, na=False)]
+        if match.empty:
+            return ("", "")
+
+        row = match.iloc[0]
+        code = str(row[code_col]).strip().zfill(6)
+        market = str(row[mkt_col]).upper() if mkt_col else "KOSPI"
+        return (code, market)
+    except Exception:
+        return ("", "")
+
+
+def _fetch_kr_naver_fundamentals(code: str) -> dict | None:
+    """NAVER polling API로 KR 종목 실시간 기초 지표 반환.
+
+    반환 키: nv(현재가), sv(전일종가), cv(변동금액), cr(변동률%), rf(방향 2=상승/5=하락),
+             eps, bps, dv(주당배당금원), countOfListedStock, nm(종목명)
+    """
+    try:
+        url = f"https://polling.finance.naver.com/api/realtime?query=SERVICE_ITEM:{code}"
+        r = requests.get(url, headers=_HEADERS, timeout=5)
+        r.raise_for_status()
+        item = r.json()["result"]["areas"][0]["datas"][0]
+        return item
+    except Exception:
+        return None
+
+
+def fetch_stock_info(query: str, market: str) -> dict:
+    """단일 종목 기본 정보 조회. market: 'KR' or 'US'.
+
+    Returns dict:
+        name, symbol, price, change_pct, change_positive,
+        market_cap, div_yield, pbr, per, roe, psr, vwap, mfi,
+        chart_data(List[dict]: date/종가/VWAP/MA20), error
+    """
+    import math
+    import yfinance as yf
+    from utils.indicators import TechnicalIndicators
+
+    def _fmt(v, fmt=".2f", suffix="") -> str:
+        if v is None or (isinstance(v, float) and (math.isnan(v) or math.isinf(v))):
+            return "-"
+        return f"{v:{fmt}}{suffix}"
+
+    result: dict = {
+        "name": "", "symbol": "", "price": 0.0, "change_pct": 0.0,
+        "change_positive": False, "market_cap": "-", "div_yield": "-",
+        "pbr": "-", "per": "-", "roe": "-", "psr": "-",
+        "vwap": "-", "mfi": "-", "chart_data": [], "error": "",
+        "buy_score": 0, "buy_score_max": 8, "buy_score_str": "-",
+        "buy_opinion": "", "buy_opinion_color": "gray",
+        "buy_score_items": [],
+    }
+
+    try:
+        if market == "KR":
+            symbol, kr_market = _search_kr_symbol(query)
+            if not symbol:
+                result["error"] = f"'{query}' 종목을 찾을 수 없습니다"
+                return result
+
+            # 1. NAVER polling API — 현재가·PBR·PER·배당
+            naver = _fetch_kr_naver_fundamentals(symbol)
+            if naver:
+                nv = float(naver.get("nv") or naver.get("sv") or 0)
+                sv = float(naver.get("sv") or nv)
+                cr = float(naver.get("cr") or 0)
+                rf = str(naver.get("rf") or "")
+                change_pct = round(-cr if rf == "5" else cr, 2)
+                eps = float(naver.get("eps") or 0)
+                bps = float(naver.get("bps") or 0)
+                dv = float(naver.get("dv") or 0)
+                shares = float(naver.get("countOfListedStock") or 0)
+                nm = naver.get("nm") or query
+
+                mktcap_eok = nv * shares / 1e8 if nv and shares else None
+                per_val = round(nv / eps, 2) if eps > 0 else None
+                pbr_val = round(nv / bps, 2) if bps > 0 else None
+                div_val = round(dv / nv * 100, 2) if dv > 0 and nv > 0 else None
+
+                result.update({
+                    "name": nm,
+                    "symbol": symbol,
+                    "price": nv,
+                    "change_pct": change_pct,
+                    "change_positive": change_pct >= 0,
+                    "market_cap": f"{mktcap_eok:,.0f}억원" if mktcap_eok else "-",
+                    "div_yield": _fmt(div_val, ".2f", "%"),
+                    "pbr": _fmt(pbr_val),
+                    "per": _fmt(per_val, ".1f"),
+                })
+            else:
+                result.update({"name": query, "symbol": symbol})
+
+            # 2. yfinance — ROE·PSR (NAVER에 없음)
+            suffix = ".KQ" if "KOSDAQ" in kr_market.upper() else ".KS"
+            try:
+                yf_info = yf.Ticker(symbol + suffix).info
+                roe_raw = yf_info.get("returnOnEquity")
+                psr_raw = yf_info.get("priceToSalesTrailing12Months")
+                result["roe"] = _fmt(roe_raw * 100 if roe_raw else None, ".1f", "%")
+                result["psr"] = _fmt(psr_raw)
+                if not result["name"] or result["name"] == query:
+                    result["name"] = yf_info.get("longName") or yf_info.get("shortName") or query
+            except Exception:
+                pass
+
+            fdr_symbol = symbol
+
+        else:  # US
+            symbol = query.strip().upper()
+            info = yf.Ticker(symbol).info
+            price = float(info.get("currentPrice") or info.get("regularMarketPrice") or 0)
+            if not price:
+                result["error"] = f"'{symbol}' 종목을 찾을 수 없습니다"
+                return result
+
+            prev = float(info.get("regularMarketPreviousClose") or price)
+            change_pct = round((price - prev) / prev * 100, 2) if prev else 0.0
+            mktcap = info.get("marketCap")
+            div_raw = info.get("dividendYield")
+            roe_raw = info.get("returnOnEquity")
+
+            result.update({
+                "name": info.get("shortName") or info.get("longName") or symbol,
+                "symbol": symbol,
+                "price": price,
+                "change_pct": change_pct,
+                "change_positive": change_pct >= 0,
+                "market_cap": f"${mktcap / 1e9:,.1f}B" if mktcap else "-",
+                "div_yield": _fmt(div_raw * 100 if div_raw else None, ".2f", "%"),
+                "pbr": _fmt(info.get("priceToBook")),
+                "per": _fmt(info.get("trailingPE"), ".1f"),
+                "roe": _fmt(roe_raw * 100 if roe_raw else None, ".1f", "%"),
+                "psr": _fmt(info.get("priceToSalesTrailing12Months")),
+            })
+            fdr_symbol = symbol
+
+        # OHLCV → VWAP_20, MFI, 차트 데이터
+        end = datetime.today()
+        start = end - timedelta(days=150)
+        df = fdr.DataReader(fdr_symbol, start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d"))
+        df = df.dropna(subset=["Close", "Volume"])
+        df = df[df["Volume"] > 0]
+        if not df.empty and "High" in df.columns:
+            df = TechnicalIndicators.calculate_all(df, windows=[20, 60])
+            last = df.iloc[-1]
+
+            def _v(val):
+                return round(float(val), 0) if val is not None and not math.isnan(float(val)) else None
+
+            price_val = result["price"] or float(last["Close"])
+            vwap_val = _v(last.get("VWAP_20"))
+            mfi_val = _v(last.get("MFI"))
+            vwap_gap = round((price_val - vwap_val) / vwap_val * 100, 2) if vwap_val else None
+
+            result["vwap"] = _fmt(vwap_val, ",.0f") + (f" ({vwap_gap:+.1f}%)" if vwap_gap is not None else "")
+            result["mfi"] = _fmt(mfi_val, ".1f")
+
+            # ── 매수 의견 점수 계산 ──────────────────────────────
+            score = 0
+            score_items = []
+            vwap60_val = _v(last.get("VWAP_60"))
+            obv_last = float(last.get("OBV") or 0)
+            obv_sig_last = float(last.get("OBV_Sig") or 0)
+
+            # 1. VWAP20 돌파 (최대 +2, 과열 -1)
+            if vwap_val:
+                if price_val > vwap_val:
+                    score += 2
+                    score_items.append({
+                        "label": "VWAP20 돌파",
+                        "detail": f"현재가 > VWAP20 ({vwap_gap:+.1f}%)",
+                        "score_str": "+2", "positive": True,
+                    })
+                    if vwap_gap is not None:
+                        if 0 < vwap_gap <= 5:
+                            score += 1
+                            score_items.append({
+                                "label": "이격도 적정",
+                                "detail": f"VWAP 이격 {vwap_gap:+.1f}% (5% 이내 진입 적정)",
+                                "score_str": "+1", "positive": True,
+                            })
+                        elif vwap_gap > 10:
+                            score -= 1
+                            score_items.append({
+                                "label": "VWAP 과열",
+                                "detail": f"VWAP 이격 {vwap_gap:+.1f}% (10% 초과 과열)",
+                                "score_str": "-1", "positive": False,
+                            })
+                        else:
+                            score_items.append({
+                                "label": "이격도 보통",
+                                "detail": f"VWAP 이격 {vwap_gap:+.1f}% (5~10%)",
+                                "score_str": "0", "positive": False,
+                            })
+                else:
+                    score_items.append({
+                        "label": "VWAP20 미돌파",
+                        "detail": f"현재가 < VWAP20 (이격 {vwap_gap:+.1f}%)" if vwap_gap is not None else "현재가 < VWAP20",
+                        "score_str": "0", "positive": False,
+                    })
+
+            # 2. VWAP 정배열 (VWAP20 > VWAP60, +1)
+            if vwap_val and vwap60_val:
+                if vwap_val > vwap60_val:
+                    score += 1
+                    score_items.append({
+                        "label": "VWAP 정배열",
+                        "detail": f"VWAP20({vwap_val:,.0f}) > VWAP60({vwap60_val:,.0f})",
+                        "score_str": "+1", "positive": True,
+                    })
+                else:
+                    score_items.append({
+                        "label": "VWAP 역배열",
+                        "detail": f"VWAP20 < VWAP60 (하락 추세)",
+                        "score_str": "0", "positive": False,
+                    })
+
+            # 3. OBV 매수세: OBV > OBV_Sig (+2)
+            if not (math.isnan(obv_last) or math.isnan(obv_sig_last)):
+                if obv_last > obv_sig_last:
+                    score += 2
+                    score_items.append({
+                        "label": "OBV 매수세",
+                        "detail": "OBV > 신호선(20일 MA), 매수 거래량 우세",
+                        "score_str": "+2", "positive": True,
+                    })
+                else:
+                    score_items.append({
+                        "label": "OBV 매도세",
+                        "detail": "OBV < 신호선(20일 MA), 매도 거래량 우세",
+                        "score_str": "0", "positive": False,
+                    })
+
+            # 4. OBV 5일 추세 (+1)
+            obv_series = df["OBV"].dropna()
+            if len(obv_series) >= 5:
+                obv_trend = float(obv_series.diff().tail(5).mean())
+                if obv_trend > 0:
+                    score += 1
+                    score_items.append({
+                        "label": "OBV 5일 상승",
+                        "detail": "최근 5일 OBV 평균 증가 (매집 신호)",
+                        "score_str": "+1", "positive": True,
+                    })
+                else:
+                    score_items.append({
+                        "label": "OBV 5일 하락",
+                        "detail": "최근 5일 OBV 평균 감소 (분산 신호)",
+                        "score_str": "0", "positive": False,
+                    })
+
+            # 5. MFI 구간 (+1 or -1)
+            if mfi_val is not None:
+                if 40 <= mfi_val <= 75:
+                    score += 1
+                    score_items.append({
+                        "label": "MFI 적정",
+                        "detail": f"MFI {mfi_val:.0f}, 40~75 건강한 매수 구간",
+                        "score_str": "+1", "positive": True,
+                    })
+                elif mfi_val > 80:
+                    score -= 1
+                    score_items.append({
+                        "label": "MFI 과열",
+                        "detail": f"MFI {mfi_val:.0f}, 80 초과 단기 과열",
+                        "score_str": "-1", "positive": False,
+                    })
+                else:
+                    score_items.append({
+                        "label": "MFI 약세",
+                        "detail": f"MFI {mfi_val:.0f}, 40 미만 (모멘텀 부족)",
+                        "score_str": "0", "positive": False,
+                    })
+
+            # 의견 결정
+            if score >= 7:
+                opinion, color = "강력 매수", "green"
+            elif score >= 5:
+                opinion, color = "매수 검토", "blue"
+            elif score >= 3:
+                opinion, color = "중립", "gray"
+            elif score >= 0:
+                opinion, color = "관망", "orange"
+            else:
+                opinion, color = "주의", "red"
+
+            result.update({
+                "buy_score": score,
+                "buy_score_str": f"{score}/8",
+                "buy_opinion": opinion,
+                "buy_opinion_color": color,
+                "buy_score_items": score_items,
+            })
+
+            disp = df.tail(120)
+            result["chart_data"] = [
+                {
+                    "date": str(d.date()),
+                    "종가": _v(row["Close"]),
+                    "VWAP20": _v(row["VWAP_20"]),
+                    "VWAP60": _v(row["VWAP_60"]),
+                    "MA20": _v(row["TWAP_20"]),
+                    "MA60": _v(row["TWAP_60"]),
+                }
+                for d, row in disp.iterrows()
+            ]
+
+    except Exception as e:
+        result["error"] = str(e)
+
+    return result
+
+
+def fetch_market_leaders(
+    mode: str = "volume",
+    market: str = "KOSPI",
+    top_n: int = 25,
+) -> list[dict]:
+    """당일 주도주 목록 조회.
+
+    mode   : "volume" = 거래량 상위, "rise" = 상승률 상위
+    market : "KOSPI" or "KOSDAQ"
+    Returns list of dicts with pre-computed bool flags for rx.foreach safety.
+    """
+    sosok = "0" if market == "KOSPI" else "1"
+    url_map = {"volume": "sise_quant", "rise": "sise_rise"}
+    url = f"https://finance.naver.com/sise/{url_map.get(mode, 'sise_quant')}.naver?sosok={sosok}"
+
+    r = requests.get(url, headers=_HEADERS, timeout=10)
+    soup = BeautifulSoup(r.content.decode("euc-kr", "replace"), "html.parser")
+    rows = soup.select("table.type_2 tr")
+
+    results = []
+    for row in rows[2:]:
+        tds = row.find_all("td")
+        if not tds or len(tds) < 6:
+            continue
+        a = row.find("a", href=True)
+        if not a or "code=" not in a.get("href", ""):
+            continue
+
+        code = a["href"].split("code=")[-1].strip()
+        cols = [c.get_text(strip=True) for c in tds]
+
+        name = cols[1]
+        price_raw = cols[2].replace(",", "")
+        change_pct_str = cols[4]  # e.g. "+9.48%" or "-10.97%"
+        vol_str = cols[5]
+
+        try:
+            price = float(price_raw)
+        except ValueError:
+            continue
+
+        try:
+            change_pct = float(change_pct_str.replace("%", "").replace("+", ""))
+        except ValueError:
+            change_pct = 0.0
+
+        try:
+            today_volume = int(vol_str.replace(",", ""))
+        except ValueError:
+            today_volume = 0
+
+        results.append({
+            "rank": len(results) + 1,
+            "code": code,
+            "name": name,
+            "price_str": cols[2],
+            "change_pct_str": change_pct_str,
+            "change_pct_val": change_pct,
+            "volume_str": vol_str,
+            "today_volume": today_volume,
+            "change_positive": change_pct >= 0,
+        })
+
+        if len(results) >= top_n:
+            break
+
+    return results
+
+
+def _get_mktcap_jo(code: str) -> tuple[str, str]:
+    """NAVER polling API로 종목 시가총액을 조원 단위 문자열로 반환."""
+    try:
+        item = _fetch_kr_naver_fundamentals(code)
+        if not item:
+            return code, "-"
+        nv     = float(item.get("nv") or item.get("sv") or 0)
+        shares = float(item.get("countOfListedStock") or 0)
+        if nv > 0 and shares > 0:
+            jo = nv * shares / 1e12
+            if jo >= 1.0:
+                return code, f"{jo:.1f}조"
+            eok = nv * shares / 1e8
+            return code, f"{eok:,.0f}억"
+        return code, "-"
+    except Exception:
+        return code, "-"
+
+
+def fetch_leaders_combined(market: str = "KOSPI", top_n: int = 30) -> list[dict]:
+    """거래량 상위 + 상승률 상위를 합쳐 방법A 점수(순위 역수 합산)를 계산한다.
+
+    market: "KOSPI" | "KOSDAQ" | "US"
+    score_a = 1/거래량순위 + 1/상승률순위  (없으면 0)
+    반환 목록은 score_a 내림차순 정렬.
+    """
+    if market == "US":
+        return _fetch_leaders_combined_us(top_n)
+
+    with ThreadPoolExecutor(max_workers=2) as ex:
+        vol_fut  = ex.submit(fetch_market_leaders, "volume", market, top_n)
+        rise_fut = ex.submit(fetch_market_leaders, "rise",   market, top_n)
+        vol_list  = vol_fut.result()
+        rise_list = rise_fut.result()
+
+    vol_rank_map  = {item["code"]: item["rank"] for item in vol_list}
+    rise_rank_map = {item["code"]: item["rank"] for item in rise_list}
+
+    info_by_code: dict = {}
+    for item in vol_list + rise_list:
+        if item["code"] not in info_by_code:
+            info_by_code[item["code"]] = item
+
+    combined = []
+    for code, base in info_by_code.items():
+        vr = vol_rank_map.get(code)
+        rr = rise_rank_map.get(code)
+        score_a = (1 / vr if vr else 0.0) + (1 / rr if rr else 0.0)
+
+        combined.append({
+            **base,
+            "vol_rank_val":  vr or 0,
+            "rise_rank_val": rr or 0,
+            "vol_rank_str":  str(vr) if vr else "-",
+            "rise_rank_str": str(rr) if rr else "-",
+            "has_vol_rank":  vr is not None,
+            "has_rise_rank": rr is not None,
+            "score_a":     round(score_a, 4),
+            "score_a_str": f"{score_a:.3f}",
+            "vol_ratio":   0.0,
+            "score_b":     0.0,
+            "score_b_str": "-",
+            "has_score_b": False,
+            "mktcap_str":  "-",
+            "is_us":       False,
+        })
+
+    combined.sort(key=lambda x: x["score_a"], reverse=True)
+    top = combined[:top_n]
+    for i, item in enumerate(top):
+        item["rank"] = i + 1
+
+    # 시가총액 병렬 조회
+    codes = [item["code"] for item in top]
+    with ThreadPoolExecutor(max_workers=10) as ex:
+        mktcap_map = dict(ex.map(_get_mktcap_jo, codes))
+    for item in top:
+        item["mktcap_str"] = mktcap_map.get(item["code"], "-")
+
+    return top
+
+
+# ---------------------------------------------------------------------------
+# 미국 시장 당일 주도주 (Yahoo Finance 스크리너)
+# ---------------------------------------------------------------------------
+
+_YF_SCREENER_URL = (
+    "https://query1.finance.yahoo.com/v1/finance/screener/predefined/saved"
+    "?formatted=false&lang=en-US&region=US&count={count}&scrIds={scr_id}"
+)
+_YF_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+    "Accept": "application/json",
+    "Accept-Language": "en-US,en;q=0.9",
+}
+
+
+def _fmt_us_mktcap(raw: float) -> str:
+    if raw >= 1e12:
+        return f"${raw/1e12:.1f}T"
+    if raw >= 1e9:
+        return f"${raw/1e9:.1f}B"
+    if raw >= 1e6:
+        return f"${raw/1e6:.0f}M"
+    return "-"
+
+
+def _fetch_us_yahoo_screener(scr_id: str, top_n: int = 30) -> list[dict]:
+    """Yahoo Finance 스크리너 API로 미국 시장 상위 종목 조회."""
+    url = _YF_SCREENER_URL.format(count=top_n, scr_id=scr_id)
+    try:
+        r = requests.get(url, headers=_YF_HEADERS, timeout=10)
+        r.raise_for_status()
+        quotes = r.json()["finance"]["result"][0]["quotes"]
+    except Exception:
+        # query2 fallback
+        url2 = url.replace("query1", "query2")
+        r = requests.get(url2, headers=_YF_HEADERS, timeout=10)
+        r.raise_for_status()
+        quotes = r.json()["finance"]["result"][0]["quotes"]
+
+    results = []
+    for i, q in enumerate(quotes):
+        symbol = q.get("symbol", "")
+        if not symbol:
+            continue
+        name = q.get("shortName") or q.get("longName") or symbol
+        price = float(q.get("regularMarketPrice") or 0)
+        change_pct = float(q.get("regularMarketChangePercent") or 0)
+        volume = int(q.get("regularMarketVolume") or 0)
+        mkt_cap_raw = float(q.get("marketCap") or 0)
+
+        results.append({
+            "rank": i + 1,
+            "code": symbol,
+            "name": name,
+            "price_str": f"${price:,.2f}",
+            "change_pct_str": f"{change_pct:+.2f}%",
+            "change_pct_val": round(change_pct, 2),
+            "volume_str": f"{volume:,}",
+            "today_volume": volume,
+            "change_positive": change_pct >= 0,
+            "mktcap_str": _fmt_us_mktcap(mkt_cap_raw),
+            "is_us": True,
+        })
+        if len(results) >= top_n:
+            break
+
+    return results
+
+
+def _fetch_leaders_combined_us(top_n: int = 30) -> list[dict]:
+    """미국 시장 거래량 상위 + 상승률 상위 합산 (Yahoo Finance 스크리너)."""
+    with ThreadPoolExecutor(max_workers=2) as ex:
+        vol_fut  = ex.submit(_fetch_us_yahoo_screener, "most_actives", top_n)
+        rise_fut = ex.submit(_fetch_us_yahoo_screener, "day_gainers",  top_n)
+        vol_list  = vol_fut.result()
+        rise_list = rise_fut.result()
+
+    vol_rank_map  = {item["code"]: item["rank"] for item in vol_list}
+    rise_rank_map = {item["code"]: item["rank"] for item in rise_list}
+
+    info_by_code: dict = {}
+    for item in vol_list + rise_list:
+        if item["code"] not in info_by_code:
+            info_by_code[item["code"]] = item
+
+    combined = []
+    for code, base in info_by_code.items():
+        vr = vol_rank_map.get(code)
+        rr = rise_rank_map.get(code)
+        score_a = (1 / vr if vr else 0.0) + (1 / rr if rr else 0.0)
+
+        combined.append({
+            **base,
+            "vol_rank_val":  vr or 0,
+            "rise_rank_val": rr or 0,
+            "vol_rank_str":  str(vr) if vr else "-",
+            "rise_rank_str": str(rr) if rr else "-",
+            "has_vol_rank":  vr is not None,
+            "has_rise_rank": rr is not None,
+            "score_a":     round(score_a, 4),
+            "score_a_str": f"{score_a:.3f}",
+            "vol_ratio":   0.0,
+            "score_b":     0.0,
+            "score_b_str": "-",
+            "has_score_b": False,
+        })
+
+    combined.sort(key=lambda x: x["score_a"], reverse=True)
+    top = combined[:top_n]
+    for i, item in enumerate(top):
+        item["rank"] = i + 1
+
+    return top
+
+
+# ---------------------------------------------------------------------------
+# 당일 주도주 캐시 (JSON 파일, KR 시장 전용)
+# ---------------------------------------------------------------------------
+
+def _cache_path(market: str) -> str:
+    date_str = datetime.today().strftime("%Y%m%d")
+    os.makedirs(_CACHE_DIR, exist_ok=True)
+    return os.path.join(_CACHE_DIR, f"leaders_{market}_{date_str}.json")
+
+
+def save_leaders_cache(market: str, data: list[dict]) -> None:
+    """당일 주도주 데이터를 JSON 파일로 캐시 저장."""
+    try:
+        with open(_cache_path(market), "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+
+def load_leaders_cache(market: str) -> list[dict] | None:
+    """오늘 날짜 캐시가 있으면 반환, 없으면 None."""
+    path = _cache_path(market)
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+
+def compute_score_b(items: list[dict]) -> list[dict]:
+    """각 종목의 20일 평균 거래량을 병렬 조회해 방법B 점수를 계산한다.
+
+    score_b = (오늘거래량 / 20일평균거래량) × 상승률(%)
+    """
+    def _get_avg_vol(code: str) -> tuple[str, float | None]:
+        try:
+            end = datetime.today()
+            start = end - timedelta(days=60)
+            df = fdr.DataReader(code, start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d"))
+            df = df[df["Volume"] > 0]
+            if len(df) < 5:
+                return code, None
+            return code, float(df["Volume"].tail(20).mean())
+        except Exception:
+            return code, None
+
+    codes = [item["code"] for item in items]
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        avg_vols: dict[str, float | None] = dict(ex.map(_get_avg_vol, codes))
+
+    updated = []
+    for item in items:
+        avg_vol = avg_vols.get(item["code"])
+        today_vol = item.get("today_volume", 0)
+        chg = item.get("change_pct_val", 0.0)
+
+        if avg_vol and avg_vol > 0 and today_vol > 0 and chg > 0:
+            vol_ratio = today_vol / avg_vol
+            score_b   = round(vol_ratio * chg, 2)
+            updated.append({
+                **item,
+                "vol_ratio": round(vol_ratio, 2),
+                "score_b": score_b,
+                "score_b_str": f"{score_b:.1f}",
+                "has_score_b": True,
+            })
+        else:
+            updated.append({**item, "has_score_b": False})
+
+    return updated

@@ -196,6 +196,43 @@ class State(rx.State):
     portfolio_pnl_pct: float = 0.0
     holdings_analysis: List[dict] = []    # [{name, symbol, investment, pnl, pnl_pct, ...}]
 
+    # 종목 조회
+    lookup_query: str = ""
+    lookup_market: str = "KR"
+    lookup_loading: bool = False
+    lookup_error: str = ""
+    lookup_has_result: bool = False
+    lookup_name: str = ""
+    lookup_symbol: str = ""
+    lookup_price: str = ""
+    lookup_change_pct: str = ""
+    lookup_change_positive: bool = False
+    lookup_market_cap: str = "-"
+    lookup_div_yield: str = "-"
+    lookup_pbr: str = "-"
+    lookup_per: str = "-"
+    lookup_roe: str = "-"
+    lookup_psr: str = "-"
+    lookup_vwap: str = "-"
+    lookup_mfi: str = "-"
+    lookup_chart_data: List[dict] = []
+    lookup_buy_score_str: str = ""
+    lookup_buy_opinion: str = ""
+    lookup_buy_opinion_color: str = "gray"
+    lookup_buy_score_items: List[dict] = []
+
+    # 당일 주도주
+    leaders_market: str = "KOSPI"
+    leaders_sort: str = "방법A"        # "방법A" | "방법B" | "거래량" | "상승률"
+    leaders_loading: bool = False
+    leaders_b_loading: bool = False
+    leaders_score_b_done: bool = False  # B점수 계산 완료 여부
+    leaders_data: List[dict] = []
+    leaders_data_raw: List[dict] = []  # 정렬 전 원본
+    leaders_error: str = ""
+    leaders_from_cache: bool = False   # 오늘 캐시에서 로드된 경우 True
+    leaders_cache_time: str = ""       # 캐시 저장 시각 표시용
+
     # UI state
     is_scanning: bool = False
     is_backtesting: bool = False
@@ -455,6 +492,183 @@ class State(rx.State):
             self.saved_runs = [SavedRun(run_id=r["id"], label=r["label"]) for r in runs]
         elif tab in ("holdings", "portfolio"):
             self.load_holdings_from_db()
+
+    def set_leaders_market(self, v: str):
+        self.leaders_market = v
+
+    def set_leaders_sort(self, v: str):
+        if not self.leaders_data_raw:
+            self.leaders_sort = v
+            return
+        if v == self.leaders_sort:
+            return  # 동일 정렬이면 불필요한 state 업데이트 방지
+        self.leaders_sort = v
+        key_map = {
+            "방법A": lambda x: x.get("score_a", 0),
+            "방법B": lambda x: x.get("score_b", 0),
+            "거래량": lambda x: x.get("today_volume", 0),
+            "상승률": lambda x: x.get("change_pct_val", 0),
+        }
+        key_fn = key_map.get(v, lambda x: x.get("score_a", 0))
+        # dict 복사본을 만들어 leaders_data_raw의 객체를 직접 변경하지 않음
+        self.leaders_data = [
+            {**item, "rank": i + 1}
+            for i, item in enumerate(
+                sorted(self.leaders_data_raw, key=key_fn, reverse=True)
+            )
+        ]
+
+    async def do_fetch_leaders(self):
+        if self.leaders_loading:
+            return
+        self.leaders_loading = True
+        self.leaders_error = ""
+        self.leaders_data = []
+        self.leaders_data_raw = []
+        self.leaders_sort = "방법A"
+        self.leaders_score_b_done = False
+        self.leaders_from_cache = False
+        self.leaders_cache_time = ""
+        yield
+
+        import asyncio
+        from utils.data_loader import fetch_leaders_combined
+
+        try:
+            data = await asyncio.to_thread(
+                fetch_leaders_combined, self.leaders_market
+            )
+            # KR 시장은 캐시도 갱신
+            if self.leaders_market in ("KOSPI", "KOSDAQ"):
+                from utils.data_loader import save_leaders_cache
+                await asyncio.to_thread(save_leaders_cache, self.leaders_market, data)
+            self.leaders_data_raw = data
+            self.leaders_data = list(data)
+        except Exception as e:
+            self.leaders_error = str(e)
+        finally:
+            self.leaders_loading = False
+
+    async def do_compute_score_b(self):
+        if not self.leaders_data_raw:
+            return
+        # Reflex 리액티브 래퍼를 순수 Python 객체로 변환 후 스레드에 전달
+        raw_snapshot = [dict(item) for item in self.leaders_data_raw]
+        self.leaders_b_loading = True
+        yield
+
+        import asyncio
+        from utils.data_loader import compute_score_b
+
+        try:
+            updated = await asyncio.to_thread(compute_score_b, raw_snapshot)
+            self.leaders_data_raw = updated
+            key_map = {
+                "방법A": lambda x: x.get("score_a", 0),
+                "방법B": lambda x: x.get("score_b", 0),
+                "거래량": lambda x: x.get("today_volume", 0),
+                "상승률": lambda x: x.get("change_pct_val", 0),
+            }
+            key_fn = key_map.get(self.leaders_sort, lambda x: x.get("score_a", 0))
+            self.leaders_data = [
+                {**item, "rank": i + 1}
+                for i, item in enumerate(sorted(updated, key=key_fn, reverse=True))
+            ]
+            self.leaders_score_b_done = True
+        except Exception as e:
+            self.leaders_error = str(e)
+        finally:
+            self.leaders_b_loading = False
+
+    async def goto_lookup_from_leaders(self, code: str, is_us: bool = False):
+        self.lookup_query = code
+        self.lookup_market = "US" if is_us else "KR"
+        self.active_tab = "lookup"
+        self.lookup_has_result = False
+        self.lookup_error = ""
+        self.lookup_chart_data = []
+        self.lookup_loading = True
+        yield
+
+        import asyncio
+        from utils.data_loader import fetch_stock_info
+
+        result = await asyncio.to_thread(fetch_stock_info, code, "KR")
+        self.lookup_loading = False
+        if result["error"]:
+            self.lookup_error = result["error"]
+        else:
+            price = result["price"]
+            change = result["change_pct"]
+            self.lookup_name = result["name"]
+            self.lookup_symbol = result["symbol"]
+            self.lookup_price = f"{price:,.0f}" if price >= 1 else f"{price:.4f}"
+            self.lookup_change_pct = f"{change:+.2f}%"
+            self.lookup_change_positive = result["change_positive"]
+            self.lookup_market_cap = result["market_cap"]
+            self.lookup_div_yield = result["div_yield"]
+            self.lookup_pbr = result["pbr"]
+            self.lookup_per = result["per"]
+            self.lookup_roe = result["roe"]
+            self.lookup_psr = result["psr"]
+            self.lookup_vwap = result["vwap"]
+            self.lookup_mfi = result["mfi"]
+            self.lookup_chart_data = result.get("chart_data", [])
+            self.lookup_buy_score_str = result.get("buy_score_str", "")
+            self.lookup_buy_opinion = result.get("buy_opinion", "")
+            self.lookup_buy_opinion_color = result.get("buy_opinion_color", "gray")
+            self.lookup_buy_score_items = result.get("buy_score_items", [])
+            self.lookup_has_result = True
+
+    def set_lookup_query(self, v: str):
+        self.lookup_query = v
+
+    def set_lookup_market(self, v: str):
+        self.lookup_market = v
+
+    def handle_lookup_key(self, key: str):
+        if key == "Enter":
+            return State.do_lookup_stock()
+
+    async def do_lookup_stock(self):
+        q = self.lookup_query.strip()
+        if not q:
+            return
+        self.lookup_loading = True
+        self.lookup_has_result = False
+        self.lookup_error = ""
+        yield
+
+        import asyncio
+        from utils.data_loader import fetch_stock_info
+
+        result = await asyncio.to_thread(fetch_stock_info, q, self.lookup_market)
+
+        self.lookup_loading = False
+        if result["error"]:
+            self.lookup_error = result["error"]
+        else:
+            self.lookup_name = result["name"]
+            self.lookup_symbol = result["symbol"]
+            price = result["price"]
+            change = result["change_pct"]
+            self.lookup_price = f"{price:,.0f}" if price >= 1 else f"{price:.4f}"
+            self.lookup_change_pct = f"{change:+.2f}%"
+            self.lookup_change_positive = result["change_positive"]
+            self.lookup_market_cap = result["market_cap"]
+            self.lookup_div_yield = result["div_yield"]
+            self.lookup_pbr = result["pbr"]
+            self.lookup_per = result["per"]
+            self.lookup_roe = result["roe"]
+            self.lookup_psr = result["psr"]
+            self.lookup_vwap = result["vwap"]
+            self.lookup_mfi = result["mfi"]
+            self.lookup_chart_data = result.get("chart_data", [])
+            self.lookup_buy_score_str = result.get("buy_score_str", "")
+            self.lookup_buy_opinion = result.get("buy_opinion", "")
+            self.lookup_buy_opinion_color = result.get("buy_opinion_color", "gray")
+            self.lookup_buy_score_items = result.get("buy_score_items", [])
+            self.lookup_has_result = True
 
     def set_selected_run_id(self, value: str):
         self.selected_run_id = value
@@ -2722,6 +2936,467 @@ def holdings_tab() -> rx.Component:
     )
 
 
+def leaders_tab() -> rx.Component:
+    """당일 주도주 탭 — 방법A/B 복합 점수 정렬."""
+    return rx.vstack(
+        # ── 컨트롤 바 ──────────────────────────────────────────
+        rx.hstack(
+            rx.heading("당일 주도주", size="4"),
+            rx.spacer(),
+            rx.select(
+                ["KOSPI", "KOSDAQ", "US"],
+                value=State.leaders_market,
+                on_change=State.set_leaders_market,
+                width="110px",
+            ),
+            rx.button(
+                "조회",
+                on_click=State.do_fetch_leaders,
+                loading=State.leaders_loading,
+                disabled=State.leaders_loading,
+            ),
+            width="100%",
+            align_items="center",
+            spacing="3",
+        ),
+        # ── 정렬 선택 + 방법B 계산 버튼 ────────────────────────
+        rx.cond(
+            State.leaders_data.length() > 0,
+            rx.hstack(
+                rx.text("정렬:", size="2", color="gray", weight="medium"),
+                # rx.radio_group value 바인딩 → 상태 전송 시 on_change 재발화 루프 문제
+                # 일반 버튼으로 대체 (on_click은 사용자 클릭 시만 발화)
+                rx.button(
+                    "방법A",
+                    on_click=State.set_leaders_sort("방법A"),
+                    variant=rx.cond(State.leaders_sort == "방법A", "solid", "soft"),
+                    color_scheme="blue", size="1",
+                ),
+                rx.button(
+                    "방법B",
+                    on_click=State.set_leaders_sort("방법B"),
+                    variant=rx.cond(State.leaders_sort == "방법B", "solid", "soft"),
+                    color_scheme="blue", size="1",
+                ),
+                rx.button(
+                    "거래량",
+                    on_click=State.set_leaders_sort("거래량"),
+                    variant=rx.cond(State.leaders_sort == "거래량", "solid", "soft"),
+                    color_scheme="blue", size="1",
+                ),
+                rx.button(
+                    "상승률",
+                    on_click=State.set_leaders_sort("상승률"),
+                    variant=rx.cond(State.leaders_sort == "상승률", "solid", "soft"),
+                    color_scheme="blue", size="1",
+                ),
+                rx.spacer(),
+                rx.button(
+                    rx.cond(
+                        State.leaders_b_loading,
+                        "계산 중...",
+                        rx.cond(State.leaders_score_b_done, "B점수 재계산", "B점수 계산"),
+                    ),
+                    on_click=State.do_compute_score_b,
+                    loading=State.leaders_b_loading,
+                    disabled=State.leaders_b_loading,
+                    variant="soft",
+                    color_scheme=rx.cond(State.leaders_score_b_done, "green", "amber"),
+                    size="2",
+                ),
+                width="100%",
+                align_items="center",
+                spacing="2",
+                padding_y="4px",
+            ),
+        ),
+        # ── 점수 설명 ───────────────────────────────────────────
+        rx.cond(
+            State.leaders_data.length() > 0,
+            rx.hstack(
+                rx.badge("방법A = 1/거래량순위 + 1/상승률순위", color_scheme="blue", variant="soft"),
+                rx.badge("방법B = (오늘거래량 ÷ 20일평균) × 상승률%", color_scheme="amber", variant="soft"),
+                spacing="2",
+            ),
+        ),
+        # ── 캐시 알림 ───────────────────────────────────────────
+        rx.cond(
+            State.leaders_from_cache,
+            rx.hstack(
+                rx.badge(
+                    "캐시 로드 (" + State.leaders_cache_time + ")",
+                    color_scheme="green",
+                    variant="soft",
+                ),
+                rx.text("오늘 11시 자동 조회 데이터입니다.", size="1", color="gray"),
+                spacing="2",
+                align="center",
+            ),
+        ),
+        # ── 에러 ────────────────────────────────────────────────
+        rx.cond(
+            State.leaders_error != "",
+            rx.callout.root(
+                rx.callout.text(State.leaders_error),
+                color_scheme="red",
+                variant="soft",
+            ),
+        ),
+        # ── 미조회 안내 ─────────────────────────────────────────
+        rx.cond(
+            State.leaders_data.length() == 0,
+            rx.cond(
+                State.leaders_loading,
+                rx.hstack(
+                    rx.spinner(size="3"),
+                    rx.text(State.leaders_market + " 거래량·상승률 상위 종목 조회 중...", color="gray"),
+                    spacing="2",
+                    align="center",
+                    padding_top="40px",
+                ),
+                rx.callout.root(
+                    rx.callout.text("'조회' 버튼을 눌러 오늘의 주도주를 가져오세요."),
+                    color_scheme="blue",
+                    variant="soft",
+                ),
+            ),
+            # ── 테이블 ──────────────────────────────────────────
+            rx.table.root(
+                rx.table.header(
+                    rx.table.row(
+                        rx.table.column_header_cell("순위"),
+                        rx.table.column_header_cell("종목명"),
+                        rx.table.column_header_cell("시가총액"),
+                        rx.table.column_header_cell("현재가"),
+                        rx.table.column_header_cell("등락률"),
+                        rx.table.column_header_cell("거래량순위"),
+                        rx.table.column_header_cell("상승률순위"),
+                        rx.table.column_header_cell("A점수"),
+                        rx.table.column_header_cell("B점수"),
+                        rx.table.column_header_cell(""),
+                    )
+                ),
+                rx.table.body(
+                    rx.foreach(
+                        State.leaders_data,
+                        lambda h: rx.table.row(
+                            rx.table.cell(h["rank"]),
+                            rx.table.cell(rx.text(h["name"], weight="medium")),
+                            rx.table.cell(h["mktcap_str"]),
+                            rx.table.cell(h["price_str"]),
+                            rx.table.cell(
+                                rx.text(
+                                    h["change_pct_str"],
+                                    color=rx.cond(h["change_positive"], "green", "red"),
+                                    weight="medium",
+                                )
+                            ),
+                            rx.table.cell(
+                                rx.cond(h["has_vol_rank"],  h["vol_rank_str"],  "-")
+                            ),
+                            rx.table.cell(
+                                rx.cond(h["has_rise_rank"], h["rise_rank_str"], "-")
+                            ),
+                            rx.table.cell(h["score_a_str"]),
+                            rx.table.cell(
+                                rx.cond(h["has_score_b"], h["score_b_str"], "-")
+                            ),
+                            rx.table.cell(
+                                rx.button(
+                                    "조회",
+                                    size="1",
+                                    variant="soft",
+                                    color_scheme="blue",
+                                    on_click=State.goto_lookup_from_leaders(h["code"], h["is_us"]),
+                                )
+                            ),
+                        ),
+                    )
+                ),
+                variant="surface",
+                width="100%",
+            ),
+        ),
+        width="100%",
+        spacing="4",
+    )
+
+
+def _lookup_info_card(label: str, value) -> rx.Component:
+    return rx.card(
+        rx.vstack(
+            rx.text(label, size="1", color="gray", weight="medium"),
+            rx.text(value, size="3", weight="bold"),
+            spacing="1",
+            align="center",
+        ),
+        variant="surface",
+        style={"text_align": "center", "min_width": "110px"},
+    )
+
+
+def lookup_tab() -> rx.Component:
+    """종목 조회 탭 — 종목명/심볼 직접 입력으로 기본 정보 조회."""
+    return rx.vstack(
+        rx.heading("종목 조회", size="4"),
+        # 검색 바
+        rx.hstack(
+            rx.input(
+                placeholder="종목명 또는 심볼 (예: 삼성전자 / 005930 / AAPL)",
+                value=State.lookup_query,
+                on_change=State.set_lookup_query,
+                on_key_down=State.handle_lookup_key,
+                width="420px",
+            ),
+            rx.select(
+                ["KR", "US"],
+                value=State.lookup_market,
+                on_change=State.set_lookup_market,
+                width="90px",
+            ),
+            rx.button(
+                "조회",
+                on_click=State.do_lookup_stock,
+                loading=State.lookup_loading,
+                disabled=State.lookup_loading,
+            ),
+            align_items="center",
+            spacing="3",
+        ),
+        # 에러 메시지
+        rx.cond(
+            State.lookup_error != "",
+            rx.callout.root(
+                rx.callout.text(State.lookup_error),
+                color_scheme="red",
+                variant="soft",
+            ),
+        ),
+        # 로딩 중
+        rx.cond(
+            State.lookup_loading,
+            rx.hstack(
+                rx.spinner(size="3"),
+                rx.text("데이터 조회 중...", color="gray"),
+                spacing="2",
+                align="center",
+            ),
+        ),
+        # 결과 영역
+        rx.cond(
+            State.lookup_has_result,
+            rx.vstack(
+                # 종목 헤더
+                rx.hstack(
+                    rx.vstack(
+                        rx.heading(State.lookup_name, size="5"),
+                        rx.text(State.lookup_symbol, size="2", color="gray"),
+                        spacing="0",
+                        align="start",
+                    ),
+                    rx.spacer(),
+                    rx.vstack(
+                        rx.text(
+                            State.lookup_price,
+                            size="6",
+                            weight="bold",
+                        ),
+                        rx.text(
+                            State.lookup_change_pct,
+                            size="3",
+                            color=rx.cond(State.lookup_change_positive, "green", "red"),
+                            weight="medium",
+                        ),
+                        spacing="0",
+                        align="end",
+                    ),
+                    width="100%",
+                    align="center",
+                    padding="16px",
+                    style={"border": "1px solid var(--gray-a6)", "border_radius": "8px"},
+                ),
+                # 정보 카드 그리드
+                rx.grid(
+                    _lookup_info_card("시가총액", State.lookup_market_cap),
+                    _lookup_info_card("배당수익률", State.lookup_div_yield),
+                    _lookup_info_card("PBR", State.lookup_pbr),
+                    _lookup_info_card("PER", State.lookup_per),
+                    _lookup_info_card("ROE", State.lookup_roe),
+                    _lookup_info_card("PSR", State.lookup_psr),
+                    _lookup_info_card("VWAP20", State.lookup_vwap),
+                    _lookup_info_card("MFI", State.lookup_mfi),
+                    columns="4",
+                    spacing="3",
+                    width="100%",
+                ),
+                # ── 매수 의견 점수 ───────────────────────────────────
+                rx.cond(
+                    State.lookup_buy_opinion != "",
+                    rx.box(
+                        rx.vstack(
+                            # 헤더: 점수 + 의견 뱃지
+                            rx.hstack(
+                                rx.text("매수 의견 점수", weight="bold", size="2"),
+                                rx.spacer(),
+                                rx.badge(
+                                    State.lookup_buy_score_str + "점",
+                                    color_scheme="blue",
+                                    variant="solid",
+                                    size="2",
+                                ),
+                                rx.badge(
+                                    State.lookup_buy_opinion,
+                                    color_scheme=State.lookup_buy_opinion_color,
+                                    variant="solid",
+                                    size="2",
+                                ),
+                                width="100%",
+                                align="center",
+                                spacing="2",
+                            ),
+                            # 점수 항목 테이블
+                            rx.table.root(
+                                rx.table.header(
+                                    rx.table.row(
+                                        rx.table.column_header_cell("항목"),
+                                        rx.table.column_header_cell("내용"),
+                                        rx.table.column_header_cell("점수", justify="end"),
+                                    )
+                                ),
+                                rx.table.body(
+                                    rx.foreach(
+                                        State.lookup_buy_score_items,
+                                        lambda item: rx.table.row(
+                                            rx.table.cell(
+                                                rx.text(
+                                                    item["label"],
+                                                    weight="medium",
+                                                    color=rx.cond(item["positive"], "green", "gray"),
+                                                    size="2",
+                                                )
+                                            ),
+                                            rx.table.cell(
+                                                rx.text(item["detail"], size="2", color="gray")
+                                            ),
+                                            rx.table.cell(
+                                                rx.badge(
+                                                    item["score_str"],
+                                                    color_scheme=rx.cond(item["positive"], "green", "gray"),
+                                                    variant="soft",
+                                                ),
+                                                justify="end",
+                                            ),
+                                        ),
+                                    )
+                                ),
+                                variant="surface",
+                                width="100%",
+                                size="1",
+                            ),
+                            # 점수 기준 안내
+                            rx.hstack(
+                                rx.badge("7~8 강력매수", color_scheme="green", variant="soft", size="1"),
+                                rx.badge("5~6 매수검토", color_scheme="blue", variant="soft", size="1"),
+                                rx.badge("3~4 중립", color_scheme="gray", variant="soft", size="1"),
+                                rx.badge("0~2 관망", color_scheme="orange", variant="soft", size="1"),
+                                rx.badge("음수 주의", color_scheme="red", variant="soft", size="1"),
+                                spacing="2",
+                                flex_wrap="wrap",
+                            ),
+                            spacing="3",
+                            width="100%",
+                        ),
+                        padding="16px",
+                        style={"border": "1px solid var(--gray-a6)", "border_radius": "8px"},
+                        width="100%",
+                    ),
+                ),
+                # 주가 차트
+                rx.cond(
+                    State.lookup_chart_data.length() > 0,
+                    rx.box(
+                        rx.vstack(
+                            rx.hstack(
+                                rx.text("주가 차트", weight="bold", size="2"),
+                                rx.badge("종가", color_scheme="blue"),
+                                rx.badge("VWAP20", color_scheme="amber"),
+                                rx.badge("VWAP60", color_scheme="orange"),
+                                rx.badge("TWAP20", color_scheme="green"),
+                                rx.badge("TWAP60", color_scheme="red"),
+                                spacing="2",
+                                align_items="center",
+                            ),
+                            rx.recharts.composed_chart(
+                                rx.recharts.line(
+                                    data_key="종가",
+                                    stroke="#2563eb",
+                                    dot=False,
+                                    type_="monotone",
+                                    stroke_width=2,
+                                    name="종가",
+                                ),
+                                rx.recharts.line(
+                                    data_key="VWAP20",
+                                    stroke="#f59e0b",
+                                    dot=False,
+                                    type_="monotone",
+                                    stroke_dasharray="6 3",
+                                    stroke_width=2,
+                                    name="VWAP20",
+                                ),
+                                rx.recharts.line(
+                                    data_key="VWAP60",
+                                    stroke="#ea580c",
+                                    dot=False,
+                                    type_="monotone",
+                                    stroke_dasharray="6 3",
+                                    stroke_width=2,
+                                    name="VWAP60",
+                                ),
+                                rx.recharts.line(
+                                    data_key="MA20",
+                                    stroke="#16a34a",
+                                    dot=False,
+                                    type_="monotone",
+                                    stroke_width=1,
+                                    name="TWAP20",
+                                ),
+                                rx.recharts.line(
+                                    data_key="MA60",
+                                    stroke="#dc2626",
+                                    dot=False,
+                                    type_="monotone",
+                                    stroke_width=1,
+                                    name="TWAP60",
+                                ),
+                                rx.recharts.x_axis(data_key="date", tick={"fontSize": 9}),
+                                rx.recharts.y_axis(tick={"fontSize": 9}),
+                                rx.recharts.cartesian_grid(stroke_dasharray="3 3"),
+                                rx.recharts.tooltip(),
+                                rx.recharts.legend(),
+                                data=State.lookup_chart_data,
+                                width="100%",
+                                height=300,
+                            ),
+                            width="100%",
+                            spacing="3",
+                        ),
+                        padding="16px",
+                        border_radius="8px",
+                        background="var(--gray-2)",
+                        border="1px solid var(--gray-5)",
+                        width="100%",
+                    ),
+                ),
+                width="100%",
+                spacing="4",
+            ),
+        ),
+        width="100%",
+        spacing="4",
+    )
+
+
 def holding_analysis_tab() -> rx.Component:
     """보유종목 포트폴리오 분석 탭."""
     return rx.vstack(
@@ -2950,6 +3625,8 @@ def main_content() -> rx.Component:
             rx.tabs.trigger("히스토리", value="history"),
             rx.tabs.trigger("보유종목", value="holdings"),
             rx.tabs.trigger("보유종목분석", value="portfolio"),
+            rx.tabs.trigger("당일주도주", value="leaders"),
+            rx.tabs.trigger("종목조회", value="lookup"),
         ),
         rx.tabs.content(
             rx.box(scanner_tab(), padding_top="16px"),
@@ -2974,6 +3651,14 @@ def main_content() -> rx.Component:
         rx.tabs.content(
             rx.box(holding_analysis_tab(), padding_top="16px"),
             value="portfolio",
+        ),
+        rx.tabs.content(
+            rx.box(leaders_tab(), padding_top="16px"),
+            value="leaders",
+        ),
+        rx.tabs.content(
+            rx.box(lookup_tab(), padding_top="16px"),
+            value="lookup",
         ),
         value=State.active_tab,
         on_change=State.set_tab,

@@ -11,3 +11,4 @@ __pycache__/
 .reflex/
 .claude/
 requirement.txt
+cache/

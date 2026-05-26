@@ -90,6 +90,8 @@ QuantMaster/
   - `value=[State.float_var]` 형태(Python 리스트로 감싸기)는 반응형 작동 안 함
 - **State setter**: Reflex 0.8+에서 명시적 setter 메서드 필요
 - **recharts reference_line label**: dict 불가, 문자열만 허용
+- **rx.radio_group value 바인딩 루프**: `value=State.var` + `on_change` 조합 시 Reflex가 상태를 프론트엔드로 보낼 때마다 `on_change`가 재발화 → 무한루프. 일반 `rx.button` 배열로 대체할 것
+- **List[dict] in-place 변경 루프**: `sorted_data`가 `leaders_data_raw`와 dict 객체를 공유할 때 `item["rank"]=i+1` 직접 변경 → Reflex가 raw도 변경됐다고 감지 → 루프. `{**item, "rank": i+1}` 새 dict 생성으로 해결
 - **프로세스 종료**: `cmd //c "taskkill /f /im python.exe & taskkill /f /im node.exe"`
 
 ---
