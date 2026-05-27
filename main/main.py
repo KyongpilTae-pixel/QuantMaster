@@ -228,6 +228,14 @@ class State(rx.State):
     lookup_buy_opinion_color: str = "gray"
     lookup_buy_score_items: List[dict] = []
 
+    # 글로벌 모멘텀 전략
+    momentum_rows: List[dict] = []
+    momentum_recommendation: str = ""
+    momentum_rec_key: str = ""
+    momentum_rec_reason: str = ""
+    momentum_loading: bool = False
+    momentum_error: str = ""
+
     # 당일 주도주
     leaders_market: str = "KOSPI"
     leaders_sort: str = "방법A"        # "방법A" | "방법B" | "거래량" | "상승률"
@@ -509,6 +517,25 @@ class State(rx.State):
             self.saved_runs = [SavedRun(run_id=r["id"], label=r["label"]) for r in runs]
         elif tab in ("holdings", "portfolio"):
             self.load_holdings_from_db()
+
+    async def fetch_momentum(self):
+        from utils.momentum_scanner import fetch_momentum_data
+        self.momentum_loading = True
+        self.momentum_error = ""
+        self.momentum_rows = []
+        self.momentum_recommendation = ""
+        yield
+        try:
+            result = await asyncio.to_thread(fetch_momentum_data)
+            self.momentum_rows = result["rows"]
+            self.momentum_recommendation = result["recommendation"]
+            self.momentum_rec_key = result["rec_key"]
+            self.momentum_rec_reason = result["rec_reason"]
+        except Exception as e:
+            self.momentum_error = f"오류: {e}"
+        finally:
+            self.momentum_loading = False
+        yield
 
     def set_leaders_market(self, v: str):
         self.leaders_market = v
@@ -3148,6 +3175,173 @@ def holdings_tab() -> rx.Component:
     )
 
 
+def momentum_tab() -> rx.Component:
+    """글로벌 시장 모멘텀 전략 탭."""
+    rec_color_map = {
+        "kr":   "blue",
+        "us":   "green",
+        "bond": "amber",
+        "cash": "gray",
+    }
+
+    def asset_row(r):
+        return rx.table.row(
+            # 종목명 — 추천 자산은 강조
+            rx.table.cell(
+                rx.hstack(
+                    rx.cond(
+                        r["is_recommended"],
+                        rx.badge("추천", color_scheme="gold", size="1"),
+                        rx.fragment(),
+                    ),
+                    rx.text(
+                        r["name"],
+                        weight=rx.cond(r["is_recommended"], "bold", "regular"),
+                        size="2",
+                    ),
+                    spacing="2",
+                    align="center",
+                )
+            ),
+            # 3개월
+            rx.table.cell(
+                rx.badge(
+                    r["ret_3m_str"],
+                    color_scheme=rx.cond(
+                        r["win_3m"], "green",
+                        rx.cond(r["pos_3m"], "teal", "red")
+                    ),
+                    variant=rx.cond(r["win_3m"], "solid", "soft"),
+                )
+            ),
+            # 6개월
+            rx.table.cell(
+                rx.badge(
+                    r["ret_6m_str"],
+                    color_scheme=rx.cond(
+                        r["win_6m"], "green",
+                        rx.cond(r["pos_6m"], "teal", "red")
+                    ),
+                    variant=rx.cond(r["win_6m"], "solid", "soft"),
+                )
+            ),
+            # 12개월
+            rx.table.cell(
+                rx.badge(
+                    r["ret_12m_str"],
+                    color_scheme=rx.cond(
+                        r["win_12m"], "green",
+                        rx.cond(r["pos_12m"], "teal", "red")
+                    ),
+                    variant=rx.cond(r["win_12m"], "solid", "soft"),
+                )
+            ),
+        )
+
+    return rx.vstack(
+        # ── 추천 카드 ──────────────────────────────────────────────
+        rx.cond(
+            State.momentum_recommendation != "",
+            rx.box(
+                rx.vstack(
+                    rx.text("투자 추천", size="1", color="gray", weight="medium"),
+                    rx.hstack(
+                        rx.heading(State.momentum_recommendation, size="6"),
+                        rx.badge(State.momentum_rec_reason, color_scheme="blue", variant="soft"),
+                        spacing="3",
+                        align="center",
+                    ),
+                    rx.text(
+                        rx.cond(
+                            State.momentum_rec_key == "cash",
+                            "전 자산이 마이너스입니다. 현금을 보유하세요.",
+                            "해당 자산이 최근 모멘텀에서 가장 우수합니다.",
+                        ),
+                        size="2",
+                        color="gray",
+                    ),
+                    spacing="2",
+                    align_items="start",
+                ),
+                padding="20px",
+                border_radius="12px",
+                background=rx.cond(
+                    State.momentum_rec_key == "cash",
+                    "var(--gray-2)",
+                    "var(--green-2)",
+                ),
+                border=rx.cond(
+                    State.momentum_rec_key == "cash",
+                    "2px solid var(--gray-6)",
+                    "2px solid var(--green-6)",
+                ),
+                width="100%",
+            ),
+        ),
+        # ── 조회 버튼 ──────────────────────────────────────────────
+        rx.hstack(
+            rx.button(
+                rx.cond(
+                    State.momentum_loading,
+                    rx.hstack(rx.spinner(size="2"), rx.text("조회 중..."), spacing="2"),
+                    rx.text("모멘텀 조회"),
+                ),
+                on_click=State.fetch_momentum,
+                disabled=State.momentum_loading,
+                color_scheme="blue",
+            ),
+            rx.text(
+                "한국(KOSPI) · 미국(S&P500) · 채권(TLT) 의 3·6·12개월 수익률 비교",
+                size="1",
+                color="gray",
+            ),
+            spacing="4",
+            align="center",
+            width="100%",
+        ),
+        # ── 오류 메시지 ────────────────────────────────────────────
+        rx.cond(
+            State.momentum_error != "",
+            rx.callout(State.momentum_error, color_scheme="red"),
+        ),
+        # ── 수익률 테이블 ──────────────────────────────────────────
+        rx.cond(
+            State.momentum_rows.length() > 0,
+            rx.table.root(
+                rx.table.header(
+                    rx.table.row(
+                        rx.table.column_header_cell("자산"),
+                        rx.table.column_header_cell("3개월"),
+                        rx.table.column_header_cell("6개월"),
+                        rx.table.column_header_cell("12개월"),
+                    )
+                ),
+                rx.table.body(
+                    rx.foreach(State.momentum_rows, asset_row)
+                ),
+                width="100%",
+                variant="surface",
+            ),
+        ),
+        # ── 범례 ──────────────────────────────────────────────────
+        rx.cond(
+            State.momentum_rows.length() > 0,
+            rx.hstack(
+                rx.badge("1위", color_scheme="green", variant="solid"),
+                rx.text("해당 기간 최고 수익률", size="1", color="gray"),
+                rx.badge("+수익", color_scheme="teal", variant="soft"),
+                rx.text("양수", size="1", color="gray"),
+                rx.badge("-손실", color_scheme="red", variant="soft"),
+                rx.text("음수", size="1", color="gray"),
+                spacing="2",
+                align="center",
+            ),
+        ),
+        spacing="5",
+        width="100%",
+    )
+
+
 def leaders_tab() -> rx.Component:
     """당일 주도주 탭 — 방법A/B 복합 점수 정렬."""
     return rx.vstack(
@@ -3839,6 +4033,7 @@ def main_content() -> rx.Component:
             rx.tabs.trigger("보유종목분석", value="portfolio"),
             rx.tabs.trigger("당일주도주", value="leaders"),
             rx.tabs.trigger("종목조회", value="lookup"),
+            rx.tabs.trigger("시장모멘텀", value="momentum"),
         ),
         rx.tabs.content(
             rx.box(scanner_tab(), padding_top="16px"),
@@ -3871,6 +4066,10 @@ def main_content() -> rx.Component:
         rx.tabs.content(
             rx.box(lookup_tab(), padding_top="16px"),
             value="lookup",
+        ),
+        rx.tabs.content(
+            rx.box(momentum_tab(), padding_top="16px"),
+            value="momentum",
         ),
         value=State.active_tab,
         on_change=State.set_tab,
