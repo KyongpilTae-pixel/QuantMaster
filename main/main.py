@@ -235,6 +235,9 @@ class State(rx.State):
     momentum_rec_reason: str = ""
     momentum_loading: bool = False
     momentum_error: str = ""
+    momentum_show_3m: bool = True
+    momentum_show_6m: bool = True
+    momentum_show_12m: bool = True
 
     # 당일 주도주
     leaders_market: str = "KOSPI"
@@ -517,6 +520,15 @@ class State(rx.State):
             self.saved_runs = [SavedRun(run_id=r["id"], label=r["label"]) for r in runs]
         elif tab in ("holdings", "portfolio"):
             self.load_holdings_from_db()
+
+    def toggle_momentum_3m(self):
+        self.momentum_show_3m = not self.momentum_show_3m
+
+    def toggle_momentum_6m(self):
+        self.momentum_show_6m = not self.momentum_show_6m
+
+    def toggle_momentum_12m(self):
+        self.momentum_show_12m = not self.momentum_show_12m
 
     async def fetch_momentum(self):
         from utils.momentum_scanner import fetch_momentum_data
@@ -3184,9 +3196,17 @@ def momentum_tab() -> rx.Component:
         "cash": "gray",
     }
 
+    def period_cell(ret_str, win_flag, pos_flag):
+        return rx.table.cell(
+            rx.badge(
+                ret_str,
+                color_scheme=rx.cond(win_flag, "green", rx.cond(pos_flag, "teal", "red")),
+                variant=rx.cond(win_flag, "solid", "soft"),
+            )
+        )
+
     def asset_row(r):
         return rx.table.row(
-            # 종목명 — 추천 자산은 강조
             rx.table.cell(
                 rx.hstack(
                     rx.cond(
@@ -3203,38 +3223,20 @@ def momentum_tab() -> rx.Component:
                     align="center",
                 )
             ),
-            # 3개월
-            rx.table.cell(
-                rx.badge(
-                    r["ret_3m_str"],
-                    color_scheme=rx.cond(
-                        r["win_3m"], "green",
-                        rx.cond(r["pos_3m"], "teal", "red")
-                    ),
-                    variant=rx.cond(r["win_3m"], "solid", "soft"),
-                )
+            rx.cond(
+                State.momentum_show_3m,
+                period_cell(r["ret_3m_str"], r["win_3m"], r["pos_3m"]),
+                rx.fragment(),
             ),
-            # 6개월
-            rx.table.cell(
-                rx.badge(
-                    r["ret_6m_str"],
-                    color_scheme=rx.cond(
-                        r["win_6m"], "green",
-                        rx.cond(r["pos_6m"], "teal", "red")
-                    ),
-                    variant=rx.cond(r["win_6m"], "solid", "soft"),
-                )
+            rx.cond(
+                State.momentum_show_6m,
+                period_cell(r["ret_6m_str"], r["win_6m"], r["pos_6m"]),
+                rx.fragment(),
             ),
-            # 12개월
-            rx.table.cell(
-                rx.badge(
-                    r["ret_12m_str"],
-                    color_scheme=rx.cond(
-                        r["win_12m"], "green",
-                        rx.cond(r["pos_12m"], "teal", "red")
-                    ),
-                    variant=rx.cond(r["win_12m"], "solid", "soft"),
-                )
+            rx.cond(
+                State.momentum_show_12m,
+                period_cell(r["ret_12m_str"], r["win_12m"], r["pos_12m"]),
+                rx.fragment(),
             ),
         )
 
@@ -3278,7 +3280,7 @@ def momentum_tab() -> rx.Component:
                 width="100%",
             ),
         ),
-        # ── 조회 버튼 ──────────────────────────────────────────────
+        # ── 조회 버튼 + 기간 선택 ──────────────────────────────────
         rx.hstack(
             rx.button(
                 rx.cond(
@@ -3290,14 +3292,32 @@ def momentum_tab() -> rx.Component:
                 disabled=State.momentum_loading,
                 color_scheme="blue",
             ),
-            rx.text(
-                "한국(KOSPI) · 미국(S&P500) · 채권(TLT) 의 3·6·12개월 수익률 비교",
+            rx.divider(orientation="vertical", height="24px"),
+            rx.text("기간:", size="2", color="gray"),
+            rx.button(
+                "3개월",
                 size="1",
-                color="gray",
+                variant=rx.cond(State.momentum_show_3m, "solid", "soft"),
+                color_scheme="gray",
+                on_click=State.toggle_momentum_3m,
             ),
-            spacing="4",
+            rx.button(
+                "6개월",
+                size="1",
+                variant=rx.cond(State.momentum_show_6m, "solid", "soft"),
+                color_scheme="gray",
+                on_click=State.toggle_momentum_6m,
+            ),
+            rx.button(
+                "12개월",
+                size="1",
+                variant=rx.cond(State.momentum_show_12m, "solid", "soft"),
+                color_scheme="gray",
+                on_click=State.toggle_momentum_12m,
+            ),
+            spacing="3",
             align="center",
-            width="100%",
+            wrap="wrap",
         ),
         # ── 오류 메시지 ────────────────────────────────────────────
         rx.cond(
@@ -3311,9 +3331,21 @@ def momentum_tab() -> rx.Component:
                 rx.table.header(
                     rx.table.row(
                         rx.table.column_header_cell("자산"),
-                        rx.table.column_header_cell("3개월"),
-                        rx.table.column_header_cell("6개월"),
-                        rx.table.column_header_cell("12개월"),
+                        rx.cond(
+                            State.momentum_show_3m,
+                            rx.table.column_header_cell("3개월"),
+                            rx.fragment(),
+                        ),
+                        rx.cond(
+                            State.momentum_show_6m,
+                            rx.table.column_header_cell("6개월"),
+                            rx.fragment(),
+                        ),
+                        rx.cond(
+                            State.momentum_show_12m,
+                            rx.table.column_header_cell("12개월"),
+                            rx.fragment(),
+                        ),
                     )
                 ),
                 rx.table.body(
