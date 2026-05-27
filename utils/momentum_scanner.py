@@ -1,21 +1,21 @@
-"""글로벌 시장 모멘텀 스캐너 — 한국/미국/채권 3·6·12개월 수익률 비교."""
+"""글로벌 시장 모멘텀 스캐너 — 한국/미국/중국/일본/채권/금 3·6·12개월 수익률 비교."""
 
 from datetime import datetime, timedelta
 
 import FinanceDataReader as fdr
-import pandas as pd
 
 _ASSETS = [
-    {"key": "kr",   "name": "한국 (KOSPI)", "code": "KS11",      "currency": "KRW"},
-    {"key": "us",   "name": "미국 (S&P500)", "code": "SPY",      "currency": "USD"},
+    {"key": "kr",   "name": "한국 (KOSPI)", "code": "KS11", "currency": "KRW"},
+    {"key": "us",   "name": "미국 (S&P500)", "code": "SPY",  "currency": "USD"},
     {"key": "cn",   "name": "중국 (상하이)", "code": "SSEC", "currency": "CNY"},
     {"key": "jp",   "name": "일본 (닛케이)", "code": "N225", "currency": "JPY"},
     {"key": "bond", "name": "채권 (TLT)",    "code": "TLT",  "currency": "USD"},
+    {"key": "gold", "name": "금 (GLD)",      "code": "GLD",  "currency": "USD"},
 ]
 
 _PERIODS = [
-    {"label": "3개월", "days": 63},
-    {"label": "6개월", "days": 126},
+    {"label": "3개월",  "days": 63},
+    {"label": "6개월",  "days": 126},
     {"label": "12개월", "days": 252},
 ]
 
@@ -24,7 +24,6 @@ def _fetch_return(code: str, trading_days: int) -> float | None:
     """N 거래일 누적 수익률(%) 반환."""
     try:
         end = datetime.today()
-        # 충분한 버퍼(2배)로 달력일 기준 조회
         start = end - timedelta(days=trading_days * 2 + 30)
         df = fdr.DataReader(code, start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d"))
         if df.empty or "Close" not in df.columns:
@@ -42,19 +41,11 @@ def fetch_momentum_data() -> dict:
     """
     Returns:
         {
-          "rows": [
-            {"key": "kr", "name": "한국 (KOSPI)",
-             "ret_3m": 2.5, "ret_6m": -1.2, "ret_12m": 8.3,
-             "ret_3m_str": "+2.50%", ..., "win_3m": True, ...},
-            ...
-            {"key": "cash", "name": "현금", "ret_3m": 0.0, ...},
-          ],
-          "recommendation": "미국 (S&P500)",   # or "현금"
-          "rec_key": "us",                      # "kr"|"us"|"bond"|"cash"
+          "rows": [...],
+          "recommendation": "미국 (S&P500)",
+          "rec_key": "us",
           "rec_reason": "3개 기간 모두 1위",
-          "period_winners": {
-            "3개월": "us", "6개월": "us", "12개월": "kr"
-          },
+          "all_negative": False,   # 전 자산 마이너스 여부
           "error": "",
         }
     """
@@ -62,58 +53,49 @@ def fetch_momentum_data() -> dict:
     for asset in _ASSETS:
         row = {"key": asset["key"], "name": asset["name"]}
         for p in _PERIODS:
+            label_key = p["label"].replace("개월", "m")
             ret = _fetch_return(asset["code"], p["days"])
-            key = f"ret_{p['label'][0]}m" if p["label"][0].isdigit() else p["label"]
-            label_key = p["label"].replace("개월", "m")  # "3m","6m","12m"
             row[f"ret_{label_key}"] = ret
-            row[f"ret_{label_key}_str"] = (
-                f"{ret:+.2f}%" if ret is not None else "-"
-            )
+            row[f"ret_{label_key}_str"] = f"{ret:+.2f}%" if ret is not None else "-"
             row[f"pos_{label_key}"] = ret is not None and ret > 0
         rows.append(row)
 
-    # 현금 행 (수익률 항상 0)
-    cash_row = {"key": "cash", "name": "현금 (보유)"}
-    for p in _PERIODS:
-        label_key = p["label"].replace("개월", "m")
-        cash_row[f"ret_{label_key}"] = 0.0
-        cash_row[f"ret_{label_key}_str"] = "0.00%"
-        cash_row[f"pos_{label_key}"] = False
-    rows.append(cash_row)
-
-    # 기간별 1위 결정 (현금 포함, 전부 음수면 현금이 1위)
+    # 기간별 1위 결정 — 전부 마이너스(또는 None)면 "cash" 반환
     period_winners = {}
+    all_negative = True
     for p in _PERIODS:
         label_key = p["label"].replace("개월", "m")
         best_key = "cash"
-        best_ret = 0.0  # 현금 기준치
-        for r in rows[:-1]:  # 현금 제외하고 비교
+        best_ret = 0.0  # 현금(0%) 기준치
+        for r in rows:
             val = r.get(f"ret_{label_key}")
             if val is not None and val > best_ret:
                 best_ret = val
                 best_key = r["key"]
+                all_negative = False
         period_winners[p["label"]] = best_key
+
+    # 전 기간 전 자산 마이너스 재확인
+    all_negative = all(
+        pw == "cash" for pw in period_winners.values()
+    )
 
     # 종합 추천: 각 기간 1위 횟수 집계
     win_counts: dict[str, int] = {}
     for winner in period_winners.values():
         win_counts[winner] = win_counts.get(winner, 0) + 1
 
-    # 최다 승 자산 (동률 시 12개월 우선)
     max_wins = max(win_counts.values())
     candidates = [k for k, v in win_counts.items() if v == max_wins]
-    if len(candidates) == 1:
-        rec_key = candidates[0]
-    else:
-        # 12개월 기준으로 최종 결정
-        rec_key = period_winners.get("12개월", candidates[0])
+    rec_key = candidates[0] if len(candidates) == 1 else period_winners.get("12개월", candidates[0])
 
-    # 추천 이름/이유
     rec_name_map = {r["key"]: r["name"] for r in rows}
-    rec_name = rec_name_map.get(rec_key, "현금")
+    rec_name = rec_name_map.get(rec_key, "현금 보유")
     wins = win_counts.get(rec_key, 0)
+
     if rec_key == "cash":
         rec_reason = "전 기간 전 자산 수익률 마이너스"
+        rec_name = "현금 보유"
     elif wins == 3:
         rec_reason = "3개 기간 모두 1위"
     elif wins == 2:
@@ -121,12 +103,11 @@ def fetch_momentum_data() -> dict:
     else:
         rec_reason = "12개월 기준 1위"
 
-    # bool 플래그 — rx.foreach 내 비교 불가 우회
+    # bool 플래그 (rx.foreach 내 비교 불가 우회)
     for r in rows:
         for p in _PERIODS:
             label_key = p["label"].replace("개월", "m")
-            pk = p["label"]
-            r[f"win_{label_key}"] = (period_winners.get(pk) == r["key"])
+            r[f"win_{label_key}"] = (period_winners.get(p["label"]) == r["key"])
         r["is_recommended"] = (r["key"] == rec_key)
 
     return {
@@ -134,6 +115,6 @@ def fetch_momentum_data() -> dict:
         "recommendation": rec_name,
         "rec_key": rec_key,
         "rec_reason": rec_reason,
-        "period_winners": period_winners,
+        "all_negative": all_negative,
         "error": "",
     }

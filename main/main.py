@@ -3262,6 +3262,11 @@ def momentum_tab() -> rx.Component:
                         size="2",
                         color="gray",
                     ),
+                    rx.text(
+                        "※ 추천은 선택된 기간의 수익률 기준이며, 투자 조언이 아닙니다.",
+                        size="1",
+                        color="gray",
+                    ),
                     spacing="2",
                     align_items="start",
                 ),
