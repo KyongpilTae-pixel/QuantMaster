@@ -1490,6 +1490,18 @@ def sidebar() -> rx.Component:
                         rx.text("분석 기간", size="2", color="gray"),
                         rx.hstack(
                             rx.button(
+                                "1일",
+                                size="1",
+                                variant=rx.cond(State.defensive_period == 1, "solid", "soft"),
+                                on_click=State.set_defensive_period(1),
+                            ),
+                            rx.button(
+                                "5일",
+                                size="1",
+                                variant=rx.cond(State.defensive_period == 5, "solid", "soft"),
+                                on_click=State.set_defensive_period(5),
+                            ),
+                            rx.button(
                                 "30일",
                                 size="1",
                                 variant=rx.cond(State.defensive_period == 30, "solid", "soft"),
@@ -1508,6 +1520,7 @@ def sidebar() -> rx.Component:
                                 on_click=State.set_defensive_period(120),
                             ),
                             spacing="2",
+                            wrap="wrap",
                         ),
                         rx.hstack(
                             rx.text("Beta 상한: ", size="2", color="gray"),

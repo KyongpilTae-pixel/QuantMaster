@@ -48,7 +48,7 @@ def _calc_one(args: tuple) -> dict | None:
             [market_ret.rename("market"), stock_ret.rename("stock")], axis=1
         ).dropna()
 
-        if len(aligned) < max(period_days // 3, 10):
+        if len(aligned) < max(period_days // 3, 2):
             return None
 
         m, s = aligned["market"], aligned["stock"]
