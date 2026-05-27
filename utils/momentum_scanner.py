@@ -8,7 +8,7 @@ import pandas as pd
 _ASSETS = [
     {"key": "kr",   "name": "한국 (KOSPI)", "code": "KS11",      "currency": "KRW"},
     {"key": "us",   "name": "미국 (S&P500)", "code": "SPY",      "currency": "USD"},
-    {"key": "cn",   "name": "중국 (상하이)", "code": "000001.SS", "currency": "CNY"},
+    {"key": "cn",   "name": "중국 (상하이)", "code": "SSEC",       "currency": "CNY"},
     {"key": "bond", "name": "채권 (TLT)",    "code": "TLT",      "currency": "USD"},
 ]
 
