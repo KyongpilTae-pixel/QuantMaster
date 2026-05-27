@@ -1490,10 +1490,10 @@ def sidebar() -> rx.Component:
                         rx.text("분석 기간", size="2", color="gray"),
                         rx.hstack(
                             rx.button(
-                                "1일",
+                                "2일",
                                 size="1",
-                                variant=rx.cond(State.defensive_period == 1, "solid", "soft"),
-                                on_click=State.set_defensive_period(1),
+                                variant=rx.cond(State.defensive_period == 2, "solid", "soft"),
+                                on_click=State.set_defensive_period(2),
                             ),
                             rx.button(
                                 "5일",
