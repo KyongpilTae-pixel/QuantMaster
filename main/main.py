@@ -230,11 +230,26 @@ class State(rx.State):
 
     # 글로벌 모멘텀 전략
     momentum_rows: List[dict] = []
-    momentum_recommendation: str = ""
-    momentum_rec_key: str = ""
-    momentum_rec_reason: str = ""
     momentum_loading: bool = False
     momentum_error: str = ""
+    # 단순 모멘텀 추천
+    momentum_recommendation: str = ""   # 하위 호환
+    momentum_rec_key: str = ""
+    momentum_rec_reason: str = ""
+    # VAA 추천
+    momentum_vaa_rec_name: str = ""
+    momentum_vaa_rec_key: str = ""
+    momentum_vaa_rec_desc: str = ""
+    # MA200 추천
+    momentum_ma_rec_name: str = ""
+    momentum_ma_rec_key: str = ""
+    momentum_ma_rec_desc: str = ""
+    # 역변동성 배분
+    momentum_invvol_rec_desc: str = ""
+    momentum_invvol_rec_key: str = ""
+    # 상세 테이블 전략 선택
+    momentum_detail: str = "momentum"   # "momentum"|"vaa"|"ma"|"invvol"
+    # 기간 토글
     momentum_show_3m: bool = True
     momentum_show_6m: bool = True
     momentum_show_12m: bool = True
@@ -530,6 +545,9 @@ class State(rx.State):
     def toggle_momentum_12m(self):
         self.momentum_show_12m = not self.momentum_show_12m
 
+    def set_momentum_detail(self, v: str):
+        self.momentum_detail = v
+
     async def fetch_momentum(self):
         from utils.momentum_scanner import fetch_momentum_data
         self.momentum_loading = True
@@ -538,11 +556,23 @@ class State(rx.State):
         self.momentum_recommendation = ""
         yield
         try:
-            result = await asyncio.to_thread(fetch_momentum_data)
-            self.momentum_rows = result["rows"]
-            self.momentum_recommendation = result["recommendation"]
-            self.momentum_rec_key = result["rec_key"]
-            self.momentum_rec_reason = result["rec_reason"]
+            r = await asyncio.to_thread(fetch_momentum_data)
+            self.momentum_rows = r["rows"]
+            # 단순 모멘텀
+            self.momentum_recommendation = r["momentum_rec_name"]
+            self.momentum_rec_key = r["momentum_rec_key"]
+            self.momentum_rec_reason = r["momentum_rec_desc"]
+            # VAA
+            self.momentum_vaa_rec_name = r["vaa_rec_name"]
+            self.momentum_vaa_rec_key = r["vaa_rec_key"]
+            self.momentum_vaa_rec_desc = r["vaa_rec_desc"]
+            # MA200
+            self.momentum_ma_rec_name = r["ma_rec_name"]
+            self.momentum_ma_rec_key = r["ma_rec_key"]
+            self.momentum_ma_rec_desc = r["ma_rec_desc"]
+            # 역변동성
+            self.momentum_invvol_rec_desc = r["invvol_rec_desc"]
+            self.momentum_invvol_rec_key = r["invvol_rec_key"]
         except Exception as e:
             self.momentum_error = f"오류: {e}"
         finally:
@@ -3187,193 +3217,272 @@ def holdings_tab() -> rx.Component:
     )
 
 
-def momentum_tab() -> rx.Component:
-    """글로벌 시장 모멘텀 전략 탭."""
-    rec_color_map = {
-        "kr":   "blue",
-        "us":   "green",
-        "bond": "amber",
-        "cash": "gray",
-    }
+def _momentum_strategy_card(
+    title: str, subtitle: str,
+    rec_name: rx.Component, rec_desc: rx.Component,
+    is_cash: rx.Component, detail_id: str,
+) -> rx.Component:
+    """전략 추천 카드 (클릭 시 하단 상세 테이블 전환)."""
+    selected = State.momentum_detail == detail_id
+    return rx.box(
+        rx.vstack(
+            rx.hstack(
+                rx.text(title, size="2", weight="bold"),
+                rx.cond(selected, rx.badge("선택", size="1", color_scheme="blue"), rx.fragment()),
+                justify="between",
+                width="100%",
+            ),
+            rx.text(subtitle, size="1", color="gray"),
+            rx.divider(),
+            rx.text("추천", size="1", color="gray"),
+            rx.text(rec_name, size="3", weight="bold"),
+            rx.badge(rec_desc, size="1", color_scheme=rx.cond(is_cash, "gray", "green"), variant="soft"),
+            spacing="2",
+            align_items="start",
+            width="100%",
+        ),
+        padding="16px",
+        border_radius="10px",
+        border=rx.cond(selected, "2px solid var(--blue-8)", "1px solid var(--gray-4)"),
+        background=rx.cond(selected, "var(--blue-2)", "var(--gray-1)"),
+        cursor="pointer",
+        on_click=State.set_momentum_detail(detail_id),
+        width="100%",
+        _hover={"border": "2px solid var(--blue-6)"},
+    )
 
-    def period_cell(ret_str, win_flag, pos_flag):
+
+def momentum_tab() -> rx.Component:
+    """글로벌 시장 모멘텀 전략 탭 — 4가지 전략 비교."""
+
+    # ── 공통 헬퍼 ──────────────────────────────────────────────
+    def ret_badge(ret_str, win_flag, pos_flag):
+        return rx.badge(
+            ret_str,
+            color_scheme=rx.cond(win_flag, "green", rx.cond(pos_flag, "teal", "red")),
+            variant=rx.cond(win_flag, "solid", "soft"),
+        )
+
+    def name_cell(r, rec_flag):
         return rx.table.cell(
-            rx.badge(
-                ret_str,
-                color_scheme=rx.cond(win_flag, "green", rx.cond(pos_flag, "teal", "red")),
-                variant=rx.cond(win_flag, "solid", "soft"),
+            rx.hstack(
+                rx.cond(rec_flag, rx.badge("★", color_scheme="gold", size="1"), rx.fragment()),
+                rx.text(r["name"], weight=rx.cond(rec_flag, "bold", "regular"), size="2"),
+                spacing="2", align="center",
             )
         )
 
-    def asset_row(r):
+    # ── 단순 모멘텀 상세 테이블 ───────────────────────────────
+    def momentum_row(r):
         return rx.table.row(
+            name_cell(r, r["is_rec_momentum"]),
+            rx.cond(State.momentum_show_3m,
+                rx.table.cell(ret_badge(r["ret_3m_str"], r["win_3m"], r["pos_3m"])),
+                rx.fragment()),
+            rx.cond(State.momentum_show_6m,
+                rx.table.cell(ret_badge(r["ret_6m_str"], r["win_6m"], r["pos_6m"])),
+                rx.fragment()),
+            rx.cond(State.momentum_show_12m,
+                rx.table.cell(ret_badge(r["ret_12m_str"], r["win_12m"], r["pos_12m"])),
+                rx.fragment()),
+        )
+
+    momentum_table = rx.table.root(
+        rx.table.header(rx.table.row(
+            rx.table.column_header_cell("자산"),
+            rx.cond(State.momentum_show_3m, rx.table.column_header_cell("3개월"), rx.fragment()),
+            rx.cond(State.momentum_show_6m, rx.table.column_header_cell("6개월"), rx.fragment()),
+            rx.cond(State.momentum_show_12m, rx.table.column_header_cell("12개월"), rx.fragment()),
+        )),
+        rx.table.body(rx.foreach(State.momentum_rows, momentum_row)),
+        width="100%", variant="surface",
+    )
+
+    # ── VAA 상세 테이블 ────────────────────────────────────────
+    def vaa_row(r):
+        return rx.table.row(
+            name_cell(r, r["is_rec_vaa"]),
+            rx.table.cell(rx.badge(r["ret_1m_str"],
+                color_scheme=rx.cond(r["pos_1m"], "teal", "red"), variant="soft")),
+            rx.table.cell(rx.badge(r["ret_3m_str"],
+                color_scheme=rx.cond(r["pos_3m"], "teal", "red"), variant="soft")),
+            rx.table.cell(rx.badge(r["ret_6m_str"],
+                color_scheme=rx.cond(r["pos_6m"], "teal", "red"), variant="soft")),
+            rx.table.cell(rx.badge(r["ret_12m_str"],
+                color_scheme=rx.cond(r["pos_12m"], "teal", "red"), variant="soft")),
             rx.table.cell(
-                rx.hstack(
-                    rx.cond(
-                        r["is_recommended"],
-                        rx.badge("추천", color_scheme="gold", size="1"),
-                        rx.fragment(),
-                    ),
-                    rx.text(
-                        r["name"],
-                        weight=rx.cond(r["is_recommended"], "bold", "regular"),
-                        size="2",
-                    ),
-                    spacing="2",
-                    align="center",
+                rx.badge(r["vaa_score_str"],
+                    color_scheme=rx.cond(r["is_rec_vaa"], "green",
+                        rx.cond(r["vaa_positive"], "teal", "red")),
+                    variant=rx.cond(r["is_rec_vaa"], "solid", "soft"),
+                    weight="bold",
                 )
-            ),
-            rx.cond(
-                State.momentum_show_3m,
-                period_cell(r["ret_3m_str"], r["win_3m"], r["pos_3m"]),
-                rx.fragment(),
-            ),
-            rx.cond(
-                State.momentum_show_6m,
-                period_cell(r["ret_6m_str"], r["win_6m"], r["pos_6m"]),
-                rx.fragment(),
-            ),
-            rx.cond(
-                State.momentum_show_12m,
-                period_cell(r["ret_12m_str"], r["win_12m"], r["pos_12m"]),
-                rx.fragment(),
             ),
         )
 
-    return rx.vstack(
-        # ── 추천 카드 ──────────────────────────────────────────────
-        rx.cond(
-            State.momentum_recommendation != "",
-            rx.box(
-                rx.vstack(
-                    rx.text("투자 추천", size="1", color="gray", weight="medium"),
-                    rx.hstack(
-                        rx.heading(State.momentum_recommendation, size="6"),
-                        rx.badge(State.momentum_rec_reason, color_scheme="blue", variant="soft"),
-                        spacing="3",
-                        align="center",
-                    ),
-                    rx.text(
-                        rx.cond(
-                            State.momentum_rec_key == "cash",
-                            "전 자산이 마이너스입니다. 현금을 보유하세요.",
-                            "해당 자산이 최근 모멘텀에서 가장 우수합니다.",
-                        ),
-                        size="2",
-                        color="gray",
-                    ),
-                    rx.text(
-                        "※ 추천은 선택된 기간의 수익률 기준이며, 투자 조언이 아닙니다.",
-                        size="1",
-                        color="gray",
-                    ),
-                    spacing="2",
-                    align_items="start",
-                ),
-                padding="20px",
-                border_radius="12px",
-                background=rx.cond(
-                    State.momentum_rec_key == "cash",
-                    "var(--gray-2)",
-                    "var(--green-2)",
-                ),
-                border=rx.cond(
-                    State.momentum_rec_key == "cash",
-                    "2px solid var(--gray-6)",
-                    "2px solid var(--green-6)",
-                ),
-                width="100%",
-            ),
+    vaa_table = rx.vstack(
+        rx.text("점수 = 12×1M + 4×3M + 2×6M + 1×12M  |  최고 점수 자산 선택, 음수면 현금",
+            size="1", color="gray"),
+        rx.table.root(
+            rx.table.header(rx.table.row(
+                rx.table.column_header_cell("자산"),
+                rx.table.column_header_cell("1개월"),
+                rx.table.column_header_cell("3개월"),
+                rx.table.column_header_cell("6개월"),
+                rx.table.column_header_cell("12개월"),
+                rx.table.column_header_cell("VAA 점수"),
+            )),
+            rx.table.body(rx.foreach(State.momentum_rows, vaa_row)),
+            width="100%", variant="surface",
         ),
-        # ── 조회 버튼 + 기간 선택 ──────────────────────────────────
+        spacing="2", width="100%",
+    )
+
+    # ── MA200 상세 테이블 ──────────────────────────────────────
+    def ma_row(r):
+        return rx.table.row(
+            name_cell(r, r["is_rec_ma"]),
+            rx.table.cell(r["close_str"]),
+            rx.table.cell(r["ma200_str"]),
+            rx.table.cell(
+                rx.badge(r["ma_signal_str"],
+                    color_scheme=rx.cond(r["above_ma"], "green", "red"),
+                    variant="soft",
+                )
+            ),
+            rx.table.cell(
+                rx.badge(r["ret_12m_str"],
+                    color_scheme=rx.cond(r["pos_12m"], "teal", "red"),
+                    variant=rx.cond(r["is_rec_ma"], "solid", "soft"),
+                )
+            ),
+        )
+
+    ma_table = rx.vstack(
+        rx.text("현재가 > 200일 이동평균인 자산 중 12개월 수익률 1위 선택",
+            size="1", color="gray"),
+        rx.table.root(
+            rx.table.header(rx.table.row(
+                rx.table.column_header_cell("자산"),
+                rx.table.column_header_cell("현재가"),
+                rx.table.column_header_cell("MA200"),
+                rx.table.column_header_cell("신호"),
+                rx.table.column_header_cell("12개월"),
+            )),
+            rx.table.body(rx.foreach(State.momentum_rows, ma_row)),
+            width="100%", variant="surface",
+        ),
+        spacing="2", width="100%",
+    )
+
+    # ── 역변동성 상세 테이블 ───────────────────────────────────
+    def invvol_row(r):
+        return rx.table.row(
+            name_cell(r, r["is_rec_invvol"]),
+            rx.table.cell(r["vol_str"]),
+            rx.table.cell(
+                rx.hstack(
+                    rx.box(
+                        background="var(--blue-8)",
+                        height="10px",
+                        width=r["inv_vol_weight_str"],
+                        border_radius="3px",
+                        min_width="4px",
+                    ),
+                    rx.text(r["inv_vol_weight_str"], size="2"),
+                    spacing="2", align="center",
+                )
+            ),
+        )
+
+    invvol_table = rx.vstack(
+        rx.text("변동성(60일 연환산) 역수에 비례하여 비중 배분 — 변동성 낮을수록 더 많이 투자",
+            size="1", color="gray"),
+        rx.table.root(
+            rx.table.header(rx.table.row(
+                rx.table.column_header_cell("자산"),
+                rx.table.column_header_cell("변동성(연)"),
+                rx.table.column_header_cell("배분 비중"),
+            )),
+            rx.table.body(rx.foreach(State.momentum_rows, invvol_row)),
+            width="100%", variant="surface",
+        ),
+        spacing="2", width="100%",
+    )
+
+    # ── 탭 레이아웃 조합 ───────────────────────────────────────
+    return rx.vstack(
+        # 컨트롤 바
         rx.hstack(
             rx.button(
                 rx.cond(
                     State.momentum_loading,
                     rx.hstack(rx.spinner(size="2"), rx.text("조회 중..."), spacing="2"),
-                    rx.text("모멘텀 조회"),
+                    rx.text("조회"),
                 ),
                 on_click=State.fetch_momentum,
                 disabled=State.momentum_loading,
                 color_scheme="blue",
             ),
             rx.divider(orientation="vertical", height="24px"),
-            rx.text("기간:", size="2", color="gray"),
-            rx.button(
-                "3개월",
-                size="1",
+            rx.text("기간 (단순모멘텀):", size="2", color="gray"),
+            rx.button("3M", size="1",
                 variant=rx.cond(State.momentum_show_3m, "solid", "soft"),
-                color_scheme="gray",
-                on_click=State.toggle_momentum_3m,
-            ),
-            rx.button(
-                "6개월",
-                size="1",
+                color_scheme="gray", on_click=State.toggle_momentum_3m),
+            rx.button("6M", size="1",
                 variant=rx.cond(State.momentum_show_6m, "solid", "soft"),
-                color_scheme="gray",
-                on_click=State.toggle_momentum_6m,
-            ),
-            rx.button(
-                "12개월",
-                size="1",
+                color_scheme="gray", on_click=State.toggle_momentum_6m),
+            rx.button("12M", size="1",
                 variant=rx.cond(State.momentum_show_12m, "solid", "soft"),
-                color_scheme="gray",
-                on_click=State.toggle_momentum_12m,
-            ),
-            spacing="3",
-            align="center",
-            wrap="wrap",
+                color_scheme="gray", on_click=State.toggle_momentum_12m),
+            spacing="3", align="center", wrap="wrap",
         ),
-        # ── 오류 메시지 ────────────────────────────────────────────
+        # 오류
         rx.cond(
             State.momentum_error != "",
             rx.callout(State.momentum_error, color_scheme="red"),
         ),
-        # ── 수익률 테이블 ──────────────────────────────────────────
+        # 4개 전략 추천 카드
         rx.cond(
             State.momentum_rows.length() > 0,
-            rx.table.root(
-                rx.table.header(
-                    rx.table.row(
-                        rx.table.column_header_cell("자산"),
-                        rx.cond(
-                            State.momentum_show_3m,
-                            rx.table.column_header_cell("3개월"),
-                            rx.fragment(),
-                        ),
-                        rx.cond(
-                            State.momentum_show_6m,
-                            rx.table.column_header_cell("6개월"),
-                            rx.fragment(),
-                        ),
-                        rx.cond(
-                            State.momentum_show_12m,
-                            rx.table.column_header_cell("12개월"),
-                            rx.fragment(),
-                        ),
-                    )
+            rx.grid(
+                _momentum_strategy_card(
+                    "단순 모멘텀", "3·6·12M 수익률 기반",
+                    State.momentum_recommendation, State.momentum_rec_reason,
+                    State.momentum_rec_key == "cash", "momentum",
                 ),
-                rx.table.body(
-                    rx.foreach(State.momentum_rows, asset_row)
+                _momentum_strategy_card(
+                    "VAA 모멘텀", "12×1M + 4×3M + 2×6M + 1×12M",
+                    State.momentum_vaa_rec_name, State.momentum_vaa_rec_desc,
+                    State.momentum_vaa_rec_key == "cash", "vaa",
                 ),
+                _momentum_strategy_card(
+                    "MA200 필터", "200일 이동평균 위 자산 중 12M 1위",
+                    State.momentum_ma_rec_name, State.momentum_ma_rec_desc,
+                    State.momentum_ma_rec_key == "cash", "ma",
+                ),
+                _momentum_strategy_card(
+                    "역변동성 배분", "변동성 역수 비례 비중",
+                    "분산 배분", State.momentum_invvol_rec_desc,
+                    False, "invvol",
+                ),
+                columns="2",
+                gap="3",
                 width="100%",
-                variant="surface",
             ),
         ),
-        # ── 범례 ──────────────────────────────────────────────────
+        # 상세 테이블 (카드 클릭으로 전환)
         rx.cond(
             State.momentum_rows.length() > 0,
-            rx.hstack(
-                rx.badge("1위", color_scheme="green", variant="solid"),
-                rx.text("해당 기간 최고 수익률", size="1", color="gray"),
-                rx.badge("+수익", color_scheme="teal", variant="soft"),
-                rx.text("양수", size="1", color="gray"),
-                rx.badge("-손실", color_scheme="red", variant="soft"),
-                rx.text("음수", size="1", color="gray"),
-                spacing="2",
-                align="center",
+            rx.box(
+                rx.cond(State.momentum_detail == "momentum", momentum_table, rx.fragment()),
+                rx.cond(State.momentum_detail == "vaa", vaa_table, rx.fragment()),
+                rx.cond(State.momentum_detail == "ma", ma_table, rx.fragment()),
+                rx.cond(State.momentum_detail == "invvol", invvol_table, rx.fragment()),
+                width="100%",
             ),
         ),
+        rx.text("※ 투자 조언이 아닙니다. 참고용으로만 활용하세요.", size="1", color="gray"),
         spacing="5",
         width="100%",
     )

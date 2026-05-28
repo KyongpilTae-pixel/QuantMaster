@@ -1,120 +1,207 @@
-"""글로벌 시장 모멘텀 스캐너 — 한국/미국/중국/일본/채권/금 3·6·12개월 수익률 비교."""
+"""글로벌 시장 모멘텀 스캐너 — 4가지 전략 통합 분석."""
 
+import math
 from datetime import datetime, timedelta
 
 import FinanceDataReader as fdr
+import pandas as pd
 
 _ASSETS = [
-    {"key": "kr",   "name": "한국 (KOSPI)", "code": "KS11", "currency": "KRW"},
-    {"key": "us",   "name": "미국 (S&P500)", "code": "SPY",  "currency": "USD"},
-    {"key": "cn",   "name": "중국 (상하이)", "code": "SSEC", "currency": "CNY"},
-    {"key": "jp",   "name": "일본 (닛케이)", "code": "N225", "currency": "JPY"},
-    {"key": "bond", "name": "채권 (TLT)",    "code": "TLT",  "currency": "USD"},
-    {"key": "gold", "name": "금 (GLD)",      "code": "GLD",  "currency": "USD"},
+    {"key": "kr",   "name": "한국 (KOSPI)", "code": "KS11"},
+    {"key": "us",   "name": "미국 (S&P500)", "code": "SPY"},
+    {"key": "cn",   "name": "중국 (상하이)", "code": "SSEC"},
+    {"key": "jp",   "name": "일본 (닛케이)", "code": "N225"},
+    {"key": "bond", "name": "채권 (TLT)",    "code": "TLT"},
+    {"key": "gold", "name": "금 (GLD)",      "code": "GLD"},
 ]
 
-_PERIODS = [
-    {"label": "3개월",  "days": 63},
-    {"label": "6개월",  "days": 126},
-    {"label": "12개월", "days": 252},
-]
+# 기간 레이블 → 거래일 수
+_PERIOD_DAYS = {"1m": 21, "3m": 63, "6m": 126, "12m": 252}
 
 
-def _fetch_return(code: str, trading_days: int) -> float | None:
-    """N 거래일 누적 수익률(%) 반환."""
+def _fetch_prices(code: str) -> pd.Series | None:
+    """최근 ~300 거래일 종가 반환 (MA200·변동성 계산에 충분한 버퍼)."""
     try:
         end = datetime.today()
-        start = end - timedelta(days=trading_days * 2 + 30)
+        start = end - timedelta(days=700)
         df = fdr.DataReader(code, start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d"))
         if df.empty or "Close" not in df.columns:
             return None
-        closes = df["Close"].dropna()
-        if len(closes) < trading_days + 1:
-            return None
-        ret = float(closes.iloc[-1] / closes.iloc[-(trading_days + 1)] - 1) * 100
-        return round(ret, 2)
+        return df["Close"].dropna()
     except Exception:
         return None
 
 
+def _period_ret(prices: pd.Series, days: int) -> float | None:
+    if prices is None or len(prices) < days + 1:
+        return None
+    return round(float(prices.iloc[-1] / prices.iloc[-(days + 1)] - 1) * 100, 2)
+
+
 def fetch_momentum_data() -> dict:
     """
-    Returns:
-        {
-          "rows": [...],
-          "recommendation": "미국 (S&P500)",
-          "rec_key": "us",
-          "rec_reason": "3개 기간 모두 1위",
-          "all_negative": False,   # 전 자산 마이너스 여부
-          "error": "",
-        }
+    4가지 전략 결과 반환:
+      단순 모멘텀 / VAA 모멘텀 / MA200 필터 / 역변동성 배분
+
+    Returns dict with keys:
+      rows, momentum_rec_name/key/desc,
+      vaa_rec_name/key/desc, ma_rec_name/key/desc,
+      invvol_rec_desc, error
     """
+    # ── 1. 가격 데이터 수집 ─────────────────────────────────────
+    price_map: dict[str, pd.Series | None] = {
+        a["key"]: _fetch_prices(a["code"]) for a in _ASSETS
+    }
+
     rows = []
     for asset in _ASSETS:
-        row = {"key": asset["key"], "name": asset["name"]}
-        for p in _PERIODS:
-            label_key = p["label"].replace("개월", "m")
-            ret = _fetch_return(asset["code"], p["days"])
-            row[f"ret_{label_key}"] = ret
-            row[f"ret_{label_key}_str"] = f"{ret:+.2f}%" if ret is not None else "-"
-            row[f"pos_{label_key}"] = ret is not None and ret > 0
+        key, name = asset["key"], asset["name"]
+        prices = price_map[key]
+        row: dict = {"key": key, "name": name}
+
+        # ── 수익률 ──────────────────────────────────────────────
+        for lbl, days in _PERIOD_DAYS.items():
+            ret = _period_ret(prices, days)
+            row[f"ret_{lbl}"] = ret
+            row[f"ret_{lbl}_str"] = f"{ret:+.2f}%" if ret is not None else "-"
+            row[f"pos_{lbl}"] = ret is not None and ret > 0
+
+        # ── VAA 점수 = 12×1m + 4×3m + 2×6m + 1×12m ─────────────
+        r1, r3, r6, r12 = (row.get(f"ret_{k}") for k in ("1m", "3m", "6m", "12m"))
+        if all(v is not None for v in (r1, r3, r6, r12)):
+            vaa = round(12 * r1 + 4 * r3 + 2 * r6 + r12, 1)
+        else:
+            vaa = None
+        row["vaa_score"] = vaa
+        row["vaa_score_str"] = f"{vaa:+.1f}" if vaa is not None else "-"
+        row["vaa_positive"] = vaa is not None and vaa > 0
+
+        # ── MA200 신호 ───────────────────────────────────────────
+        if prices is not None and len(prices) >= 200:
+            current = float(prices.iloc[-1])
+            ma200 = float(prices.tail(200).mean())
+            above = current > ma200
+            row["close_str"] = f"{current:,.2f}"
+            row["ma200_str"] = f"{ma200:,.2f}"
+            row["above_ma"] = above
+            row["ma_signal_str"] = "위 ↑" if above else "아래 ↓"
+        else:
+            row["close_str"] = row["ma200_str"] = "-"
+            row["above_ma"] = False
+            row["ma_signal_str"] = "-"
+
+        # ── 60일 연환산 변동성 ────────────────────────────────────
+        if prices is not None and len(prices) >= 61:
+            vol = float(prices.pct_change().dropna().tail(60).std() * math.sqrt(252) * 100)
+            row["vol_val"] = vol
+            row["vol_str"] = f"{vol:.1f}%"
+        else:
+            row["vol_val"] = None
+            row["vol_str"] = "-"
+
         rows.append(row)
 
-    # 기간별 1위 결정 — 전부 마이너스(또는 None)면 "cash" 반환
-    period_winners = {}
-    all_negative = True
-    for p in _PERIODS:
-        label_key = p["label"].replace("개월", "m")
-        best_key = "cash"
-        best_ret = 0.0  # 현금(0%) 기준치
+    # ── 2. 단순 모멘텀 추천 ─────────────────────────────────────
+    period_winners: dict[str, str] = {}
+    for lbl in ("3m", "6m", "12m"):
+        best_key, best_ret = "cash", 0.0
         for r in rows:
-            val = r.get(f"ret_{label_key}")
-            if val is not None and val > best_ret:
-                best_ret = val
-                best_key = r["key"]
-                all_negative = False
-        period_winners[p["label"]] = best_key
+            v = r.get(f"ret_{lbl}")
+            if v is not None and v > best_ret:
+                best_ret, best_key = v, r["key"]
+        period_winners[lbl] = best_key
 
-    # 전 기간 전 자산 마이너스 재확인
-    all_negative = all(
-        pw == "cash" for pw in period_winners.values()
-    )
-
-    # 종합 추천: 각 기간 1위 횟수 집계
     win_counts: dict[str, int] = {}
-    for winner in period_winners.values():
-        win_counts[winner] = win_counts.get(winner, 0) + 1
-
-    max_wins = max(win_counts.values())
-    candidates = [k for k, v in win_counts.items() if v == max_wins]
-    rec_key = candidates[0] if len(candidates) == 1 else period_winners.get("12개월", candidates[0])
-
-    rec_name_map = {r["key"]: r["name"] for r in rows}
-    rec_name = rec_name_map.get(rec_key, "현금 보유")
-    wins = win_counts.get(rec_key, 0)
-
-    if rec_key == "cash":
-        rec_reason = "전 기간 전 자산 수익률 마이너스"
-        rec_name = "현금 보유"
+    for w in period_winners.values():
+        win_counts[w] = win_counts.get(w, 0) + 1
+    max_w = max(win_counts.values())
+    cands = [k for k, v in win_counts.items() if v == max_w]
+    mom_key = cands[0] if len(cands) == 1 else period_winners["12m"]
+    mom_name = next((r["name"] for r in rows if r["key"] == mom_key), "현금 보유")
+    wins = win_counts.get(mom_key, 0)
+    if mom_key == "cash":
+        mom_name, mom_desc = "현금 보유", "전 기간 마이너스"
     elif wins == 3:
-        rec_reason = "3개 기간 모두 1위"
+        mom_desc = "3개 기간 모두 1위"
     elif wins == 2:
-        rec_reason = "3개 기간 중 2회 1위"
+        mom_desc = "2개 기간 1위"
     else:
-        rec_reason = "12개월 기준 1위"
+        r12_str = next((r["ret_12m_str"] for r in rows if r["key"] == mom_key), "")
+        mom_desc = f"12M {r12_str}"
 
-    # bool 플래그 (rx.foreach 내 비교 불가 우회)
+    # ── 3. VAA 추천 ──────────────────────────────────────────────
+    valid_vaa = sorted(
+        [(r["key"], r["name"], r["vaa_score"]) for r in rows if r["vaa_score"] is not None],
+        key=lambda x: x[2], reverse=True,
+    )
+    if valid_vaa and valid_vaa[0][2] > 0:
+        vaa_key, vaa_name, vaa_top = valid_vaa[0]
+        vaa_desc = f"VAA 점수 {vaa_top:+.1f} (1위)"
+    else:
+        vaa_key, vaa_name = "cash", "현금 보유"
+        vaa_desc = "전 자산 점수 마이너스"
+
+    # ── 4. MA200 필터 추천 ────────────────────────────────────────
+    eligible = [r for r in rows if r["above_ma"] and r.get("ret_12m") is not None]
+    if eligible:
+        best_ma = max(eligible, key=lambda r: r["ret_12m"])
+        ma_key = best_ma["key"]
+        ma_name = best_ma["name"]
+        ma_desc = f"MA200 위 자산 중 12M {best_ma['ret_12m_str']} 1위"
+    else:
+        ma_key, ma_name = "cash", "현금 보유"
+        ma_desc = "MA200 위 자산 없음"
+
+    # ── 5. 역변동성 배분 ──────────────────────────────────────────
+    valid_vol = [r for r in rows if r["vol_val"] is not None and r["vol_val"] > 0]
+    if valid_vol:
+        total_inv = sum(1 / r["vol_val"] for r in valid_vol)
+        for r in valid_vol:
+            w = round(1 / r["vol_val"] / total_inv * 100, 1)
+            r["inv_vol_weight"] = w
+            r["inv_vol_weight_str"] = f"{w:.1f}%"
+        for r in rows:
+            if "inv_vol_weight" not in r:
+                r["inv_vol_weight"] = 0.0
+                r["inv_vol_weight_str"] = "-"
+        top3 = sorted(valid_vol, key=lambda r: r["inv_vol_weight"], reverse=True)[:3]
+        invvol_key = top3[0]["key"]
+        invvol_desc = "  /  ".join(
+            f"{r['name'].split('(')[0].strip()} {r['inv_vol_weight_str']}" for r in top3
+        )
+    else:
+        for r in rows:
+            r["inv_vol_weight"] = 0.0
+            r["inv_vol_weight_str"] = "-"
+        invvol_key = "cash"
+        invvol_desc = "데이터 부족"
+
+    # ── 6. bool 플래그 (rx.foreach 내 비교 불가 우회) ─────────────
     for r in rows:
-        for p in _PERIODS:
-            label_key = p["label"].replace("개월", "m")
-            r[f"win_{label_key}"] = (period_winners.get(p["label"]) == r["key"])
-        r["is_recommended"] = (r["key"] == rec_key)
+        for lbl in ("3m", "6m", "12m"):
+            r[f"win_{lbl}"] = (period_winners.get(lbl) == r["key"])
+        r["is_recommended"] = (r["key"] == mom_key)          # 기존 호환
+        r["is_rec_momentum"] = (r["key"] == mom_key)
+        r["is_rec_vaa"] = (r["key"] == vaa_key)
+        r["is_rec_ma"] = (r["key"] == ma_key)
+        r["is_rec_invvol"] = (r["key"] == invvol_key)
 
     return {
         "rows": rows,
-        "recommendation": rec_name,
-        "rec_key": rec_key,
-        "rec_reason": rec_reason,
-        "all_negative": all_negative,
+        # 단순 모멘텀
+        "momentum_rec_name": mom_name,
+        "momentum_rec_key": mom_key,
+        "momentum_rec_desc": mom_desc,
+        # VAA
+        "vaa_rec_name": vaa_name,
+        "vaa_rec_key": vaa_key,
+        "vaa_rec_desc": vaa_desc,
+        # MA200
+        "ma_rec_name": ma_name,
+        "ma_rec_key": ma_key,
+        "ma_rec_desc": ma_desc,
+        # 역변동성
+        "invvol_rec_desc": invvol_desc,
+        "invvol_rec_key": invvol_key,
         "error": "",
     }
