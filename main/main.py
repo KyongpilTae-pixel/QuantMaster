@@ -4067,7 +4067,7 @@ def lookup_tab() -> rx.Component:
 def holding_analysis_tab() -> rx.Component:
     """보유종목 포트폴리오 분석 탭."""
     return rx.vstack(
-        rx.heading("보유종목 분석", size="4"),
+        rx.heading("포트폴리오", size="4"),
         rx.cond(
             State.portfolio_count == 0,
             rx.callout.root(
@@ -4290,7 +4290,7 @@ def main_content() -> rx.Component:
             rx.tabs.trigger("분석", value="analysis"),
             rx.tabs.trigger("히스토리", value="history"),
             rx.tabs.trigger("보유종목", value="holdings"),
-            rx.tabs.trigger("보유종목분석", value="portfolio"),
+            rx.tabs.trigger("포트폴리오", value="portfolio"),
             rx.tabs.trigger("당일주도주", value="leaders"),
             rx.tabs.trigger("종목조회", value="lookup"),
             rx.tabs.trigger("시장모멘텀", value="momentum"),
