@@ -1405,7 +1405,6 @@ class State(rx.State):
                     ]
 
                 self.status_msg = "백테스트 완료"
-                self.active_tab = "backtest"
             else:
                 self.status_msg = "데이터 부족으로 백테스트 불가"
         except Exception as e:
@@ -2788,6 +2787,7 @@ def analysis_tab() -> rx.Component:
                     color_scheme="violet",
                     class_name="no-print",
                 ),
+                backtest_tab(),
                 width="100%",
                 spacing="4",
             ),
@@ -2973,15 +2973,7 @@ def backtest_tab() -> rx.Component:
             width="100%",
             spacing="5",
         ),
-        rx.vstack(
-            backtest_strategy_info(),
-            rx.center(
-                rx.text("분석 탭에서 백테스트를 실행하세요.", color="gray"),
-                height="150px",
-            ),
-            width="100%",
-            spacing="4",
-        ),
+        rx.fragment(),
     )
 
 
@@ -4296,7 +4288,6 @@ def main_content() -> rx.Component:
         rx.tabs.list(
             rx.tabs.trigger("스캐너", value="scanner"),
             rx.tabs.trigger("분석", value="analysis"),
-            rx.tabs.trigger("백테스트", value="backtest"),
             rx.tabs.trigger("히스토리", value="history"),
             rx.tabs.trigger("보유종목", value="holdings"),
             rx.tabs.trigger("보유종목분석", value="portfolio"),
@@ -4311,10 +4302,6 @@ def main_content() -> rx.Component:
         rx.tabs.content(
             rx.box(analysis_tab(), padding_top="16px"),
             value="analysis",
-        ),
-        rx.tabs.content(
-            rx.box(backtest_tab(), padding_top="16px"),
-            value="backtest",
         ),
         rx.tabs.content(
             rx.box(history_tab(), padding_top="16px"),
