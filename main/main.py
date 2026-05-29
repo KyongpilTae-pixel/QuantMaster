@@ -253,6 +253,12 @@ class State(rx.State):
     momentum_show_3m: bool = True
     momentum_show_6m: bool = True
     momentum_show_12m: bool = True
+    # 백테스트
+    momentum_bt_years: int = 10
+    momentum_bt_loading: bool = False
+    momentum_bt_chart: List[dict] = []
+    momentum_bt_summary: List[dict] = []
+    momentum_bt_error: str = ""
 
     # 당일 주도주
     leaders_market: str = "KOSPI"
@@ -577,6 +583,24 @@ class State(rx.State):
             self.momentum_error = f"오류: {e}"
         finally:
             self.momentum_loading = False
+        yield
+
+    async def run_momentum_backtest(self):
+        from utils.momentum_backtest import run_backtest
+        self.momentum_bt_loading = True
+        self.momentum_bt_error = ""
+        self.momentum_bt_chart = []
+        self.momentum_bt_summary = []
+        yield
+        try:
+            r = await asyncio.to_thread(run_backtest, self.momentum_bt_years)
+            self.momentum_bt_chart = r["chart_data"]
+            self.momentum_bt_summary = r["summary"]
+            self.momentum_bt_error = r.get("error", "")
+        except Exception as e:
+            self.momentum_bt_error = f"오류: {e}"
+        finally:
+            self.momentum_bt_loading = False
         yield
 
     def set_leaders_market(self, v: str):
@@ -3481,6 +3505,105 @@ def momentum_tab() -> rx.Component:
                 rx.cond(State.momentum_detail == "invvol", invvol_table, rx.fragment()),
                 width="100%",
             ),
+        ),
+        # ── 백테스트 섹션 ─────────────────────────────────────────
+        rx.separator(width="100%"),
+        rx.vstack(
+            rx.heading("전략 백테스트 (월별 리밸런싱)", size="3"),
+            rx.hstack(
+                rx.text("기간:", size="2", color="gray"),
+                rx.button("3년", size="1",
+                    variant=rx.cond(State.momentum_bt_years == 3, "solid", "soft"),
+                    color_scheme="gray", on_click=State.set_momentum_bt_years(3)),
+                rx.button("5년", size="1",
+                    variant=rx.cond(State.momentum_bt_years == 5, "solid", "soft"),
+                    color_scheme="gray", on_click=State.set_momentum_bt_years(5)),
+                rx.button("10년", size="1",
+                    variant=rx.cond(State.momentum_bt_years == 10, "solid", "soft"),
+                    color_scheme="gray", on_click=State.set_momentum_bt_years(10)),
+                rx.button(
+                    rx.cond(
+                        State.momentum_bt_loading,
+                        rx.hstack(rx.spinner(size="2"), rx.text("계산 중..."), spacing="2"),
+                        rx.text("백테스트 실행"),
+                    ),
+                    on_click=State.run_momentum_backtest,
+                    disabled=State.momentum_bt_loading,
+                    color_scheme="blue",
+                    size="1",
+                ),
+                spacing="2", align="center", wrap="wrap",
+            ),
+            rx.cond(
+                State.momentum_bt_error != "",
+                rx.callout(State.momentum_bt_error, color_scheme="red"),
+            ),
+            rx.cond(
+                State.momentum_bt_chart.length() > 0,
+                rx.vstack(
+                    rx.box(
+                        rx.recharts.composed_chart(
+                            rx.recharts.line(data_key="momentum", stroke="#2563eb", dot=False,
+                                type_="monotone", name="단순모멘텀", stroke_width=2),
+                            rx.recharts.line(data_key="vaa", stroke="#16a34a", dot=False,
+                                type_="monotone", name="VAA", stroke_width=2),
+                            rx.recharts.line(data_key="ma200", stroke="#f59e0b", dot=False,
+                                type_="monotone", name="MA200필터", stroke_width=2),
+                            rx.recharts.line(data_key="invvol", stroke="#7c3aed", dot=False,
+                                type_="monotone", name="역변동성", stroke_width=2),
+                            rx.recharts.line(data_key="equal", stroke="#94a3b8", dot=False,
+                                type_="monotone", name="균등분산", stroke_width=1,
+                                stroke_dasharray="5 5"),
+                            rx.recharts.x_axis(data_key="date", tick={"fontSize": 9}),
+                            rx.recharts.y_axis(tick={"fontSize": 9}),
+                            rx.recharts.cartesian_grid(stroke_dasharray="3 3"),
+                            rx.recharts.tooltip(),
+                            rx.recharts.legend(),
+                            data=State.momentum_bt_chart,
+                            width="100%",
+                            height=320,
+                        ),
+                        width="100%",
+                        padding="12px",
+                        border_radius="8px",
+                        background="var(--gray-2)",
+                        border="1px solid var(--gray-5)",
+                    ),
+                    rx.table.root(
+                        rx.table.header(
+                            rx.table.row(
+                                rx.table.column_header_cell("전략"),
+                                rx.table.column_header_cell("총수익률"),
+                                rx.table.column_header_cell("CAGR"),
+                                rx.table.column_header_cell("MDD"),
+                                rx.table.column_header_cell("Sharpe"),
+                            )
+                        ),
+                        rx.table.body(
+                            rx.foreach(
+                                State.momentum_bt_summary,
+                                lambda r: rx.table.row(
+                                    rx.table.cell(
+                                        rx.text(r["strategy"],
+                                            weight=rx.cond(r["is_best"], "bold", "regular"),
+                                            color=rx.cond(r["is_best"], "var(--blue-11)", "inherit"))
+                                    ),
+                                    rx.table.cell(r["total_ret"]),
+                                    rx.table.cell(r["cagr"]),
+                                    rx.table.cell(r["mdd"]),
+                                    rx.table.cell(r["sharpe"]),
+                                )
+                            )
+                        ),
+                        width="100%",
+                        size="1",
+                    ),
+                    spacing="3",
+                    width="100%",
+                ),
+            ),
+            spacing="3",
+            width="100%",
         ),
         rx.text("※ 투자 조언이 아닙니다. 참고용으로만 활용하세요.", size="1", color="gray"),
         spacing="5",
