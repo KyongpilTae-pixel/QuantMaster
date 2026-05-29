@@ -539,7 +539,7 @@ class State(rx.State):
             from utils.scan_db import load_run_list
             runs = load_run_list()
             self.saved_runs = [SavedRun(run_id=r["id"], label=r["label"]) for r in runs]
-        elif tab in ("holdings", "portfolio"):
+        elif tab == "holdings":
             self.load_holdings_from_db()
 
     def toggle_momentum_3m(self):
@@ -3134,98 +3134,177 @@ def history_tab() -> rx.Component:
 
 
 def holdings_tab() -> rx.Component:
+    """보유종목 + 포트폴리오 분석 통합 탭."""
     return rx.vstack(
         rx.hstack(
-            rx.heading("보유 종목", size="4"),
+            rx.heading("보유종목", size="4"),
             rx.spacer(),
-            rx.text(
-                State.holdings.length(),
-                "개 종목",
-                size="2",
-                color="gray",
-            ),
+            rx.text(State.holdings.length(), "개 종목", size="2", color="gray"),
             width="100%",
             align_items="center",
         ),
         rx.cond(
-            State.holdings.length() == 0,
+            State.portfolio_count == 0,
             rx.callout.root(
                 rx.callout.text("등록된 보유 종목이 없습니다. 분석 탭에서 '+ 보유 추가' 버튼을 누르세요."),
                 color_scheme="gray",
                 variant="soft",
             ),
-            rx.table.root(
-                rx.table.header(
-                    rx.table.row(
-                        rx.table.column_header_cell("종목명"),
-                        rx.table.column_header_cell("시장"),
-                        rx.table.column_header_cell("현재가"),
-                        rx.table.column_header_cell("VWAP"),
-                        rx.table.column_header_cell("괴리율(%)"),
-                        rx.table.column_header_cell("MFI"),
-                        rx.table.column_header_cell("PBR"),
-                        rx.table.column_header_cell("매수가"),
-                        rx.table.column_header_cell("수량"),
-                        rx.table.column_header_cell("메모"),
-                        rx.table.column_header_cell("등록일"),
-                        rx.table.column_header_cell(""),
-                    )
-                ),
-                rx.table.body(
-                    rx.foreach(
-                        State.holdings,
-                        lambda h: rx.table.row(
-                            rx.table.cell(h.name),
-                            rx.table.cell(
-                                rx.badge(
-                                    h.market,
-                                    color_scheme=rx.cond(
-                                        (h.market == "SP500") | (h.market == "NASDAQ") | (h.market == "US-ETF"),
-                                        "blue",
-                                        "green",
-                                    ),
-                                    variant="soft",
-                                )
+            rx.vstack(
+                # 집계 요약 카드
+                rx.grid(
+                    rx.box(
+                        rx.vstack(
+                            rx.text("총 종목 수", size="1", color="gray"),
+                            rx.hstack(
+                                rx.text(State.portfolio_count, size="6", weight="bold"),
+                                rx.text("개", size="3", color="gray"),
+                                spacing="1", align_items="baseline",
                             ),
-                            rx.table.cell(h.close),
-                            rx.table.cell(h.vwap_price),
-                            rx.table.cell(h.vwap_gap),
-                            rx.table.cell(h.mfi),
-                            rx.table.cell(h.pbr),
-                            rx.table.cell(
-                                rx.cond(h.buy_price > 0, h.buy_price, rx.text("-", color="gray"))
-                            ),
-                            rx.table.cell(
-                                rx.cond(h.quantity > 0, h.quantity, rx.text("-", color="gray"))
-                            ),
-                            rx.table.cell(
-                                rx.cond(h.memo != "", h.memo, rx.text("-", color="gray"))
-                            ),
-                            rx.table.cell(h.added_at),
-                            rx.table.cell(
-                                rx.hstack(
-                                    rx.button(
-                                        "분석",
-                                        size="1",
-                                        variant="soft",
-                                        color_scheme="blue",
-                                        on_click=State.select_holding_for_analysis(h.holding_id),
-                                    ),
-                                    rx.button(
-                                        "삭제",
-                                        size="1",
-                                        variant="soft",
-                                        color_scheme="red",
-                                        on_click=State.remove_holding(h.holding_id),
-                                    ),
-                                    spacing="2",
-                                )
-                            ),
+                            spacing="1", align_items="start",
                         ),
-                    )
+                        padding="16px", border_radius="8px",
+                        background="var(--blue-2)", border="1px solid var(--blue-4)",
+                    ),
+                    rx.box(
+                        rx.vstack(
+                            rx.text("총 투자금", size="1", color="gray"),
+                            rx.hstack(
+                                rx.text(State.portfolio_total_investment, size="6", weight="bold"),
+                                rx.text("원", size="3", color="gray"),
+                                spacing="1", align_items="baseline",
+                            ),
+                            spacing="1", align_items="start",
+                        ),
+                        padding="16px", border_radius="8px",
+                        background="var(--gray-2)", border="1px solid var(--gray-4)",
+                    ),
+                    rx.box(
+                        rx.vstack(
+                            rx.text("예상 손익", size="1", color="gray"),
+                            rx.hstack(
+                                rx.text(
+                                    State.portfolio_total_pnl, size="6", weight="bold",
+                                    color=rx.cond(State.portfolio_total_pnl >= 0, "green", "red"),
+                                ),
+                                rx.text("원", size="3", color="gray"),
+                                spacing="1", align_items="baseline",
+                            ),
+                            spacing="1", align_items="start",
+                        ),
+                        padding="16px", border_radius="8px",
+                        background=rx.cond(State.portfolio_total_pnl >= 0, "var(--green-2)", "var(--red-2)"),
+                        border=rx.cond(State.portfolio_total_pnl >= 0, "1px solid var(--green-4)", "1px solid var(--red-4)"),
+                    ),
+                    rx.box(
+                        rx.vstack(
+                            rx.text("손익률", size="1", color="gray"),
+                            rx.hstack(
+                                rx.text(
+                                    State.portfolio_pnl_pct, size="6", weight="bold",
+                                    color=rx.cond(State.portfolio_pnl_pct >= 0, "green", "red"),
+                                ),
+                                rx.text("%", size="3", color="gray"),
+                                spacing="1", align_items="baseline",
+                            ),
+                            spacing="1", align_items="start",
+                        ),
+                        padding="16px", border_radius="8px",
+                        background=rx.cond(State.portfolio_pnl_pct >= 0, "var(--green-2)", "var(--red-2)"),
+                        border=rx.cond(State.portfolio_pnl_pct >= 0, "1px solid var(--green-4)", "1px solid var(--red-4)"),
+                    ),
+                    columns="4", spacing="4", width="100%",
                 ),
-                variant="surface",
+                # 종목별 현황 테이블
+                rx.text("종목별 현황", weight="bold", size="3"),
+                rx.table.root(
+                    rx.table.header(
+                        rx.table.row(
+                            rx.table.column_header_cell("종목명"),
+                            rx.table.column_header_cell("시장"),
+                            rx.table.column_header_cell("매수가"),
+                            rx.table.column_header_cell("현재가"),
+                            rx.table.column_header_cell("수량"),
+                            rx.table.column_header_cell("투자금"),
+                            rx.table.column_header_cell("손익금액"),
+                            rx.table.column_header_cell("손익률(%)"),
+                            rx.table.column_header_cell("MFI"),
+                            rx.table.column_header_cell("VWAP괴리(%)"),
+                            rx.table.column_header_cell("메모"),
+                            rx.table.column_header_cell(""),
+                        )
+                    ),
+                    rx.table.body(
+                        rx.foreach(
+                            State.holdings_analysis,
+                            lambda h: rx.table.row(
+                                rx.table.cell(h["name"]),
+                                rx.table.cell(
+                                    rx.badge(
+                                        h["market"],
+                                        color_scheme=rx.cond(h["is_us"], "blue", "green"),
+                                        variant="soft",
+                                    )
+                                ),
+                                rx.table.cell(
+                                    rx.cond(h["has_buy"], h["buy_price"], rx.text("-", color="gray"))
+                                ),
+                                rx.table.cell(h["close"]),
+                                rx.table.cell(
+                                    rx.cond(h["has_quantity"], h["quantity"], rx.text("-", color="gray"))
+                                ),
+                                rx.table.cell(
+                                    rx.cond(h["has_investment"], h["investment"], rx.text("-", color="gray"))
+                                ),
+                                rx.table.cell(
+                                    rx.cond(
+                                        h["has_buy"],
+                                        rx.text(
+                                            h["pnl"],
+                                            color=rx.cond(h["pnl_positive"], "green", "red"),
+                                            weight="bold",
+                                        ),
+                                        rx.text("-", color="gray"),
+                                    )
+                                ),
+                                rx.table.cell(
+                                    rx.cond(
+                                        h["has_buy"],
+                                        rx.badge(
+                                            rx.text(h["pnl_pct"], "%"),
+                                            color_scheme=rx.cond(h["pct_positive"], "green", "red"),
+                                        ),
+                                        rx.text("-", color="gray"),
+                                    )
+                                ),
+                                rx.table.cell(h["mfi"]),
+                                rx.table.cell(h["vwap_gap"]),
+                                rx.table.cell(
+                                    rx.cond(h["has_memo"], h["memo"], rx.text("-", color="gray"))
+                                ),
+                                rx.table.cell(
+                                    rx.hstack(
+                                        rx.button(
+                                            "분석",
+                                            size="1", variant="soft", color_scheme="blue",
+                                            on_click=State.select_holding_for_analysis(h["holding_id"]),
+                                        ),
+                                        rx.button(
+                                            "삭제",
+                                            size="1", variant="soft", color_scheme="red",
+                                            on_click=State.remove_holding(h["holding_id"]),
+                                        ),
+                                        spacing="2",
+                                    )
+                                ),
+                            ),
+                        )
+                    ),
+                    variant="surface",
+                    width="100%",
+                ),
                 width="100%",
+                spacing="4",
             ),
         ),
         width="100%",
@@ -4064,225 +4143,6 @@ def lookup_tab() -> rx.Component:
     )
 
 
-def holding_analysis_tab() -> rx.Component:
-    """보유종목 포트폴리오 분석 탭."""
-    return rx.vstack(
-        rx.heading("보유종목 분석", size="4"),
-        rx.cond(
-            State.portfolio_count == 0,
-            rx.callout.root(
-                rx.callout.text("등록된 보유 종목이 없습니다. 분석 탭에서 '+ 보유 추가' 버튼을 누르세요."),
-                color_scheme="gray",
-                variant="soft",
-            ),
-            rx.vstack(
-                # 집계 요약 카드
-                rx.grid(
-                    rx.box(
-                        rx.vstack(
-                            rx.text("총 종목 수", size="1", color="gray"),
-                            rx.hstack(
-                                rx.text(State.portfolio_count, size="6", weight="bold"),
-                                rx.text("개", size="3", color="gray"),
-                                spacing="1",
-                                align_items="baseline",
-                            ),
-                            spacing="1",
-                            align_items="start",
-                        ),
-                        padding="16px",
-                        border_radius="8px",
-                        background="var(--blue-2)",
-                        border="1px solid var(--blue-4)",
-                    ),
-                    rx.box(
-                        rx.vstack(
-                            rx.text("총 투자금", size="1", color="gray"),
-                            rx.hstack(
-                                rx.text(State.portfolio_total_investment, size="6", weight="bold"),
-                                rx.text("원", size="3", color="gray"),
-                                spacing="1",
-                                align_items="baseline",
-                            ),
-                            spacing="1",
-                            align_items="start",
-                        ),
-                        padding="16px",
-                        border_radius="8px",
-                        background="var(--gray-2)",
-                        border="1px solid var(--gray-4)",
-                    ),
-                    rx.box(
-                        rx.vstack(
-                            rx.text("예상 손익", size="1", color="gray"),
-                            rx.hstack(
-                                rx.text(
-                                    State.portfolio_total_pnl,
-                                    size="6",
-                                    weight="bold",
-                                    color=rx.cond(State.portfolio_total_pnl >= 0, "green", "red"),
-                                ),
-                                rx.text("원", size="3", color="gray"),
-                                spacing="1",
-                                align_items="baseline",
-                            ),
-                            spacing="1",
-                            align_items="start",
-                        ),
-                        padding="16px",
-                        border_radius="8px",
-                        background=rx.cond(
-                            State.portfolio_total_pnl >= 0, "var(--green-2)", "var(--red-2)"
-                        ),
-                        border=rx.cond(
-                            State.portfolio_total_pnl >= 0,
-                            "1px solid var(--green-4)",
-                            "1px solid var(--red-4)",
-                        ),
-                    ),
-                    rx.box(
-                        rx.vstack(
-                            rx.text("손익률", size="1", color="gray"),
-                            rx.hstack(
-                                rx.text(
-                                    State.portfolio_pnl_pct,
-                                    size="6",
-                                    weight="bold",
-                                    color=rx.cond(State.portfolio_pnl_pct >= 0, "green", "red"),
-                                ),
-                                rx.text("%", size="3", color="gray"),
-                                spacing="1",
-                                align_items="baseline",
-                            ),
-                            spacing="1",
-                            align_items="start",
-                        ),
-                        padding="16px",
-                        border_radius="8px",
-                        background=rx.cond(
-                            State.portfolio_pnl_pct >= 0, "var(--green-2)", "var(--red-2)"
-                        ),
-                        border=rx.cond(
-                            State.portfolio_pnl_pct >= 0,
-                            "1px solid var(--green-4)",
-                            "1px solid var(--red-4)",
-                        ),
-                    ),
-                    columns="4",
-                    spacing="4",
-                    width="100%",
-                ),
-                # 종목별 손익 테이블
-                rx.text("종목별 손익 현황", weight="bold", size="3"),
-                rx.table.root(
-                    rx.table.header(
-                        rx.table.row(
-                            rx.table.column_header_cell("종목명"),
-                            rx.table.column_header_cell("시장"),
-                            rx.table.column_header_cell("매수가"),
-                            rx.table.column_header_cell("현재가"),
-                            rx.table.column_header_cell("수량"),
-                            rx.table.column_header_cell("투자금"),
-                            rx.table.column_header_cell("손익금액"),
-                            rx.table.column_header_cell("손익률(%)"),
-                            rx.table.column_header_cell("MFI"),
-                            rx.table.column_header_cell("VWAP괴리(%)"),
-                            rx.table.column_header_cell("메모"),
-                            rx.table.column_header_cell(""),
-                        )
-                    ),
-                    rx.table.body(
-                        rx.foreach(
-                            State.holdings_analysis,
-                            lambda h: rx.table.row(
-                                rx.table.cell(h["name"]),
-                                rx.table.cell(
-                                    rx.badge(
-                                        h["market"],
-                                        color_scheme=rx.cond(h["is_us"], "blue", "green"),
-                                        variant="soft",
-                                    )
-                                ),
-                                rx.table.cell(
-                                    rx.cond(
-                                        h["has_buy"],
-                                        h["buy_price"],
-                                        rx.text("-", color="gray"),
-                                    )
-                                ),
-                                rx.table.cell(h["close"]),
-                                rx.table.cell(
-                                    rx.cond(
-                                        h["has_quantity"],
-                                        h["quantity"],
-                                        rx.text("-", color="gray"),
-                                    )
-                                ),
-                                rx.table.cell(
-                                    rx.cond(
-                                        h["has_investment"],
-                                        h["investment"],
-                                        rx.text("-", color="gray"),
-                                    )
-                                ),
-                                rx.table.cell(
-                                    rx.cond(
-                                        h["has_buy"],
-                                        rx.text(
-                                            h["pnl"],
-                                            color=rx.cond(h["pnl_positive"], "green", "red"),
-                                            weight="bold",
-                                        ),
-                                        rx.text("-", color="gray"),
-                                    )
-                                ),
-                                rx.table.cell(
-                                    rx.cond(
-                                        h["has_buy"],
-                                        rx.badge(
-                                            rx.text(h["pnl_pct"], "%"),
-                                            color_scheme=rx.cond(
-                                                h["pct_positive"], "green", "red"
-                                            ),
-                                        ),
-                                        rx.text("-", color="gray"),
-                                    )
-                                ),
-                                rx.table.cell(h["mfi"]),
-                                rx.table.cell(h["vwap_gap"]),
-                                rx.table.cell(
-                                    rx.cond(
-                                        h["has_memo"],
-                                        h["memo"],
-                                        rx.text("-", color="gray"),
-                                    )
-                                ),
-                                rx.table.cell(
-                                    rx.button(
-                                        "분석",
-                                        size="1",
-                                        variant="soft",
-                                        color_scheme="blue",
-                                        on_click=State.select_holding_for_analysis(
-                                            h["holding_id"]
-                                        ),
-                                    )
-                                ),
-                            ),
-                        )
-                    ),
-                    variant="surface",
-                    width="100%",
-                ),
-                width="100%",
-                spacing="4",
-            ),
-        ),
-        width="100%",
-        spacing="4",
-    )
-
-
 def main_content() -> rx.Component:
     return rx.tabs.root(
         rx.tabs.list(
@@ -4290,7 +4150,6 @@ def main_content() -> rx.Component:
             rx.tabs.trigger("분석", value="analysis"),
             rx.tabs.trigger("히스토리", value="history"),
             rx.tabs.trigger("보유종목", value="holdings"),
-            rx.tabs.trigger("보유종목분석", value="portfolio"),
             rx.tabs.trigger("당일주도주", value="leaders"),
             rx.tabs.trigger("종목조회", value="lookup"),
             rx.tabs.trigger("시장모멘텀", value="momentum"),
@@ -4310,10 +4169,6 @@ def main_content() -> rx.Component:
         rx.tabs.content(
             rx.box(holdings_tab(), padding_top="16px"),
             value="holdings",
-        ),
-        rx.tabs.content(
-            rx.box(holding_analysis_tab(), padding_top="16px"),
-            value="portfolio",
         ),
         rx.tabs.content(
             rx.box(leaders_tab(), padding_top="16px"),
