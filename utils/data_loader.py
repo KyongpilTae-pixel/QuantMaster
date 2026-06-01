@@ -452,13 +452,18 @@ def _search_kr_symbol(query: str) -> tuple[str, str]:
         match = listing[listing[code_col].str.strip() == q]
         if match.empty and name_col:
             match = listing[listing[name_col].str.contains(q, case=False, na=False)]
-        if match.empty:
-            return ("", "")
 
-        row = match.iloc[0]
-        code = str(row[code_col]).strip().zfill(6)
-        market = str(row[mkt_col]).upper() if mkt_col else "KOSPI"
-        return (code, market)
+        if not match.empty:
+            row = match.iloc[0]
+            code = str(row[code_col]).strip().zfill(6)
+            market = str(row[mkt_col]).upper() if mkt_col else "KOSPI"
+            return (code, market)
+
+        # 6자리 숫자 코드인데 KRX 목록에 없으면 ETF로 간주해 직접 반환
+        if q.isdigit() and len(q) == 6:
+            return (q, "KOSPI")
+
+        return ("", "")
     except Exception:
         return ("", "")
 
