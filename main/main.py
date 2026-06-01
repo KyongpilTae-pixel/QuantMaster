@@ -709,7 +709,7 @@ class State(rx.State):
         import asyncio
         from utils.data_loader import fetch_stock_info
 
-        result = await asyncio.to_thread(fetch_stock_info, code, "KR")
+        result = await asyncio.to_thread(fetch_stock_info, code, self.lookup_market)
         self.lookup_loading = False
         if result["error"]:
             self.lookup_error = result["error"]
