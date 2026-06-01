@@ -539,7 +539,7 @@ class State(rx.State):
             from utils.scan_db import load_run_list
             runs = load_run_list()
             self.saved_runs = [SavedRun(run_id=r["id"], label=r["label"]) for r in runs]
-        elif tab in ("holdings", "portfolio"):
+        elif tab == "portfolio":
             self.load_holdings_from_db()
 
     def toggle_momentum_3m(self):
@@ -4258,14 +4258,22 @@ def holding_analysis_tab() -> rx.Component:
                                     )
                                 ),
                                 rx.table.cell(
-                                    rx.button(
-                                        "분석",
-                                        size="1",
-                                        variant="soft",
-                                        color_scheme="blue",
-                                        on_click=State.select_holding_for_analysis(
-                                            h["holding_id"]
+                                    rx.hstack(
+                                        rx.button(
+                                            "분석",
+                                            size="1",
+                                            variant="soft",
+                                            color_scheme="blue",
+                                            on_click=State.select_holding_for_analysis(h["holding_id"]),
                                         ),
+                                        rx.button(
+                                            "삭제",
+                                            size="1",
+                                            variant="soft",
+                                            color_scheme="red",
+                                            on_click=State.remove_holding(h["holding_id"]),
+                                        ),
+                                        spacing="2",
                                     )
                                 ),
                             ),
@@ -4289,7 +4297,6 @@ def main_content() -> rx.Component:
             rx.tabs.trigger("스캐너", value="scanner"),
             rx.tabs.trigger("분석", value="analysis"),
             rx.tabs.trigger("히스토리", value="history"),
-            rx.tabs.trigger("보유종목", value="holdings"),
             rx.tabs.trigger("포트폴리오", value="portfolio"),
             rx.tabs.trigger("당일주도주", value="leaders"),
             rx.tabs.trigger("종목조회", value="lookup"),
@@ -4306,10 +4313,6 @@ def main_content() -> rx.Component:
         rx.tabs.content(
             rx.box(history_tab(), padding_top="16px"),
             value="history",
-        ),
-        rx.tabs.content(
-            rx.box(holdings_tab(), padding_top="16px"),
-            value="holdings",
         ),
         rx.tabs.content(
             rx.box(holding_analysis_tab(), padding_top="16px"),
