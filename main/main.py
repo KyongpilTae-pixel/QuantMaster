@@ -227,6 +227,12 @@ class State(rx.State):
     lookup_buy_opinion: str = ""
     lookup_buy_opinion_color: str = "gray"
     lookup_buy_score_items: List[dict] = []
+    lookup_is_etf: bool = False
+    lookup_etf_components: List[dict] = []
+    lookup_etf_base_index: str = ""
+    lookup_etf_nav: str = ""
+    lookup_etf_fee: str = ""
+    lookup_etf_issuer: str = ""
 
     # 글로벌 모멘텀 전략
     momentum_rows: List[dict] = []
@@ -728,6 +734,13 @@ class State(rx.State):
             self.lookup_buy_opinion = result.get("buy_opinion", "")
             self.lookup_buy_opinion_color = result.get("buy_opinion_color", "gray")
             self.lookup_buy_score_items = result.get("buy_score_items", [])
+            self.lookup_is_etf = result.get("is_etf", False)
+            ea = result.get("etf_analysis", {})
+            self.lookup_etf_components = ea.get("components", [])
+            self.lookup_etf_base_index = ea.get("base_index", "")
+            self.lookup_etf_nav = ea.get("nav", "")
+            self.lookup_etf_fee = ea.get("total_fee", "")
+            self.lookup_etf_issuer = ea.get("issuer", "")
             self.lookup_has_result = True
 
     def set_lookup_query(self, v: str):
@@ -778,6 +791,13 @@ class State(rx.State):
             self.lookup_buy_opinion = result.get("buy_opinion", "")
             self.lookup_buy_opinion_color = result.get("buy_opinion_color", "gray")
             self.lookup_buy_score_items = result.get("buy_score_items", [])
+            self.lookup_is_etf = result.get("is_etf", False)
+            ea = result.get("etf_analysis", {})
+            self.lookup_etf_components = ea.get("components", [])
+            self.lookup_etf_base_index = ea.get("base_index", "")
+            self.lookup_etf_nav = ea.get("nav", "")
+            self.lookup_etf_fee = ea.get("total_fee", "")
+            self.lookup_etf_issuer = ea.get("issuer", "")
             self.lookup_has_result = True
 
     def set_selected_run_id(self, value: str):
@@ -3976,6 +3996,56 @@ def lookup_tab() -> rx.Component:
                         padding="16px",
                         style={"border": "1px solid var(--gray-a6)", "border_radius": "8px"},
                         width="100%",
+                    ),
+                ),
+                # ETF 구성종목 (ETF일 때만 표시)
+                rx.cond(
+                    State.lookup_is_etf,
+                    rx.vstack(
+                        rx.hstack(
+                            rx.badge("ETF", color_scheme="violet", variant="solid", size="2"),
+                            rx.text(State.lookup_etf_base_index, size="2", color="gray"),
+                            spacing="2", align="center",
+                        ),
+                        rx.grid(
+                            _lookup_info_card("NAV", State.lookup_etf_nav),
+                            _lookup_info_card("운용보수", State.lookup_etf_fee),
+                            _lookup_info_card("운용사", State.lookup_etf_issuer),
+                            columns="3", spacing="3", width="100%",
+                        ),
+                        rx.text("구성종목 TOP 10", weight="bold", size="3"),
+                        rx.table.root(
+                            rx.table.header(
+                                rx.table.row(
+                                    rx.table.column_header_cell("순위"),
+                                    rx.table.column_header_cell("코드"),
+                                    rx.table.column_header_cell("종목명"),
+                                    rx.table.column_header_cell("보유수량"),
+                                    rx.table.column_header_cell("비중"),
+                                )
+                            ),
+                            rx.table.body(
+                                rx.foreach(
+                                    State.lookup_etf_components,
+                                    lambda r: rx.table.row(
+                                        rx.table.cell(r["rank"]),
+                                        rx.table.cell(r["code"]),
+                                        rx.table.cell(r["name"]),
+                                        rx.table.cell(r["count"]),
+                                        rx.table.cell(
+                                            rx.badge(r["weight"], color_scheme="violet", variant="soft")
+                                        ),
+                                    )
+                                )
+                            ),
+                            variant="surface",
+                            width="100%",
+                            size="1",
+                        ),
+                        spacing="3",
+                        width="100%",
+                        padding="16px",
+                        style={"border": "1px solid var(--violet-a6)", "border_radius": "8px"},
                     ),
                 ),
                 # 주가 차트

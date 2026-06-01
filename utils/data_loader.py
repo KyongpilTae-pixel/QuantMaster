@@ -431,6 +431,7 @@ class QuantDataLoader:
 # ---------------------------------------------------------------------------
 
 _kr_listing_cache: pd.DataFrame | None = None
+_kr_etf_listing_cache: pd.DataFrame | None = None
 
 
 def _get_kr_listing() -> pd.DataFrame:
@@ -438,6 +439,60 @@ def _get_kr_listing() -> pd.DataFrame:
     if _kr_listing_cache is None:
         _kr_listing_cache = fdr.StockListing("KRX")
     return _kr_listing_cache
+
+
+def _get_kr_etf_listing() -> pd.DataFrame:
+    global _kr_etf_listing_cache
+    if _kr_etf_listing_cache is None:
+        try:
+            _kr_etf_listing_cache = fdr.StockListing("ETF/KR")
+        except Exception:
+            _kr_etf_listing_cache = pd.DataFrame()
+    return _kr_etf_listing_cache
+
+
+def _is_kr_etf(code: str) -> bool:
+    """6자리 코드가 한국 ETF인지 확인."""
+    try:
+        listing = _get_kr_etf_listing()
+        if listing.empty:
+            return False
+        sym_col = "Symbol" if "Symbol" in listing.columns else listing.columns[0]
+        return not listing[listing[sym_col] == code].empty
+    except Exception:
+        return False
+
+
+def fetch_etf_analysis(code: str) -> dict:
+    """NAVER 모바일 API로 ETF 기본 정보 + 구성종목 TOP10 조회."""
+    try:
+        url = f"https://m.stock.naver.com/api/stock/{code}/etfAnalysis"
+        r = requests.get(url, headers=_HEADERS, timeout=10)
+        if r.status_code != 200:
+            return {}
+        d = r.json()
+
+        components = [
+            {
+                "rank": str(item.get("seq", "")),
+                "code": item.get("itemCode", ""),
+                "name": item.get("itemName", ""),
+                "count": item.get("stockCount", "-"),
+                "weight": item.get("etfWeight", "-"),
+            }
+            for item in d.get("etfTop10MajorConstituentAssets", [])
+        ]
+
+        return {
+            "base_index": d.get("etfBaseIndex", "-"),
+            "nav": f"{d.get('nav', 0):,.0f}",
+            "total_fee": f"{d.get('totalFee', 0):.2f}%",
+            "chase_error": f"{d.get('chaseErrorRate', 0):.2f}%",
+            "issuer": d.get("issuerName", "-"),
+            "components": components,
+        }
+    except Exception:
+        return {}
 
 
 def _search_kr_symbol(query: str) -> tuple[str, str]:
@@ -509,6 +564,7 @@ def fetch_stock_info(query: str, market: str) -> dict:
         "buy_score": 0, "buy_score_max": 8, "buy_score_str": "-",
         "buy_opinion": "", "buy_opinion_color": "gray",
         "buy_score_items": [],
+        "is_etf": False, "etf_analysis": {},
     }
 
     try:
@@ -565,6 +621,11 @@ def fetch_stock_info(query: str, market: str) -> dict:
                 pass
 
             fdr_symbol = symbol
+
+            # ETF 여부 확인 및 구성종목 조회
+            if _is_kr_etf(symbol):
+                result["is_etf"] = True
+                result["etf_analysis"] = fetch_etf_analysis(symbol)
 
         else:  # US
             symbol = query.strip().upper()
