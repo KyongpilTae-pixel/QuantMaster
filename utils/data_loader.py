@@ -432,6 +432,7 @@ class QuantDataLoader:
 
 _kr_listing_cache: pd.DataFrame | None = None
 _kr_etf_listing_cache: pd.DataFrame | None = None
+_kr_etn_listing_cache: pd.DataFrame | None = None
 
 
 def _get_kr_listing() -> pd.DataFrame:
@@ -451,6 +452,16 @@ def _get_kr_etf_listing() -> pd.DataFrame:
     return _kr_etf_listing_cache
 
 
+def _get_kr_etn_listing() -> pd.DataFrame:
+    global _kr_etn_listing_cache
+    if _kr_etn_listing_cache is None:
+        try:
+            _kr_etn_listing_cache = fdr.StockListing("ETN/KR")
+        except Exception:
+            _kr_etn_listing_cache = pd.DataFrame()
+    return _kr_etn_listing_cache
+
+
 def _is_kr_etf(code: str) -> bool:
     """6자리 코드가 한국 ETF인지 확인."""
     try:
@@ -461,6 +472,23 @@ def _is_kr_etf(code: str) -> bool:
         return not listing[listing[sym_col] == code].empty
     except Exception:
         return False
+
+
+def _is_kr_structured_product(code: str, name: str = "") -> bool:
+    """ETF 또는 ETN 여부 확인 (이름 기반 fallback 포함)."""
+    if _is_kr_etf(code):
+        return True
+    if "ETN" in name.upper():
+        return True
+    try:
+        listing = _get_kr_etn_listing()
+        if not listing.empty:
+            sym_col = "Symbol" if "Symbol" in listing.columns else listing.columns[0]
+            if not listing[listing[sym_col] == code].empty:
+                return True
+    except Exception:
+        pass
+    return False
 
 
 def fetch_etf_analysis(code: str) -> dict:
@@ -969,6 +997,27 @@ def fetch_leaders_combined(market: str = "KOSPI", top_n: int = 30) -> list[dict]
             "is_us":       False,
         })
 
+    # ETF/ETN 여부 배치 체크
+    try:
+        etf_listing = _get_kr_etf_listing()
+        sym_col = "Symbol" if "Symbol" in etf_listing.columns else (etf_listing.columns[0] if not etf_listing.empty else "Symbol")
+        etf_codes = set(etf_listing[sym_col].astype(str).tolist()) if not etf_listing.empty else set()
+    except Exception:
+        etf_codes = set()
+    try:
+        etn_listing = _get_kr_etn_listing()
+        sym_col2 = "Symbol" if "Symbol" in etn_listing.columns else (etn_listing.columns[0] if not etn_listing.empty else "Symbol")
+        etn_codes = set(etn_listing[sym_col2].astype(str).tolist()) if not etn_listing.empty else set()
+    except Exception:
+        etn_codes = set()
+
+    for item in combined:
+        item["is_etf"] = (
+            item["code"] in etf_codes
+            or item["code"] in etn_codes
+            or "ETN" in item.get("name", "").upper()
+        )
+
     combined.sort(key=lambda x: x["score_a"], reverse=True)
     top = combined[:top_n]
     for i, item in enumerate(top):
@@ -1033,6 +1082,7 @@ def _fetch_us_yahoo_screener(scr_id: str, top_n: int = 30) -> list[dict]:
         change_pct = float(q.get("regularMarketChangePercent") or 0)
         volume = int(q.get("regularMarketVolume") or 0)
         mkt_cap_raw = float(q.get("marketCap") or 0)
+        quote_type = q.get("quoteType", "")
 
         results.append({
             "rank": i + 1,
@@ -1046,6 +1096,7 @@ def _fetch_us_yahoo_screener(scr_id: str, top_n: int = 30) -> list[dict]:
             "change_positive": change_pct >= 0,
             "mktcap_str": _fmt_us_mktcap(mkt_cap_raw),
             "is_us": True,
+            "quote_type": quote_type,
         })
         if len(results) >= top_n:
             break
@@ -1089,6 +1140,7 @@ def _fetch_leaders_combined_us(top_n: int = 30) -> list[dict]:
             "score_b":     0.0,
             "score_b_str": "-",
             "has_score_b": False,
+            "is_etf":      base.get("quote_type", "") in ("ETF", "ETN"),
         })
 
     combined.sort(key=lambda x: x["score_a"], reverse=True)

@@ -256,6 +256,7 @@ class State(rx.State):
     # 상세 테이블 전략 선택
     momentum_detail: str = "momentum"   # "momentum"|"vaa"|"ma"|"invvol"
     # 기간 토글
+    momentum_show_1m: bool = True
     momentum_show_3m: bool = True
     momentum_show_6m: bool = True
     momentum_show_12m: bool = True
@@ -269,6 +270,7 @@ class State(rx.State):
     # 당일 주도주
     leaders_market: str = "KOSPI"
     leaders_sort: str = "방법A"        # "방법A" | "방법B" | "거래량" | "상승률"
+    leaders_type_filter: str = "전체"  # "전체" | "ETF" | "일반주"
     leaders_loading: bool = False
     leaders_b_loading: bool = False
     leaders_score_b_done: bool = False  # B점수 계산 완료 여부
@@ -548,6 +550,9 @@ class State(rx.State):
         elif tab == "portfolio":
             self.load_holdings_from_db()
 
+    def toggle_momentum_1m(self):
+        self.momentum_show_1m = not self.momentum_show_1m
+
     def toggle_momentum_3m(self):
         self.momentum_show_3m = not self.momentum_show_3m
 
@@ -612,27 +617,40 @@ class State(rx.State):
     def set_leaders_market(self, v: str):
         self.leaders_market = v
 
-    def set_leaders_sort(self, v: str):
-        if not self.leaders_data_raw:
-            self.leaders_sort = v
-            return
-        if v == self.leaders_sort:
-            return  # 동일 정렬이면 불필요한 state 업데이트 방지
-        self.leaders_sort = v
+    def _apply_filter_and_sort(self):
+        """leaders_data_raw에 타입 필터 + 정렬을 적용해 leaders_data 갱신."""
         key_map = {
             "방법A": lambda x: x.get("score_a", 0),
             "방법B": lambda x: x.get("score_b", 0),
             "거래량": lambda x: x.get("today_volume", 0),
             "상승률": lambda x: x.get("change_pct_val", 0),
         }
-        key_fn = key_map.get(v, lambda x: x.get("score_a", 0))
-        # dict 복사본을 만들어 leaders_data_raw의 객체를 직접 변경하지 않음
+        key_fn = key_map.get(self.leaders_sort, lambda x: x.get("score_a", 0))
+        filtered = [dict(item) for item in self.leaders_data_raw]
+        if self.leaders_type_filter == "ETF":
+            filtered = [item for item in filtered if item.get("is_etf", False)]
+        elif self.leaders_type_filter == "일반주":
+            filtered = [item for item in filtered if not item.get("is_etf", False)]
         self.leaders_data = [
             {**item, "rank": i + 1}
-            for i, item in enumerate(
-                sorted(self.leaders_data_raw, key=key_fn, reverse=True)
-            )
+            for i, item in enumerate(sorted(filtered, key=key_fn, reverse=True))
         ]
+
+    def set_leaders_sort(self, v: str):
+        if not self.leaders_data_raw:
+            self.leaders_sort = v
+            return
+        if v == self.leaders_sort:
+            return
+        self.leaders_sort = v
+        self._apply_filter_and_sort()
+
+    def set_leaders_type_filter(self, v: str):
+        if v == self.leaders_type_filter:
+            return
+        self.leaders_type_filter = v
+        if self.leaders_data_raw:
+            self._apply_filter_and_sort()
 
     async def do_fetch_leaders(self):
         if self.leaders_loading:
@@ -642,6 +660,7 @@ class State(rx.State):
         self.leaders_data = []
         self.leaders_data_raw = []
         self.leaders_sort = "방법A"
+        self.leaders_type_filter = "전체"
         self.leaders_score_b_done = False
         self.leaders_from_cache = False
         self.leaders_cache_time = ""
@@ -659,7 +678,7 @@ class State(rx.State):
                 from utils.data_loader import save_leaders_cache
                 await asyncio.to_thread(save_leaders_cache, self.leaders_market, data)
             self.leaders_data_raw = data
-            self.leaders_data = list(data)
+            self._apply_filter_and_sort()
         except Exception as e:
             self.leaders_error = str(e)
         finally:
@@ -679,17 +698,7 @@ class State(rx.State):
         try:
             updated = await asyncio.to_thread(compute_score_b, raw_snapshot)
             self.leaders_data_raw = updated
-            key_map = {
-                "방법A": lambda x: x.get("score_a", 0),
-                "방법B": lambda x: x.get("score_b", 0),
-                "거래량": lambda x: x.get("today_volume", 0),
-                "상승률": lambda x: x.get("change_pct_val", 0),
-            }
-            key_fn = key_map.get(self.leaders_sort, lambda x: x.get("score_a", 0))
-            self.leaders_data = [
-                {**item, "rank": i + 1}
-                for i, item in enumerate(sorted(updated, key=key_fn, reverse=True))
-            ]
+            self._apply_filter_and_sort()
             self.leaders_score_b_done = True
         except Exception as e:
             self.leaders_error = str(e)
@@ -3312,6 +3321,9 @@ def momentum_tab() -> rx.Component:
     def momentum_row(r):
         return rx.table.row(
             name_cell(r, r["is_rec_momentum"]),
+            rx.cond(State.momentum_show_1m,
+                rx.table.cell(ret_badge(r["ret_1m_str"], r["win_1m"], r["pos_1m"])),
+                rx.fragment()),
             rx.cond(State.momentum_show_3m,
                 rx.table.cell(ret_badge(r["ret_3m_str"], r["win_3m"], r["pos_3m"])),
                 rx.fragment()),
@@ -3326,6 +3338,7 @@ def momentum_tab() -> rx.Component:
     momentum_table = rx.table.root(
         rx.table.header(rx.table.row(
             rx.table.column_header_cell("자산"),
+            rx.cond(State.momentum_show_1m, rx.table.column_header_cell("1개월"), rx.fragment()),
             rx.cond(State.momentum_show_3m, rx.table.column_header_cell("3개월"), rx.fragment()),
             rx.cond(State.momentum_show_6m, rx.table.column_header_cell("6개월"), rx.fragment()),
             rx.cond(State.momentum_show_12m, rx.table.column_header_cell("12개월"), rx.fragment()),
@@ -3462,6 +3475,9 @@ def momentum_tab() -> rx.Component:
             ),
             rx.divider(orientation="vertical", height="24px"),
             rx.text("기간 (단순모멘텀):", size="2", color="gray"),
+            rx.button("1M", size="1",
+                variant=rx.cond(State.momentum_show_1m, "solid", "soft"),
+                color_scheme="gray", on_click=State.toggle_momentum_1m),
             rx.button("3M", size="1",
                 variant=rx.cond(State.momentum_show_3m, "solid", "soft"),
                 color_scheme="gray", on_click=State.toggle_momentum_3m),
@@ -3676,6 +3692,26 @@ def leaders_tab() -> rx.Component:
                     on_click=State.set_leaders_sort("상승률"),
                     variant=rx.cond(State.leaders_sort == "상승률", "solid", "soft"),
                     color_scheme="blue", size="1",
+                ),
+                rx.separator(orientation="vertical", size="1"),
+                rx.text("종류:", size="2", color="gray", weight="medium"),
+                rx.button(
+                    "전체",
+                    on_click=State.set_leaders_type_filter("전체"),
+                    variant=rx.cond(State.leaders_type_filter == "전체", "solid", "soft"),
+                    color_scheme="gray", size="1",
+                ),
+                rx.button(
+                    "ETF/ETN",
+                    on_click=State.set_leaders_type_filter("ETF"),
+                    variant=rx.cond(State.leaders_type_filter == "ETF", "solid", "soft"),
+                    color_scheme="orange", size="1",
+                ),
+                rx.button(
+                    "일반주",
+                    on_click=State.set_leaders_type_filter("일반주"),
+                    variant=rx.cond(State.leaders_type_filter == "일반주", "solid", "soft"),
+                    color_scheme="green", size="1",
                 ),
                 rx.spacer(),
                 rx.button(
