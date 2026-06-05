@@ -103,7 +103,7 @@ def fetch_momentum_data() -> dict:
 
     # ── 2. 단순 모멘텀 추천 ─────────────────────────────────────
     period_winners: dict[str, str] = {}
-    for lbl in ("3m", "6m", "12m"):
+    for lbl in ("1m", "3m", "6m", "12m"):
         best_key, best_ret = "cash", 0.0
         for r in rows:
             v = r.get(f"ret_{lbl}")
@@ -121,8 +121,10 @@ def fetch_momentum_data() -> dict:
     wins = win_counts.get(mom_key, 0)
     if mom_key == "cash":
         mom_name, mom_desc = "현금 보유", "전 기간 마이너스"
+    elif wins == 4:
+        mom_desc = "4개 기간 모두 1위"
     elif wins == 3:
-        mom_desc = "3개 기간 모두 1위"
+        mom_desc = "3개 기간 1위"
     elif wins == 2:
         mom_desc = "2개 기간 1위"
     else:
@@ -178,7 +180,7 @@ def fetch_momentum_data() -> dict:
 
     # ── 6. bool 플래그 (rx.foreach 내 비교 불가 우회) ─────────────
     for r in rows:
-        for lbl in ("3m", "6m", "12m"):
+        for lbl in ("1m", "3m", "6m", "12m"):
             r[f"win_{lbl}"] = (period_winners.get(lbl) == r["key"])
         r["is_recommended"] = (r["key"] == mom_key)          # 기존 호환
         r["is_rec_momentum"] = (r["key"] == mom_key)

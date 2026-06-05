@@ -177,6 +177,7 @@ def run_backtest(years: int = 10) -> dict:
 
         end_dt = pd.Timestamp.today().normalize()
         start_dt = end_dt - pd.DateOffset(years=years)
+        date_fmt = "%Y-%m"
         dates = pd.date_range(start=start_dt, end=end_dt, freq="ME")
 
         if len(dates) < 3:
@@ -196,7 +197,7 @@ def run_backtest(years: int = 10) -> dict:
         for i in range(len(dates) - 1):
             sig_dt = dates[i]
             next_dt = dates[i + 1]
-            row: dict = {"date": sig_dt.strftime("%Y-%m")}
+            row: dict = {"date": sig_dt.strftime(date_fmt)}
             for key, fn in signal_fns.items():
                 w = fn(prices, sig_dt)
                 r = _apply_weights(w, prices, sig_dt, next_dt)
