@@ -122,7 +122,8 @@ def scan_defensive_stocks(
     Returns:
         list of dicts with rank/code/name/close/beta/rs/dc/up_on_down + bool flags
     """
-    listing = fdr.StockListing(market)
+    from utils.data_loader import fetch_kr_stock_listing
+    listing = fetch_kr_stock_listing(market, min_mktcap_eok)
     if listing.empty:
         return []
 

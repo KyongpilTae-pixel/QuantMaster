@@ -438,7 +438,10 @@ _kr_etn_listing_cache: pd.DataFrame | None = None
 def _get_kr_listing() -> pd.DataFrame:
     global _kr_listing_cache
     if _kr_listing_cache is None:
-        _kr_listing_cache = fdr.StockListing("KRX")
+        try:
+            _kr_listing_cache = fdr.StockListing("KRX")
+        except Exception:
+            return pd.DataFrame()  # 실패 시 캐시하지 않고 빈 DataFrame 반환
     return _kr_listing_cache
 
 
@@ -523,32 +526,66 @@ def fetch_etf_analysis(code: str) -> dict:
         return {}
 
 
+def fetch_kr_stock_listing(market: str, min_mktcap_eok: int = 0) -> pd.DataFrame:
+    """KR 종목 목록 조회. fdr 실패 시 NAVER sise_market_sum으로 fallback.
+
+    Returns DataFrame with columns: Code, Name, Marcap (원 단위).
+    """
+    try:
+        df = fdr.StockListing(market)
+        if df is not None and not df.empty:
+            return df
+    except Exception:
+        pass
+
+    # NAVER fallback — sise_market_sum 페이지 페이지네이션
+    sosok = "0" if market == "KOSPI" else "1"
+    session = _make_session()
+    rows: list[dict] = []
+    for page in range(1, 40):  # 최대 40페이지 ≈ 2000 종목
+        page_data = _parse_page(session, sosok, page)
+        if not page_data:
+            break
+        for item in page_data:
+            mktcap_eok = item.get("MarketCap") or 0
+            if min_mktcap_eok > 0 and mktcap_eok < min_mktcap_eok:
+                # 시가총액 내림차순 정렬이므로 이하로 내려가면 종료
+                return pd.DataFrame(rows) if rows else pd.DataFrame()
+            rows.append({
+                "Code": item["Symbol"],
+                "Name": item["Name"],
+                "Marcap": mktcap_eok * 1e8,  # 억원 → 원
+            })
+    return pd.DataFrame(rows) if rows else pd.DataFrame()
+
+
 def _search_kr_symbol(query: str) -> tuple[str, str]:
     """종목명 또는 6자리 코드로 (심볼, 시장) 반환. 없으면 ("", "")."""
+    q = query.strip()
     try:
         listing = _get_kr_listing()
-        code_col = "Code" if "Code" in listing.columns else "Symbol"
-        name_col = next((c for c in ["Name", "회사명", "종목명"] if c in listing.columns), None)
-        mkt_col = next((c for c in ["Market", "시장구분"] if c in listing.columns), None)
+        if not listing.empty:
+            code_col = "Code" if "Code" in listing.columns else "Symbol"
+            name_col = next((c for c in ["Name", "회사명", "종목명"] if c in listing.columns), None)
+            mkt_col = next((c for c in ["Market", "시장구분"] if c in listing.columns), None)
 
-        q = query.strip()
-        match = listing[listing[code_col].str.strip() == q]
-        if match.empty and name_col:
-            match = listing[listing[name_col].str.contains(q, case=False, na=False)]
+            match = listing[listing[code_col].str.strip() == q]
+            if match.empty and name_col:
+                match = listing[listing[name_col].str.contains(q, case=False, na=False)]
 
-        if not match.empty:
-            row = match.iloc[0]
-            code = str(row[code_col]).strip().zfill(6)
-            market = str(row[mkt_col]).upper() if mkt_col else "KOSPI"
-            return (code, market)
-
-        # 6자리 숫자 코드인데 KRX 목록에 없으면 ETF로 간주해 직접 반환
-        if q.isdigit() and len(q) == 6:
-            return (q, "KOSPI")
-
-        return ("", "")
+            if not match.empty:
+                row = match.iloc[0]
+                code = str(row[code_col]).strip().zfill(6)
+                market = str(row[mkt_col]).upper() if mkt_col else "KOSPI"
+                return (code, market)
     except Exception:
-        return ("", "")
+        pass
+
+    # KRX 목록 실패 or 미등재 — 6자리 숫자 코드이면 직접 KOSPI 처리
+    if q.isdigit() and len(q) == 6:
+        return (q, "KOSPI")
+
+    return ("", "")
 
 
 def _fetch_kr_naver_fundamentals(code: str) -> dict | None:
