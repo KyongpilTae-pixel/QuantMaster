@@ -986,6 +986,26 @@ def _get_mktcap_jo(code: str) -> tuple[str, str]:
         return code, "-"
 
 
+def _get_leaders_extra(code: str) -> tuple[str, str, bool]:
+    """NAVER polling API로 시가총액 문자열 + 고가 근처 여부(종가/고가 ≥ 98%) 반환."""
+    try:
+        item = _fetch_kr_naver_fundamentals(code)
+        if not item:
+            return code, "-", False
+        nv     = float(item.get("nv") or item.get("sv") or 0)
+        hv     = float(item.get("hv") or 0)
+        shares = float(item.get("countOfListedStock") or 0)
+        if nv > 0 and shares > 0:
+            jo = nv * shares / 1e12
+            mktcap_str = f"{jo:.1f}조" if jo >= 1.0 else f"{nv * shares / 1e8:,.0f}억"
+        else:
+            mktcap_str = "-"
+        is_near_high = hv > 0 and (nv / hv) >= 0.98
+        return code, mktcap_str, is_near_high
+    except Exception:
+        return code, "-", False
+
+
 def fetch_leaders_combined(market: str = "KOSPI", top_n: int = 30) -> list[dict]:
     """거래량 상위 + 상승률 상위를 합쳐 방법A 점수(순위 역수 합산)를 계산한다.
 
@@ -1032,6 +1052,7 @@ def fetch_leaders_combined(market: str = "KOSPI", top_n: int = 30) -> list[dict]
             "has_score_b": False,
             "mktcap_str":  "-",
             "is_us":       False,
+            "is_near_high": False,
         })
 
     # ETF/ETN 여부 배치 체크
@@ -1060,12 +1081,15 @@ def fetch_leaders_combined(market: str = "KOSPI", top_n: int = 30) -> list[dict]
     for i, item in enumerate(top):
         item["rank"] = i + 1
 
-    # 시가총액 병렬 조회
+    # 시가총액 + 고가 근처 여부 병렬 조회
     codes = [item["code"] for item in top]
     with ThreadPoolExecutor(max_workers=10) as ex:
-        mktcap_map = dict(ex.map(_get_mktcap_jo, codes))
+        extra_results = list(ex.map(_get_leaders_extra, codes))
+    extra_map = {code: (mktcap, near_high) for code, mktcap, near_high in extra_results}
     for item in top:
-        item["mktcap_str"] = mktcap_map.get(item["code"], "-")
+        mktcap, near_high = extra_map.get(item["code"], ("-", False))
+        item["mktcap_str"] = mktcap
+        item["is_near_high"] = near_high
 
     return top
 
@@ -1120,6 +1144,7 @@ def _fetch_us_yahoo_screener(scr_id: str, top_n: int = 30) -> list[dict]:
         volume = int(q.get("regularMarketVolume") or 0)
         mkt_cap_raw = float(q.get("marketCap") or 0)
         quote_type = q.get("quoteType", "")
+        day_high = float(q.get("regularMarketDayHigh") or 0)
 
         results.append({
             "rank": i + 1,
@@ -1134,6 +1159,8 @@ def _fetch_us_yahoo_screener(scr_id: str, top_n: int = 30) -> list[dict]:
             "mktcap_str": _fmt_us_mktcap(mkt_cap_raw),
             "is_us": True,
             "quote_type": quote_type,
+            "day_high": day_high,
+            "price_raw": price,
         })
         if len(results) >= top_n:
             break
@@ -1178,6 +1205,10 @@ def _fetch_leaders_combined_us(top_n: int = 30) -> list[dict]:
             "score_b_str": "-",
             "has_score_b": False,
             "is_etf":      base.get("quote_type", "") in ("ETF", "ETN"),
+            "is_near_high": (
+                base.get("day_high", 0) > 0
+                and base.get("price_raw", 0) / base["day_high"] >= 0.98
+            ),
         })
 
     combined.sort(key=lambda x: x["score_a"], reverse=True)

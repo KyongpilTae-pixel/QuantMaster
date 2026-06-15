@@ -269,8 +269,9 @@ class State(rx.State):
 
     # 당일 주도주
     leaders_market: str = "KOSPI"
-    leaders_sort: str = "방법A"        # "방법A" | "방법B" | "거래량" | "상승률"
-    leaders_type_filter: str = "전체"  # "전체" | "ETF" | "일반주"
+    leaders_sort: str = "방법A"         # "방법A" | "방법B" | "거래량" | "상승률"
+    leaders_type_filter: str = "전체"   # "전체" | "ETF" | "일반주"
+    leaders_close_buy: bool = False     # 종가매매 후보 필터
     leaders_loading: bool = False
     leaders_b_loading: bool = False
     leaders_score_b_done: bool = False  # B점수 계산 완료 여부
@@ -631,6 +632,14 @@ class State(rx.State):
             filtered = [item for item in filtered if item.get("is_etf", False)]
         elif self.leaders_type_filter == "일반주":
             filtered = [item for item in filtered if not item.get("is_etf", False)]
+        if self.leaders_close_buy:
+            filtered = [
+                item for item in filtered
+                if item.get("change_pct_val", 0) >= 5.0        # 상승률 5% 이상
+                and item.get("is_near_high", False)             # 고가 근처 마감
+                and item.get("has_vol_rank", False)             # 거래량 상위 등재
+                and item.get("has_rise_rank", False)            # 상승률 상위 등재
+            ]
         self.leaders_data = [
             {**item, "rank": i + 1}
             for i, item in enumerate(sorted(filtered, key=key_fn, reverse=True))
@@ -644,6 +653,11 @@ class State(rx.State):
             return
         self.leaders_sort = v
         self._apply_filter_and_sort()
+
+    def toggle_leaders_close_buy(self):
+        self.leaders_close_buy = not self.leaders_close_buy
+        if self.leaders_data_raw:
+            self._apply_filter_and_sort()
 
     def set_leaders_type_filter(self, v: str):
         if v == self.leaders_type_filter:
@@ -661,6 +675,7 @@ class State(rx.State):
         self.leaders_data_raw = []
         self.leaders_sort = "방법A"
         self.leaders_type_filter = "전체"
+        self.leaders_close_buy = False
         self.leaders_score_b_done = False
         self.leaders_from_cache = False
         self.leaders_cache_time = ""
@@ -3662,75 +3677,61 @@ def leaders_tab() -> rx.Component:
             align_items="center",
             spacing="3",
         ),
-        # ── 정렬 선택 + 방법B 계산 버튼 ────────────────────────
+        # ── 행1: 정렬 + B점수 계산 ───────────────────────────────
         rx.cond(
             State.leaders_data.length() > 0,
-            rx.hstack(
-                rx.text("정렬:", size="2", color="gray", weight="medium"),
-                # rx.radio_group value 바인딩 → 상태 전송 시 on_change 재발화 루프 문제
-                # 일반 버튼으로 대체 (on_click은 사용자 클릭 시만 발화)
-                rx.button(
-                    "방법A",
-                    on_click=State.set_leaders_sort("방법A"),
-                    variant=rx.cond(State.leaders_sort == "방법A", "solid", "soft"),
-                    color_scheme="blue", size="1",
-                ),
-                rx.button(
-                    "방법B",
-                    on_click=State.set_leaders_sort("방법B"),
-                    variant=rx.cond(State.leaders_sort == "방법B", "solid", "soft"),
-                    color_scheme="blue", size="1",
-                ),
-                rx.button(
-                    "거래량",
-                    on_click=State.set_leaders_sort("거래량"),
-                    variant=rx.cond(State.leaders_sort == "거래량", "solid", "soft"),
-                    color_scheme="blue", size="1",
-                ),
-                rx.button(
-                    "상승률",
-                    on_click=State.set_leaders_sort("상승률"),
-                    variant=rx.cond(State.leaders_sort == "상승률", "solid", "soft"),
-                    color_scheme="blue", size="1",
-                ),
-                rx.separator(orientation="vertical", size="1"),
-                rx.text("종류:", size="2", color="gray", weight="medium"),
-                rx.button(
-                    "전체",
-                    on_click=State.set_leaders_type_filter("전체"),
-                    variant=rx.cond(State.leaders_type_filter == "전체", "solid", "soft"),
-                    color_scheme="gray", size="1",
-                ),
-                rx.button(
-                    "ETF/ETN",
-                    on_click=State.set_leaders_type_filter("ETF"),
-                    variant=rx.cond(State.leaders_type_filter == "ETF", "solid", "soft"),
-                    color_scheme="orange", size="1",
-                ),
-                rx.button(
-                    "일반주",
-                    on_click=State.set_leaders_type_filter("일반주"),
-                    variant=rx.cond(State.leaders_type_filter == "일반주", "solid", "soft"),
-                    color_scheme="green", size="1",
-                ),
-                rx.spacer(),
-                rx.button(
-                    rx.cond(
-                        State.leaders_b_loading,
-                        "계산 중...",
-                        rx.cond(State.leaders_score_b_done, "B점수 재계산", "B점수 계산"),
+            rx.vstack(
+                rx.hstack(
+                    rx.text("정렬:", size="2", color="gray", weight="medium"),
+                    rx.button("방법A", size="1", color_scheme="blue",
+                        on_click=State.set_leaders_sort("방법A"),
+                        variant=rx.cond(State.leaders_sort == "방법A", "solid", "soft")),
+                    rx.button("방법B", size="1", color_scheme="blue",
+                        on_click=State.set_leaders_sort("방법B"),
+                        variant=rx.cond(State.leaders_sort == "방법B", "solid", "soft")),
+                    rx.button("거래량", size="1", color_scheme="blue",
+                        on_click=State.set_leaders_sort("거래량"),
+                        variant=rx.cond(State.leaders_sort == "거래량", "solid", "soft")),
+                    rx.button("상승률", size="1", color_scheme="blue",
+                        on_click=State.set_leaders_sort("상승률"),
+                        variant=rx.cond(State.leaders_sort == "상승률", "solid", "soft")),
+                    rx.spacer(),
+                    rx.button(
+                        rx.cond(
+                            State.leaders_b_loading, "계산 중...",
+                            rx.cond(State.leaders_score_b_done, "B점수 재계산", "B점수 계산"),
+                        ),
+                        on_click=State.do_compute_score_b,
+                        loading=State.leaders_b_loading,
+                        disabled=State.leaders_b_loading,
+                        variant="soft",
+                        color_scheme=rx.cond(State.leaders_score_b_done, "green", "amber"),
+                        size="1",
                     ),
-                    on_click=State.do_compute_score_b,
-                    loading=State.leaders_b_loading,
-                    disabled=State.leaders_b_loading,
-                    variant="soft",
-                    color_scheme=rx.cond(State.leaders_score_b_done, "green", "amber"),
-                    size="2",
+                    width="100%", align_items="center", spacing="2",
                 ),
-                width="100%",
-                align_items="center",
-                spacing="2",
-                padding_y="4px",
+                # ── 행2: 종류 필터 + 종가매매 후보 ─────────────────
+                rx.hstack(
+                    rx.text("종류:", size="2", color="gray", weight="medium"),
+                    rx.button("전체", size="1", color_scheme="gray",
+                        on_click=State.set_leaders_type_filter("전체"),
+                        variant=rx.cond(State.leaders_type_filter == "전체", "solid", "soft")),
+                    rx.button("ETF/ETN", size="1", color_scheme="orange",
+                        on_click=State.set_leaders_type_filter("ETF"),
+                        variant=rx.cond(State.leaders_type_filter == "ETF", "solid", "soft")),
+                    rx.button("일반주", size="1", color_scheme="green",
+                        on_click=State.set_leaders_type_filter("일반주"),
+                        variant=rx.cond(State.leaders_type_filter == "일반주", "solid", "soft")),
+                    rx.separator(orientation="vertical", size="1"),
+                    rx.button(
+                        "종가매매 후보",
+                        on_click=State.toggle_leaders_close_buy,
+                        variant=rx.cond(State.leaders_close_buy, "solid", "soft"),
+                        color_scheme="tomato", size="1",
+                    ),
+                    width="100%", align_items="center", spacing="2",
+                ),
+                width="100%", spacing="1",
             ),
         ),
         # ── 점수 설명 ───────────────────────────────────────────
@@ -3740,6 +3741,28 @@ def leaders_tab() -> rx.Component:
                 rx.badge("방법A = 1/거래량순위 + 1/상승률순위", color_scheme="blue", variant="soft"),
                 rx.badge("방법B = (오늘거래량 ÷ 20일평균) × 상승률%", color_scheme="amber", variant="soft"),
                 spacing="2",
+            ),
+        ),
+        # ── 종가매매 필터 기준 안내 ──────────────────────────────
+        rx.cond(
+            State.leaders_close_buy,
+            rx.callout.root(
+                rx.callout.text(
+                    rx.hstack(
+                        rx.icon("triangle-alert", size=14),
+                        rx.text(
+                            "종가매매 후보 필터 적용 중 — "
+                            "① 상승률 +5% 이상  "
+                            "② 거래량 상위 + 상승률 상위 동시 등재  "
+                            "③ 종가 ÷ 당일고가 ≥ 98% (고가 근처 마감)",
+                            size="2",
+                        ),
+                        spacing="2",
+                        align="center",
+                    )
+                ),
+                color_scheme="tomato",
+                variant="soft",
             ),
         ),
         # ── 캐시 알림 ───────────────────────────────────────────
@@ -4400,13 +4423,13 @@ def holding_analysis_tab() -> rx.Component:
 def main_content() -> rx.Component:
     return rx.tabs.root(
         rx.tabs.list(
+            rx.tabs.trigger("시장모멘텀", value="momentum"),
+            rx.tabs.trigger("당일주도주", value="leaders"),
             rx.tabs.trigger("스캐너", value="scanner"),
             rx.tabs.trigger("분석", value="analysis"),
-            rx.tabs.trigger("히스토리", value="history"),
-            rx.tabs.trigger("포트폴리오", value="portfolio"),
-            rx.tabs.trigger("당일주도주", value="leaders"),
             rx.tabs.trigger("종목조회", value="lookup"),
-            rx.tabs.trigger("시장모멘텀", value="momentum"),
+            rx.tabs.trigger("포트폴리오", value="portfolio"),
+            rx.tabs.trigger("히스토리", value="history"),
         ),
         rx.tabs.content(
             rx.box(scanner_tab(), padding_top="16px"),
