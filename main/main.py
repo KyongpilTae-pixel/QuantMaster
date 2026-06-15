@@ -1726,7 +1726,7 @@ def sidebar() -> rx.Component:
             spacing="4",
             width="100%",
         ),
-        display=["none", "none", "block"],
+        display=rx.breakpoints(initial="none", sm="none", md="block"),
         width="240px",
         min_width="240px",
         padding="20px",
@@ -1751,7 +1751,7 @@ def mobile_header() -> rx.Component:
             width="100%",
             align="center",
         ),
-        display=["flex", "flex", "none"],
+        display=rx.breakpoints(initial="flex", sm="flex", md="none"),
         padding_x="12px",
         padding_y="8px",
         border_bottom="1px solid var(--gray-4)",
@@ -1804,7 +1804,7 @@ def mobile_drawer() -> rx.Component:
                 padding="20px",
                 box_shadow="4px 0 24px rgba(0,0,0,0.18)",
             ),
-            display=["block", "block", "none"],
+            display=rx.breakpoints(initial="block", sm="block", md="none"),
         ),
     )
 
@@ -3849,11 +3849,13 @@ def leaders_tab() -> rx.Component:
                     variant="soft",
                 ),
             ),
-            # ── 모바일 카드 뷰 ─────────────────────────────────
-            rx.box(
-                rx.foreach(
-                    State.leaders_data,
-                    lambda h: rx.card(
+            # ── 데이터 뷰 (모바일 카드 + 데스크탑 테이블) ────────
+            rx.vstack(
+                # 모바일 카드
+                rx.box(
+                    rx.foreach(
+                        State.leaders_data,
+                        lambda h: rx.card(
                         rx.vstack(
                             rx.hstack(
                                 rx.badge(h["rank"], variant="soft", color_scheme="gray"),
@@ -3908,12 +3910,12 @@ def leaders_tab() -> rx.Component:
                         width="100%",
                     ),
                 ),
-                display=["block", "block", "none"],
-                width="100%",
-            ),
-            # ── 데스크탑 테이블 ─────────────────────────────────
-            rx.box(
-                rx.table.root(
+                    display=rx.breakpoints(initial="block", sm="block", md="none"),
+                    width="100%",
+                ),
+                # 데스크탑 테이블
+                rx.box(
+                    rx.table.root(
                     rx.table.header(
                         rx.table.row(
                             rx.table.column_header_cell("순위"),
@@ -3968,8 +3970,10 @@ def leaders_tab() -> rx.Component:
                     variant="surface",
                     width="100%",
                 ),
-                display=["none", "none", "block"],
-                width="100%",
+                    display=rx.breakpoints(initial="none", sm="none", md="block"),
+                    width="100%",
+                ),
+                width="100%", spacing="0",
             ),
         ),
         width="100%",
@@ -4406,7 +4410,7 @@ def holding_analysis_tab() -> rx.Component:
                             "1px solid var(--red-4)",
                         ),
                     ),
-                    columns=["2", "2", "4"],
+                    columns=rx.breakpoints(initial="2", sm="2", md="4"),
                     spacing="4",
                     width="100%",
                 ),
@@ -4475,7 +4479,7 @@ def holding_analysis_tab() -> rx.Component:
                             width="100%",
                         ),
                     ),
-                    display=["block", "block", "none"],
+                    display=rx.breakpoints(initial="block", sm="block", md="none"),
                     width="100%",
                 ),
                 # ── 데스크탑 테이블 ─────────────────────────────────
@@ -4554,7 +4558,7 @@ def holding_analysis_tab() -> rx.Component:
                         variant="surface",
                         width="100%",
                     ),
-                    display=["none", "none", "block"],
+                    display=rx.breakpoints(initial="none", sm="none", md="block"),
                     width="100%",
                 ),
                 width="100%",
@@ -4623,11 +4627,11 @@ def index() -> rx.Component:
             rx.box(
                 rx.box(
                     main_content(),
-                    padding=["12px", "16px", "24px"],
+                    padding=rx.breakpoints(initial="12px", sm="16px", md="24px"),
                 ),
                 flex="1",
                 overflow_y="auto",
-                height=["calc(100vh - 53px)", "calc(100vh - 53px)", "100vh"],
+                height=rx.breakpoints(initial="calc(100vh - 53px)", sm="calc(100vh - 53px)", md="100vh"),
             ),
             direction="row",
             width="100%",
