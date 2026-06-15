@@ -112,9 +112,6 @@ class HoldingItem(BaseModel):
 
 
 class State(rx.State):
-    # UI
-    sidebar_open: bool = False
-
     # Settings
     pbr_limit: List[float] = [1.2]
     vwap_period: str = "120"
@@ -309,9 +306,6 @@ class State(rx.State):
 
     def set_budget_input(self, value: str):
         self.budget_input = value
-
-    def toggle_sidebar(self):
-        self.sidebar_open = not self.sidebar_open
 
     def set_scan_mode(self, value: str):
         self.scan_mode = value
@@ -1715,113 +1709,28 @@ def sidebar_controls() -> rx.Component:
     )
 
 
-def sidebar() -> rx.Component:
-    """데스크탑 고정 사이드바."""
-    return rx.box(
-        rx.vstack(
-            rx.heading("QuantMaster Pro", size="5"),
-            rx.text("Hybrid Quant & Technical Scanner", size="1", color="gray"),
-            rx.divider(),
-            sidebar_controls(),
-            spacing="4",
-            width="100%",
-        ),
-        display=rx.breakpoints(initial="none", sm="none", md="block"),
-        width="240px",
-        min_width="240px",
-        padding="20px",
-        border_right="1px solid var(--gray-4)",
-        height="100vh",
-        overflow_y="auto",
-    )
-
-
-def mobile_header() -> rx.Component:
-    """모바일 상단 헤더 (햄버거 + 로고)."""
-    return rx.box(
-        rx.hstack(
-            rx.icon_button(
-                rx.icon("menu", size=20),
-                on_click=State.toggle_sidebar,
-                variant="ghost",
-                size="3",
-            ),
-            rx.heading("QuantMaster Pro", size="4"),
-            rx.spacer(),
-            width="100%",
-            align="center",
-        ),
-        display=rx.breakpoints(initial="flex", sm="flex", md="none"),
-        padding_x="12px",
-        padding_y="8px",
-        border_bottom="1px solid var(--gray-4)",
-        background="white",
-        position="sticky",
-        top="0",
-        z_index="100",
-    )
-
-
-def mobile_drawer() -> rx.Component:
-    """모바일 사이드바 드로어 오버레이."""
-    return rx.cond(
-        State.sidebar_open,
-        rx.box(
-            # 배경 딤처리 — 클릭 시 닫힘
-            rx.box(
-                on_click=State.toggle_sidebar,
-                position="fixed",
-                top="0", left="0", right="0", bottom="0",
-                background="rgba(0,0,0,0.45)",
-                z_index="200",
-            ),
-            # 드로어 패널
-            rx.box(
-                rx.vstack(
-                    rx.hstack(
-                        rx.heading("스캔 설정", size="4"),
-                        rx.spacer(),
-                        rx.icon_button(
-                            rx.icon("x", size=18),
-                            on_click=State.toggle_sidebar,
-                            variant="ghost",
-                            size="2",
-                        ),
-                        width="100%",
-                        align="center",
-                    ),
-                    rx.divider(),
-                    sidebar_controls(),
-                    spacing="4",
-                    width="100%",
-                ),
-                position="fixed",
-                top="0", left="0", bottom="0",
-                width="280px",
-                background="white",
-                z_index="201",
-                overflow_y="auto",
-                padding="20px",
-                box_shadow="4px 0 24px rgba(0,0,0,0.18)",
-            ),
-            display=rx.breakpoints(initial="block", sm="block", md="none"),
-        ),
-    )
 
 
 def scanner_tab() -> rx.Component:
-    return rx.cond(
-        State.scan_mode == "defensive",
-        defensive_scanner_table(),
+    controls = rx.card(
+        sidebar_controls(),
+        variant="surface",
+        width="100%",
+    )
+    return rx.vstack(
+        controls,
         rx.cond(
-            State.scan_mode == "whale",
-            whale_scanner_table(),
+            State.scan_mode == "defensive",
+            defensive_scanner_table(),
             rx.cond(
-                State.scan_results.length() == 0,
-                rx.center(
-                    rx.text("왼쪽 사이드바에서 스캔을 실행하세요.", color="gray"),
-                    height="200px",
-                ),
+                State.scan_mode == "whale",
+                whale_scanner_table(),
+                rx.cond(
+                    State.scan_results.length() == 0,
+                    rx.center(
+                        rx.text("스캔 실행 버튼을 눌러 결과를 조회하세요.", color="gray"),
+                        height="200px",
+                    ),
                 rx.table.root(
             rx.table.header(
                 rx.table.row(
@@ -1872,11 +1781,14 @@ def scanner_tab() -> rx.Component:
                     ),
                 )
             ),
-            width="100%",
-            variant="surface",
+                    width="100%",
+                    variant="surface",
+                ),
+                ),
+            ),
         ),
-        ),
-        ),
+        width="100%",
+        spacing="4",
     )
 
 
@@ -1885,7 +1797,7 @@ def defensive_scanner_table() -> rx.Component:
     return rx.cond(
         State.defensive_results.length() == 0,
         rx.center(
-            rx.text("왼쪽 사이드바에서 하락방어 스캔을 실행하세요. (KOSPI/KOSDAQ)", color="gray"),
+            rx.text("위 패널에서 하락방어 스캔을 실행하세요. (KOSPI/KOSDAQ)", color="gray"),
             height="200px",
         ),
         rx.table.root(
@@ -1964,7 +1876,7 @@ def whale_scanner_table() -> rx.Component:
     return rx.cond(
         State.whale_results.length() == 0,
         rx.center(
-            rx.text("왼쪽 사이드바에서 세력 탐지 스캔을 실행하세요.", color="gray"),
+            rx.text("위 패널에서 세력 탐지 스캔을 실행하세요.", color="gray"),
             height="200px",
         ),
         rx.table.root(
@@ -4620,24 +4532,13 @@ def main_content() -> rx.Component:
 
 def index() -> rx.Component:
     return rx.box(
-        mobile_header(),
-        mobile_drawer(),
-        rx.flex(
-            sidebar(),
-            rx.box(
-                rx.box(
-                    main_content(),
-                    padding=rx.breakpoints(initial="12px", sm="16px", md="24px"),
-                ),
-                flex="1",
-                overflow_y="auto",
-                height=rx.breakpoints(initial="calc(100vh - 53px)", sm="calc(100vh - 53px)", md="100vh"),
-            ),
-            direction="row",
-            width="100%",
+        rx.box(
+            main_content(),
+            padding=rx.breakpoints(initial="12px", sm="16px", md="24px"),
         ),
         min_height="100vh",
         width="100%",
+        overflow_y="auto",
     )
 
 
