@@ -112,6 +112,9 @@ class HoldingItem(BaseModel):
 
 
 class State(rx.State):
+    # UI
+    sidebar_open: bool = False
+
     # Settings
     pbr_limit: List[float] = [1.2]
     vwap_period: str = "120"
@@ -306,6 +309,9 @@ class State(rx.State):
 
     def set_budget_input(self, value: str):
         self.budget_input = value
+
+    def toggle_sidebar(self):
+        self.sidebar_open = not self.sidebar_open
 
     def set_scan_mode(self, value: str):
         self.scan_mode = value
@@ -1463,306 +1469,343 @@ class State(rx.State):
 # ---------------------------------------------------------------------------
 
 
+def sidebar_controls() -> rx.Component:
+    """사이드바 컨트롤 내용 — 데스크탑/모바일 드로어 공통."""
+    return rx.vstack(
+        rx.text("스캔 모드", size="2", color="gray"),
+        rx.select.root(
+            rx.select.trigger(placeholder="모드 선택"),
+            rx.select.content(
+                rx.select.item("퀀트 스캔", value="quant"),
+                rx.select.item("세력 탐지", value="whale"),
+                rx.select.item("하락방어", value="defensive"),
+            ),
+            value=State.scan_mode,
+            on_change=State.set_scan_mode,
+            width="100%",
+        ),
+
+        rx.text("시장", size="2", color="gray"),
+        rx.select.root(
+            rx.select.trigger(placeholder="시장 선택"),
+            rx.select.content(
+                rx.select.group(
+                    rx.select.label("한국 주식"),
+                    rx.select.item("KOSPI", value="KOSPI"),
+                    rx.select.item("KOSDAQ", value="KOSDAQ"),
+                ),
+                rx.select.separator(),
+                rx.select.group(
+                    rx.select.label("한국 ETF"),
+                    rx.select.item("KR-ETF (기술적 스캔)", value="KR-ETF"),
+                ),
+                rx.select.separator(),
+                rx.select.group(
+                    rx.select.label("미국"),
+                    rx.select.item("S&P 500", value="SP500"),
+                    rx.select.item("NASDAQ", value="NASDAQ"),
+                ),
+                rx.select.separator(),
+                rx.select.group(
+                    rx.select.label("미국 ETF"),
+                    rx.select.item("US-ETF (기술적 스캔)", value="US-ETF"),
+                ),
+            ),
+            value=State.market,
+            on_change=State.set_market,
+            width="100%",
+        ),
+
+        rx.cond(
+            State.scan_mode == "quant",
+            # ── 퀀트 전용 옵션 ───────────────────────────────────
+            rx.vstack(
+                rx.hstack(
+                    rx.text("PBR 한도: ", size="2", color="gray"),
+                    rx.text(State.pbr_limit[0], size="2"),
+                ),
+                rx.slider(
+                    min=0.5,
+                    max=2.0,
+                    step=0.1,
+                    value=State.pbr_limit,
+                    on_change=State.set_pbr_limit,
+                    width="100%",
+                ),
+                rx.text("최소 시가총액", size="2", color="gray"),
+                rx.select.root(
+                    rx.select.trigger(placeholder="시가총액 선택"),
+                    rx.select.content(
+                        rx.select.item("전체", value="전체"),
+                        rx.select.item("소형주+ (KR:300억 / US:$2B)", value="소형주+"),
+                        rx.select.item("중형주+ (KR:3000억 / US:$10B)", value="중형주+"),
+                        rx.select.item("대형주+ (KR:1조 / US:$50B)", value="대형주+"),
+                    ),
+                    value=State.min_cap_label,
+                    on_change=State.set_min_cap_label,
+                    width="100%",
+                ),
+                rx.text("VWAP 기간", size="2", color="gray"),
+                rx.select.root(
+                    rx.select.trigger(placeholder="기간 선택"),
+                    rx.select.content(
+                        rx.select.item("20일", value="20"),
+                        rx.select.item("60일", value="60"),
+                        rx.select.item("120일", value="120"),
+                    ),
+                    value=State.vwap_period,
+                    on_change=State.set_vwap_period,
+                    width="100%",
+                ),
+                spacing="3",
+                width="100%",
+            ),
+            rx.cond(
+                State.scan_mode == "whale",
+                # ── 세력 탐지 전용 옵션 ──────────────────────────────
+                rx.vstack(
+                    rx.text("세력 탐지 옵션", size="2", color="gray"),
+                    rx.hstack(
+                        rx.checkbox(
+                            checked=State.use_alpha,
+                            on_change=State.set_use_alpha,
+                        ),
+                        rx.text("지수 대비 알파 필터", size="2"),
+                        spacing="2",
+                        align_items="center",
+                    ),
+                    rx.hstack(
+                        rx.checkbox(
+                            checked=State.use_short_filter,
+                            on_change=State.set_use_short_filter,
+                        ),
+                        rx.vstack(
+                            rx.text("공매도 잔고 필터", size="2"),
+                            rx.text("(미국 시장만 적용)", size="1", color="gray"),
+                            spacing="0",
+                            align_items="start",
+                        ),
+                        spacing="2",
+                        align_items="center",
+                    ),
+                    rx.divider(),
+                    rx.text("최대 탐색 시간", size="2", color="gray"),
+                    rx.hstack(
+                        rx.input(
+                            value=State.whale_max_minutes,
+                            on_change=State.set_whale_max_minutes,
+                            type="number",
+                            min="1",
+                            max="30",
+                            width="70px",
+                        ),
+                        rx.text("분 (1~30)", size="1", color="gray"),
+                        spacing="2",
+                        align_items="center",
+                    ),
+                    rx.cond(
+                        State.whale_progress != "",
+                        rx.box(
+                            rx.text(
+                                State.whale_progress,
+                                size="1",
+                                color="blue",
+                                white_space="pre-wrap",
+                            ),
+                            padding="8px",
+                            border_radius="6px",
+                            background="var(--blue-2)",
+                            border="1px solid var(--blue-4)",
+                            width="100%",
+                        ),
+                    ),
+                    spacing="3",
+                    width="100%",
+                ),
+                # ── 하락방어 전용 옵션 ───────────────────────────────
+                rx.vstack(
+                    rx.text("분석 기간", size="2", color="gray"),
+                    rx.hstack(
+                        rx.button("2일", size="1",
+                            variant=rx.cond(State.defensive_period == 2, "solid", "soft"),
+                            on_click=State.set_defensive_period(2)),
+                        rx.button("5일", size="1",
+                            variant=rx.cond(State.defensive_period == 5, "solid", "soft"),
+                            on_click=State.set_defensive_period(5)),
+                        rx.button("30일", size="1",
+                            variant=rx.cond(State.defensive_period == 30, "solid", "soft"),
+                            on_click=State.set_defensive_period(30)),
+                        rx.button("60일", size="1",
+                            variant=rx.cond(State.defensive_period == 60, "solid", "soft"),
+                            on_click=State.set_defensive_period(60)),
+                        rx.button("120일", size="1",
+                            variant=rx.cond(State.defensive_period == 120, "solid", "soft"),
+                            on_click=State.set_defensive_period(120)),
+                        spacing="2",
+                        wrap="wrap",
+                    ),
+                    rx.hstack(
+                        rx.text("Beta 상한: ", size="2", color="gray"),
+                        rx.text(State.defensive_max_beta[0], size="2"),
+                    ),
+                    rx.slider(
+                        min=0.3, max=1.0, step=0.1,
+                        value=State.defensive_max_beta,
+                        on_change=State.set_defensive_max_beta,
+                        width="100%",
+                    ),
+                    rx.text("최소 시가총액", size="2", color="gray"),
+                    rx.hstack(
+                        rx.button("1조+", size="1",
+                            variant=rx.cond(State.defensive_min_mktcap == 10_000, "solid", "soft"),
+                            on_click=State.set_defensive_min_mktcap(10_000)),
+                        rx.button("3천억+", size="1",
+                            variant=rx.cond(State.defensive_min_mktcap == 3_000, "solid", "soft"),
+                            on_click=State.set_defensive_min_mktcap(3_000)),
+                        rx.button("전체", size="1",
+                            variant=rx.cond(State.defensive_min_mktcap == 0, "solid", "soft"),
+                            on_click=State.set_defensive_min_mktcap(0)),
+                        spacing="2",
+                    ),
+                    rx.text("KOSPI/KOSDAQ만 지원 (약 1~2분 소요)", size="1", color="gray"),
+                    spacing="3",
+                    width="100%",
+                ),
+            ),
+        ),
+
+        rx.button(
+            rx.cond(State.is_scanning, rx.spinner(size="2"), rx.text("스캔 실행")),
+            on_click=State.run_scan,
+            disabled=State.is_scanning,
+            color_scheme="blue",
+            width="100%",
+        ),
+        rx.cond(
+            State.is_scanning & (State.scan_mode == "whale"),
+            rx.button(
+                rx.cond(
+                    State.whale_stop_requested,
+                    rx.hstack(rx.spinner(size="2"), rx.text("중단 중..."), spacing="2"),
+                    rx.text("탐색 중단"),
+                ),
+                on_click=State.stop_whale_scan,
+                disabled=State.whale_stop_requested,
+                color_scheme="red",
+                variant="soft",
+                width="100%",
+            ),
+        ),
+        rx.cond(
+            State.scan_mode == "quant",
+            rx.button("결과 저장", on_click=State.save_scan,
+                disabled=State.scan_results.length() == 0,
+                color_scheme="green", variant="soft", width="100%"),
+            rx.button("결과 저장", on_click=State.save_whale_scan,
+                disabled=State.whale_results.length() == 0,
+                color_scheme="green", variant="soft", width="100%"),
+        ),
+        rx.cond(
+            State.status_msg != "",
+            rx.text(State.status_msg, size="1", color="gray"),
+        ),
+
+        spacing="4",
+        width="100%",
+    )
+
+
 def sidebar() -> rx.Component:
+    """데스크탑 고정 사이드바."""
     return rx.box(
         rx.vstack(
             rx.heading("QuantMaster Pro", size="5"),
             rx.text("Hybrid Quant & Technical Scanner", size="1", color="gray"),
             rx.divider(),
-
-            rx.text("스캔 모드", size="2", color="gray"),
-            rx.select.root(
-                rx.select.trigger(placeholder="모드 선택"),
-                rx.select.content(
-                    rx.select.item("퀀트 스캔", value="quant"),
-                    rx.select.item("세력 탐지", value="whale"),
-                    rx.select.item("하락방어", value="defensive"),
-                ),
-                value=State.scan_mode,
-                on_change=State.set_scan_mode,
-                width="100%",
-            ),
-
-            rx.text("시장", size="2", color="gray"),
-            rx.select.root(
-                rx.select.trigger(placeholder="시장 선택"),
-                rx.select.content(
-                    rx.select.group(
-                        rx.select.label("한국 주식"),
-                        rx.select.item("KOSPI", value="KOSPI"),
-                        rx.select.item("KOSDAQ", value="KOSDAQ"),
-                    ),
-                    rx.select.separator(),
-                    rx.select.group(
-                        rx.select.label("한국 ETF"),
-                        rx.select.item("KR-ETF (기술적 스캔)", value="KR-ETF"),
-                    ),
-                    rx.select.separator(),
-                    rx.select.group(
-                        rx.select.label("미국"),
-                        rx.select.item("S&P 500", value="SP500"),
-                        rx.select.item("NASDAQ", value="NASDAQ"),
-                    ),
-                    rx.select.separator(),
-                    rx.select.group(
-                        rx.select.label("미국 ETF"),
-                        rx.select.item("US-ETF (기술적 스캔)", value="US-ETF"),
-                    ),
-                ),
-                value=State.market,
-                on_change=State.set_market,
-                width="100%",
-            ),
-
-            rx.cond(
-                State.scan_mode == "quant",
-                # ── 퀀트 전용 옵션 ───────────────────────────────────
-                rx.vstack(
-                    rx.hstack(
-                        rx.text("PBR 한도: ", size="2", color="gray"),
-                        rx.text(State.pbr_limit[0], size="2"),
-                    ),
-                    rx.slider(
-                        min=0.5,
-                        max=2.0,
-                        step=0.1,
-                        value=State.pbr_limit,
-                        on_change=State.set_pbr_limit,
-                        width="100%",
-                    ),
-                    rx.text("최소 시가총액", size="2", color="gray"),
-                    rx.select.root(
-                        rx.select.trigger(placeholder="시가총액 선택"),
-                        rx.select.content(
-                            rx.select.item("전체", value="전체"),
-                            rx.select.item("소형주+ (KR:300억 / US:$2B)", value="소형주+"),
-                            rx.select.item("중형주+ (KR:3000억 / US:$10B)", value="중형주+"),
-                            rx.select.item("대형주+ (KR:1조 / US:$50B)", value="대형주+"),
-                        ),
-                        value=State.min_cap_label,
-                        on_change=State.set_min_cap_label,
-                        width="100%",
-                    ),
-                    rx.text("VWAP 기간", size="2", color="gray"),
-                    rx.select.root(
-                        rx.select.trigger(placeholder="기간 선택"),
-                        rx.select.content(
-                            rx.select.item("20일", value="20"),
-                            rx.select.item("60일", value="60"),
-                            rx.select.item("120일", value="120"),
-                        ),
-                        value=State.vwap_period,
-                        on_change=State.set_vwap_period,
-                        width="100%",
-                    ),
-                    spacing="3",
-                    width="100%",
-                ),
-                rx.cond(
-                    State.scan_mode == "whale",
-                    # ── 세력 탐지 전용 옵션 ──────────────────────────────
-                    rx.vstack(
-                        rx.text("세력 탐지 옵션", size="2", color="gray"),
-                        rx.hstack(
-                            rx.checkbox(
-                                checked=State.use_alpha,
-                                on_change=State.set_use_alpha,
-                            ),
-                            rx.text("지수 대비 알파 필터", size="2"),
-                            spacing="2",
-                            align_items="center",
-                        ),
-                        rx.hstack(
-                            rx.checkbox(
-                                checked=State.use_short_filter,
-                                on_change=State.set_use_short_filter,
-                            ),
-                            rx.vstack(
-                                rx.text("공매도 잔고 필터", size="2"),
-                                rx.text("(미국 시장만 적용)", size="1", color="gray"),
-                                spacing="0",
-                                align_items="start",
-                            ),
-                            spacing="2",
-                            align_items="center",
-                        ),
-                        rx.divider(),
-                        rx.text("최대 탐색 시간", size="2", color="gray"),
-                        rx.hstack(
-                            rx.input(
-                                value=State.whale_max_minutes,
-                                on_change=State.set_whale_max_minutes,
-                                type="number",
-                                min="1",
-                                max="30",
-                                width="70px",
-                            ),
-                            rx.text("분 (1~30)", size="1", color="gray"),
-                            spacing="2",
-                            align_items="center",
-                        ),
-                        # 스캔 중 진행률
-                        rx.cond(
-                            State.whale_progress != "",
-                            rx.box(
-                                rx.text(
-                                    State.whale_progress,
-                                    size="1",
-                                    color="blue",
-                                    white_space="pre-wrap",
-                                ),
-                                padding="8px",
-                                border_radius="6px",
-                                background="var(--blue-2)",
-                                border="1px solid var(--blue-4)",
-                                width="100%",
-                            ),
-                        ),
-                        spacing="3",
-                        width="100%",
-                    ),
-                    # ── 하락방어 전용 옵션 ───────────────────────────────
-                    rx.vstack(
-                        rx.text("분석 기간", size="2", color="gray"),
-                        rx.hstack(
-                            rx.button(
-                                "2일",
-                                size="1",
-                                variant=rx.cond(State.defensive_period == 2, "solid", "soft"),
-                                on_click=State.set_defensive_period(2),
-                            ),
-                            rx.button(
-                                "5일",
-                                size="1",
-                                variant=rx.cond(State.defensive_period == 5, "solid", "soft"),
-                                on_click=State.set_defensive_period(5),
-                            ),
-                            rx.button(
-                                "30일",
-                                size="1",
-                                variant=rx.cond(State.defensive_period == 30, "solid", "soft"),
-                                on_click=State.set_defensive_period(30),
-                            ),
-                            rx.button(
-                                "60일",
-                                size="1",
-                                variant=rx.cond(State.defensive_period == 60, "solid", "soft"),
-                                on_click=State.set_defensive_period(60),
-                            ),
-                            rx.button(
-                                "120일",
-                                size="1",
-                                variant=rx.cond(State.defensive_period == 120, "solid", "soft"),
-                                on_click=State.set_defensive_period(120),
-                            ),
-                            spacing="2",
-                            wrap="wrap",
-                        ),
-                        rx.hstack(
-                            rx.text("Beta 상한: ", size="2", color="gray"),
-                            rx.text(State.defensive_max_beta[0], size="2"),
-                        ),
-                        rx.slider(
-                            min=0.3,
-                            max=1.0,
-                            step=0.1,
-                            value=State.defensive_max_beta,
-                            on_change=State.set_defensive_max_beta,
-                            width="100%",
-                        ),
-                        rx.text("최소 시가총액", size="2", color="gray"),
-                        rx.hstack(
-                            rx.button(
-                                "1조+",
-                                size="1",
-                                variant=rx.cond(State.defensive_min_mktcap == 10_000, "solid", "soft"),
-                                on_click=State.set_defensive_min_mktcap(10_000),
-                            ),
-                            rx.button(
-                                "3천억+",
-                                size="1",
-                                variant=rx.cond(State.defensive_min_mktcap == 3_000, "solid", "soft"),
-                                on_click=State.set_defensive_min_mktcap(3_000),
-                            ),
-                            rx.button(
-                                "전체",
-                                size="1",
-                                variant=rx.cond(State.defensive_min_mktcap == 0, "solid", "soft"),
-                                on_click=State.set_defensive_min_mktcap(0),
-                            ),
-                            spacing="2",
-                        ),
-                        rx.text(
-                            "KOSPI/KOSDAQ만 지원 (약 1~2분 소요)",
-                            size="1",
-                            color="gray",
-                        ),
-                        spacing="3",
-                        width="100%",
-                    ),
-                ),
-            ),
-
-            rx.button(
-                rx.cond(
-                    State.is_scanning,
-                    rx.spinner(size="2"),
-                    rx.text("스캔 실행"),
-                ),
-                on_click=State.run_scan,
-                disabled=State.is_scanning,
-                color_scheme="blue",
-                width="100%",
-            ),
-            rx.cond(
-                State.is_scanning & (State.scan_mode == "whale"),
-                rx.button(
-                    rx.cond(
-                        State.whale_stop_requested,
-                        rx.hstack(rx.spinner(size="2"), rx.text("중단 중..."), spacing="2"),
-                        rx.text("탐색 중단"),
-                    ),
-                    on_click=State.stop_whale_scan,
-                    disabled=State.whale_stop_requested,
-                    color_scheme="red",
-                    variant="soft",
-                    width="100%",
-                ),
-            ),
-            rx.cond(
-                State.scan_mode == "quant",
-                rx.button(
-                    "결과 저장",
-                    on_click=State.save_scan,
-                    disabled=State.scan_results.length() == 0,
-                    color_scheme="green",
-                    variant="soft",
-                    width="100%",
-                ),
-                rx.button(
-                    "결과 저장",
-                    on_click=State.save_whale_scan,
-                    disabled=State.whale_results.length() == 0,
-                    color_scheme="green",
-                    variant="soft",
-                    width="100%",
-                ),
-            ),
-
-            rx.cond(
-                State.status_msg != "",
-                rx.text(State.status_msg, size="1", color="gray"),
-            ),
-
+            sidebar_controls(),
             spacing="4",
             width="100%",
         ),
+        display=["none", "none", "block"],
         width="240px",
         min_width="240px",
         padding="20px",
         border_right="1px solid var(--gray-4)",
         height="100vh",
         overflow_y="auto",
+    )
+
+
+def mobile_header() -> rx.Component:
+    """모바일 상단 헤더 (햄버거 + 로고)."""
+    return rx.box(
+        rx.hstack(
+            rx.icon_button(
+                rx.icon("menu", size=20),
+                on_click=State.toggle_sidebar,
+                variant="ghost",
+                size="3",
+            ),
+            rx.heading("QuantMaster Pro", size="4"),
+            rx.spacer(),
+            width="100%",
+            align="center",
+        ),
+        display=["flex", "flex", "none"],
+        padding_x="12px",
+        padding_y="8px",
+        border_bottom="1px solid var(--gray-4)",
+        background="white",
+        position="sticky",
+        top="0",
+        z_index="100",
+    )
+
+
+def mobile_drawer() -> rx.Component:
+    """모바일 사이드바 드로어 오버레이."""
+    return rx.cond(
+        State.sidebar_open,
+        rx.box(
+            # 배경 딤처리 — 클릭 시 닫힘
+            rx.box(
+                on_click=State.toggle_sidebar,
+                position="fixed",
+                top="0", left="0", right="0", bottom="0",
+                background="rgba(0,0,0,0.45)",
+                z_index="200",
+            ),
+            # 드로어 패널
+            rx.box(
+                rx.vstack(
+                    rx.hstack(
+                        rx.heading("스캔 설정", size="4"),
+                        rx.spacer(),
+                        rx.icon_button(
+                            rx.icon("x", size=18),
+                            on_click=State.toggle_sidebar,
+                            variant="ghost",
+                            size="2",
+                        ),
+                        width="100%",
+                        align="center",
+                    ),
+                    rx.divider(),
+                    sidebar_controls(),
+                    spacing="4",
+                    width="100%",
+                ),
+                position="fixed",
+                top="0", left="0", bottom="0",
+                width="280px",
+                background="white",
+                z_index="201",
+                overflow_y="auto",
+                padding="20px",
+                box_shadow="4px 0 24px rgba(0,0,0,0.18)",
+            ),
+            display=["block", "block", "none"],
+        ),
     )
 
 
@@ -3806,60 +3849,126 @@ def leaders_tab() -> rx.Component:
                     variant="soft",
                 ),
             ),
-            # ── 테이블 ──────────────────────────────────────────
-            rx.table.root(
-                rx.table.header(
-                    rx.table.row(
-                        rx.table.column_header_cell("순위"),
-                        rx.table.column_header_cell("종목명"),
-                        rx.table.column_header_cell("시가총액"),
-                        rx.table.column_header_cell("현재가"),
-                        rx.table.column_header_cell("등락률"),
-                        rx.table.column_header_cell("거래량순위"),
-                        rx.table.column_header_cell("상승률순위"),
-                        rx.table.column_header_cell("A점수"),
-                        rx.table.column_header_cell("B점수"),
-                        rx.table.column_header_cell(""),
-                    )
-                ),
-                rx.table.body(
-                    rx.foreach(
-                        State.leaders_data,
-                        lambda h: rx.table.row(
-                            rx.table.cell(h["rank"]),
-                            rx.table.cell(rx.text(h["name"], weight="medium")),
-                            rx.table.cell(h["mktcap_str"]),
-                            rx.table.cell(h["price_str"]),
-                            rx.table.cell(
+            # ── 모바일 카드 뷰 ─────────────────────────────────
+            rx.box(
+                rx.foreach(
+                    State.leaders_data,
+                    lambda h: rx.card(
+                        rx.vstack(
+                            rx.hstack(
+                                rx.badge(h["rank"], variant="soft", color_scheme="gray"),
+                                rx.text(h["name"], weight="bold", size="3"),
+                                rx.spacer(),
                                 rx.text(
                                     h["change_pct_str"],
                                     color=rx.cond(h["change_positive"], "green", "red"),
-                                    weight="medium",
-                                )
+                                    weight="bold", size="3",
+                                ),
+                                width="100%", align="center",
                             ),
-                            rx.table.cell(
-                                rx.cond(h["has_vol_rank"],  h["vol_rank_str"],  "-")
+                            rx.hstack(
+                                rx.vstack(
+                                    rx.text("현재가", size="1", color="gray"),
+                                    rx.text(h["price_str"], size="2", weight="medium"),
+                                    spacing="0",
+                                ),
+                                rx.vstack(
+                                    rx.text("시가총액", size="1", color="gray"),
+                                    rx.text(h["mktcap_str"], size="2"),
+                                    spacing="0",
+                                ),
+                                rx.vstack(
+                                    rx.text("A점수", size="1", color="gray"),
+                                    rx.text(h["score_a_str"], size="2", weight="medium"),
+                                    spacing="0",
+                                ),
+                                rx.vstack(
+                                    rx.text("B점수", size="1", color="gray"),
+                                    rx.text(rx.cond(h["has_score_b"], h["score_b_str"], "-"), size="2"),
+                                    spacing="0",
+                                ),
+                                justify="between", width="100%",
                             ),
-                            rx.table.cell(
-                                rx.cond(h["has_rise_rank"], h["rise_rank_str"], "-")
+                            rx.hstack(
+                                rx.cond(h["has_vol_rank"],
+                                    rx.badge(rx.text("거래량 ", h["vol_rank_str"]), color_scheme="blue", variant="soft", size="1"),
+                                    rx.fragment(),
+                                ),
+                                rx.cond(h["has_rise_rank"],
+                                    rx.badge(rx.text("상승률 ", h["rise_rank_str"]), color_scheme="green", variant="soft", size="1"),
+                                    rx.fragment(),
+                                ),
+                                rx.spacer(),
+                                rx.button("조회", size="1", variant="soft", color_scheme="blue",
+                                    on_click=State.goto_lookup_from_leaders(h["code"], h["is_us"])),
+                                width="100%", align="center", spacing="2",
                             ),
-                            rx.table.cell(h["score_a_str"]),
-                            rx.table.cell(
-                                rx.cond(h["has_score_b"], h["score_b_str"], "-")
-                            ),
-                            rx.table.cell(
-                                rx.button(
-                                    "조회",
-                                    size="1",
-                                    variant="soft",
-                                    color_scheme="blue",
-                                    on_click=State.goto_lookup_from_leaders(h["code"], h["is_us"]),
-                                )
-                            ),
+                            spacing="2", width="100%",
                         ),
-                    )
+                        width="100%",
+                    ),
                 ),
-                variant="surface",
+                display=["block", "block", "none"],
+                width="100%",
+            ),
+            # ── 데스크탑 테이블 ─────────────────────────────────
+            rx.box(
+                rx.table.root(
+                    rx.table.header(
+                        rx.table.row(
+                            rx.table.column_header_cell("순위"),
+                            rx.table.column_header_cell("종목명"),
+                            rx.table.column_header_cell("시가총액"),
+                            rx.table.column_header_cell("현재가"),
+                            rx.table.column_header_cell("등락률"),
+                            rx.table.column_header_cell("거래량순위"),
+                            rx.table.column_header_cell("상승률순위"),
+                            rx.table.column_header_cell("A점수"),
+                            rx.table.column_header_cell("B점수"),
+                            rx.table.column_header_cell(""),
+                        )
+                    ),
+                    rx.table.body(
+                        rx.foreach(
+                            State.leaders_data,
+                            lambda h: rx.table.row(
+                                rx.table.cell(h["rank"]),
+                                rx.table.cell(rx.text(h["name"], weight="medium")),
+                                rx.table.cell(h["mktcap_str"]),
+                                rx.table.cell(h["price_str"]),
+                                rx.table.cell(
+                                    rx.text(
+                                        h["change_pct_str"],
+                                        color=rx.cond(h["change_positive"], "green", "red"),
+                                        weight="medium",
+                                    )
+                                ),
+                                rx.table.cell(
+                                    rx.cond(h["has_vol_rank"],  h["vol_rank_str"],  "-")
+                                ),
+                                rx.table.cell(
+                                    rx.cond(h["has_rise_rank"], h["rise_rank_str"], "-")
+                                ),
+                                rx.table.cell(h["score_a_str"]),
+                                rx.table.cell(
+                                    rx.cond(h["has_score_b"], h["score_b_str"], "-")
+                                ),
+                                rx.table.cell(
+                                    rx.button(
+                                        "조회",
+                                        size="1",
+                                        variant="soft",
+                                        color_scheme="blue",
+                                        on_click=State.goto_lookup_from_leaders(h["code"], h["is_us"]),
+                                    )
+                                ),
+                            ),
+                        )
+                    ),
+                    variant="surface",
+                    width="100%",
+                ),
+                display=["none", "none", "block"],
                 width="100%",
             ),
         ),
@@ -4297,118 +4406,155 @@ def holding_analysis_tab() -> rx.Component:
                             "1px solid var(--red-4)",
                         ),
                     ),
-                    columns="4",
+                    columns=["2", "2", "4"],
                     spacing="4",
                     width="100%",
                 ),
-                # 종목별 손익 테이블
+                # 종목별 손익
                 rx.text("종목별 손익 현황", weight="bold", size="3"),
-                rx.table.root(
-                    rx.table.header(
-                        rx.table.row(
-                            rx.table.column_header_cell("종목명"),
-                            rx.table.column_header_cell("시장"),
-                            rx.table.column_header_cell("매수가"),
-                            rx.table.column_header_cell("현재가"),
-                            rx.table.column_header_cell("수량"),
-                            rx.table.column_header_cell("투자금"),
-                            rx.table.column_header_cell("손익금액"),
-                            rx.table.column_header_cell("손익률(%)"),
-                            rx.table.column_header_cell("MFI"),
-                            rx.table.column_header_cell("VWAP괴리(%)"),
-                            rx.table.column_header_cell("메모"),
-                            rx.table.column_header_cell(""),
-                        )
-                    ),
-                    rx.table.body(
-                        rx.foreach(
-                            State.holdings_analysis,
-                            lambda h: rx.table.row(
-                                rx.table.cell(h["name"]),
-                                rx.table.cell(
-                                    rx.badge(
-                                        h["market"],
+                # ── 모바일 카드 뷰 ─────────────────────────────────
+                rx.box(
+                    rx.foreach(
+                        State.holdings_analysis,
+                        lambda h: rx.card(
+                            rx.vstack(
+                                rx.hstack(
+                                    rx.text(h["name"], weight="bold", size="3"),
+                                    rx.badge(h["market"],
                                         color_scheme=rx.cond(h["is_us"], "blue", "green"),
-                                        variant="soft",
-                                    )
-                                ),
-                                rx.table.cell(
-                                    rx.cond(
-                                        h["has_buy"],
-                                        h["buy_price"],
-                                        rx.text("-", color="gray"),
-                                    )
-                                ),
-                                rx.table.cell(h["close"]),
-                                rx.table.cell(
-                                    rx.cond(
-                                        h["has_quantity"],
-                                        h["quantity"],
-                                        rx.text("-", color="gray"),
-                                    )
-                                ),
-                                rx.table.cell(
-                                    rx.cond(
-                                        h["has_investment"],
-                                        h["investment"],
-                                        rx.text("-", color="gray"),
-                                    )
-                                ),
-                                rx.table.cell(
-                                    rx.cond(
-                                        h["has_buy"],
-                                        rx.text(
-                                            h["pnl"],
-                                            color=rx.cond(h["pnl_positive"], "green", "red"),
-                                            weight="bold",
-                                        ),
-                                        rx.text("-", color="gray"),
-                                    )
-                                ),
-                                rx.table.cell(
+                                        variant="soft"),
+                                    rx.spacer(),
                                     rx.cond(
                                         h["has_buy"],
                                         rx.badge(
                                             rx.text(h["pnl_pct"], "%"),
-                                            color_scheme=rx.cond(
-                                                h["pct_positive"], "green", "red"
-                                            ),
+                                            color_scheme=rx.cond(h["pct_positive"], "green", "red"),
                                         ),
-                                        rx.text("-", color="gray"),
-                                    )
+                                        rx.fragment(),
+                                    ),
+                                    width="100%", align="center",
                                 ),
-                                rx.table.cell(h["mfi"]),
-                                rx.table.cell(h["vwap_gap"]),
-                                rx.table.cell(
-                                    rx.cond(
-                                        h["has_memo"],
-                                        h["memo"],
-                                        rx.text("-", color="gray"),
-                                    )
-                                ),
-                                rx.table.cell(
-                                    rx.hstack(
-                                        rx.button(
-                                            "분석",
-                                            size="1",
-                                            variant="soft",
-                                            color_scheme="blue",
-                                            on_click=State.select_holding_for_analysis(h["holding_id"]),
+                                rx.hstack(
+                                    rx.vstack(
+                                        rx.text("매수가", size="1", color="gray"),
+                                        rx.text(rx.cond(h["has_buy"], h["buy_price"], "-"), size="2"),
+                                        spacing="0",
+                                    ),
+                                    rx.vstack(
+                                        rx.text("현재가", size="1", color="gray"),
+                                        rx.text(h["close"], size="2", weight="medium"),
+                                        spacing="0",
+                                    ),
+                                    rx.vstack(
+                                        rx.text("손익", size="1", color="gray"),
+                                        rx.cond(
+                                            h["has_buy"],
+                                            rx.text(h["pnl"],
+                                                color=rx.cond(h["pnl_positive"], "green", "red"),
+                                                size="2", weight="bold"),
+                                            rx.text("-", size="2", color="gray"),
                                         ),
-                                        rx.button(
-                                            "삭제",
-                                            size="1",
-                                            variant="soft",
-                                            color_scheme="red",
-                                            on_click=State.remove_holding(h["holding_id"]),
-                                        ),
-                                        spacing="2",
-                                    )
+                                        spacing="0",
+                                    ),
+                                    rx.vstack(
+                                        rx.text("MFI", size="1", color="gray"),
+                                        rx.text(h["mfi"], size="2"),
+                                        spacing="0",
+                                    ),
+                                    justify="between", width="100%",
                                 ),
+                                rx.hstack(
+                                    rx.button("분석", size="1", variant="soft", color_scheme="blue",
+                                        on_click=State.select_holding_for_analysis(h["holding_id"])),
+                                    rx.button("삭제", size="1", variant="soft", color_scheme="red",
+                                        on_click=State.remove_holding(h["holding_id"])),
+                                    spacing="2",
+                                ),
+                                spacing="2", width="100%",
                             ),
-                        )
+                            width="100%",
+                        ),
                     ),
-                    variant="surface",
+                    display=["block", "block", "none"],
+                    width="100%",
+                ),
+                # ── 데스크탑 테이블 ─────────────────────────────────
+                rx.box(
+                    rx.table.root(
+                        rx.table.header(
+                            rx.table.row(
+                                rx.table.column_header_cell("종목명"),
+                                rx.table.column_header_cell("시장"),
+                                rx.table.column_header_cell("매수가"),
+                                rx.table.column_header_cell("현재가"),
+                                rx.table.column_header_cell("수량"),
+                                rx.table.column_header_cell("투자금"),
+                                rx.table.column_header_cell("손익금액"),
+                                rx.table.column_header_cell("손익률(%)"),
+                                rx.table.column_header_cell("MFI"),
+                                rx.table.column_header_cell("VWAP괴리(%)"),
+                                rx.table.column_header_cell("메모"),
+                                rx.table.column_header_cell(""),
+                            )
+                        ),
+                        rx.table.body(
+                            rx.foreach(
+                                State.holdings_analysis,
+                                lambda h: rx.table.row(
+                                    rx.table.cell(h["name"]),
+                                    rx.table.cell(
+                                        rx.badge(h["market"],
+                                            color_scheme=rx.cond(h["is_us"], "blue", "green"),
+                                            variant="soft")
+                                    ),
+                                    rx.table.cell(
+                                        rx.cond(h["has_buy"], h["buy_price"], rx.text("-", color="gray"))
+                                    ),
+                                    rx.table.cell(h["close"]),
+                                    rx.table.cell(
+                                        rx.cond(h["has_quantity"], h["quantity"], rx.text("-", color="gray"))
+                                    ),
+                                    rx.table.cell(
+                                        rx.cond(h["has_investment"], h["investment"], rx.text("-", color="gray"))
+                                    ),
+                                    rx.table.cell(
+                                        rx.cond(
+                                            h["has_buy"],
+                                            rx.text(h["pnl"],
+                                                color=rx.cond(h["pnl_positive"], "green", "red"),
+                                                weight="bold"),
+                                            rx.text("-", color="gray"),
+                                        )
+                                    ),
+                                    rx.table.cell(
+                                        rx.cond(
+                                            h["has_buy"],
+                                            rx.badge(rx.text(h["pnl_pct"], "%"),
+                                                color_scheme=rx.cond(h["pct_positive"], "green", "red")),
+                                            rx.text("-", color="gray"),
+                                        )
+                                    ),
+                                    rx.table.cell(h["mfi"]),
+                                    rx.table.cell(h["vwap_gap"]),
+                                    rx.table.cell(
+                                        rx.cond(h["has_memo"], h["memo"], rx.text("-", color="gray"))
+                                    ),
+                                    rx.table.cell(
+                                        rx.hstack(
+                                            rx.button("분석", size="1", variant="soft", color_scheme="blue",
+                                                on_click=State.select_holding_for_analysis(h["holding_id"])),
+                                            rx.button("삭제", size="1", variant="soft", color_scheme="red",
+                                                on_click=State.remove_holding(h["holding_id"])),
+                                            spacing="2",
+                                        )
+                                    ),
+                                ),
+                            )
+                        ),
+                        variant="surface",
+                        width="100%",
+                    ),
+                    display=["none", "none", "block"],
                     width="100%",
                 ),
                 width="100%",
@@ -4430,6 +4576,9 @@ def main_content() -> rx.Component:
             rx.tabs.trigger("종목조회", value="lookup"),
             rx.tabs.trigger("포트폴리오", value="portfolio"),
             rx.tabs.trigger("히스토리", value="history"),
+            overflow_x="auto",
+            white_space="nowrap",
+            width="100%",
         ),
         rx.tabs.content(
             rx.box(scanner_tab(), padding_top="16px"),
@@ -4466,17 +4615,25 @@ def main_content() -> rx.Component:
 
 
 def index() -> rx.Component:
-    return rx.flex(
-        sidebar(),
-        rx.box(
-            rx.box(main_content(), padding="24px"),
-            flex="1",
-            overflow_y="auto",
-            height="100vh",
+    return rx.box(
+        mobile_header(),
+        mobile_drawer(),
+        rx.flex(
+            sidebar(),
+            rx.box(
+                rx.box(
+                    main_content(),
+                    padding=["12px", "16px", "24px"],
+                ),
+                flex="1",
+                overflow_y="auto",
+                height=["calc(100vh - 53px)", "calc(100vh - 53px)", "100vh"],
+            ),
+            direction="row",
+            width="100%",
         ),
-        direction="row",
-        width="100%",
         min_height="100vh",
+        width="100%",
     )
 
 

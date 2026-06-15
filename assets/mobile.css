@@ -1,0 +1,39 @@
+/* QuantMaster Pro — 반응형/모바일 스타일 */
+
+/* ── 테이블 가로 스크롤 ── */
+.rt-TableRoot {
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    max-width: 100%;
+}
+
+/* ── 탭 리스트 가로 스크롤 ── */
+.rt-TabsList {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+}
+.rt-TabsList::-webkit-scrollbar {
+    display: none;
+}
+
+/* ── 차트 컨테이너 반응형 ── */
+.recharts-responsive-container {
+    min-width: 0 !important;
+}
+
+/* ── 모바일 패딩 축소 ── */
+@media (max-width: 767px) {
+    .rt-TableCell,
+    .rt-TableColumnHeaderCell {
+        padding: 6px 8px !important;
+        font-size: 12px !important;
+        white-space: nowrap;
+    }
+
+    /* 카드 내 여백 */
+    .rt-Card {
+        padding: 12px !important;
+    }
+}
