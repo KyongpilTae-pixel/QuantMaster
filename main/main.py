@@ -201,6 +201,7 @@ class State(rx.State):
     portfolio_total_investment: float = 0.0
     portfolio_total_pnl: float = 0.0
     portfolio_pnl_pct: float = 0.0
+    portfolio_alert_count: int = 0         # 손절/목표가 알림 종목 수
     holdings_analysis: List[dict] = []    # [{name, symbol, investment, pnl, pnl_pct, ...}]
 
     # 종목 조회
@@ -528,8 +529,13 @@ class State(rx.State):
                 "pnl_positive": pnl >= 0,
                 "pct_positive": pnl_pct >= 0,
                 "has_memo": bool(h.memo),
+                # ── 알림 플래그 ───────────────────────────
+                "alert_stop_loss": h.buy_price > 0 and pnl_pct <= -8.0,
+                "alert_target":    h.buy_price > 0 and pnl_pct >= 20.0,
+                "has_alert":       h.buy_price > 0 and (pnl_pct <= -8.0 or pnl_pct >= 20.0),
             })
         self.holdings_analysis = analysis
+        self.portfolio_alert_count = sum(1 for a in analysis if a.get("has_alert"))
         self.portfolio_count = len(rows)
         self.portfolio_total_investment = round(total_investment, 0)
         self.portfolio_total_pnl = round(total_pnl, 0)
@@ -4350,6 +4356,24 @@ def holding_analysis_tab() -> rx.Component:
                     spacing="4",
                     width="100%",
                 ),
+                # ── 알림 배너 ────────────────────────────────────────
+                rx.cond(
+                    State.portfolio_alert_count > 0,
+                    rx.callout.root(
+                        rx.callout.text(
+                            rx.hstack(
+                                rx.icon("triangle-alert", size=14),
+                                rx.text(
+                                    State.portfolio_alert_count.to_string()
+                                    + "개 종목에 알림이 있습니다 — 손절(-8%) 또는 목표가(+20%) 도달",
+                                    size="2",
+                                ),
+                                spacing="2", align="center",
+                            )
+                        ),
+                        color_scheme="amber", variant="soft",
+                    ),
+                ),
                 # 종목별 손익
                 rx.text("종목별 손익 현황", weight="bold", size="3"),
                 # ── 모바일 카드 뷰 ─────────────────────────────────
@@ -4363,6 +4387,13 @@ def holding_analysis_tab() -> rx.Component:
                                     rx.badge(h["market"],
                                         color_scheme=rx.cond(h["is_us"], "blue", "green"),
                                         variant="soft"),
+                                    rx.cond(h["alert_stop_loss"],
+                                        rx.badge("손절", color_scheme="red", variant="solid", size="1"),
+                                        rx.cond(h["alert_target"],
+                                            rx.badge("목표", color_scheme="green", variant="solid", size="1"),
+                                            rx.fragment(),
+                                        ),
+                                    ),
                                     rx.spacer(),
                                     rx.cond(
                                         h["has_buy"],
@@ -4431,6 +4462,7 @@ def holding_analysis_tab() -> rx.Component:
                                 rx.table.column_header_cell("투자금"),
                                 rx.table.column_header_cell("손익금액"),
                                 rx.table.column_header_cell("손익률(%)"),
+                                rx.table.column_header_cell("알림"),
                                 rx.table.column_header_cell("MFI"),
                                 rx.table.column_header_cell("VWAP괴리(%)"),
                                 rx.table.column_header_cell("메모"),
@@ -4472,6 +4504,15 @@ def holding_analysis_tab() -> rx.Component:
                                             rx.badge(rx.text(h["pnl_pct"], "%"),
                                                 color_scheme=rx.cond(h["pct_positive"], "green", "red")),
                                             rx.text("-", color="gray"),
+                                        )
+                                    ),
+                                    rx.table.cell(
+                                        rx.cond(h["alert_stop_loss"],
+                                            rx.badge("손절", color_scheme="red", variant="solid", size="1"),
+                                            rx.cond(h["alert_target"],
+                                                rx.badge("목표", color_scheme="green", variant="solid", size="1"),
+                                                rx.text("-", color="gray", size="1"),
+                                            ),
                                         )
                                     ),
                                     rx.table.cell(h["mfi"]),
