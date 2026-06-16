@@ -1,5 +1,5 @@
 """
-일별 리포트 자동 생성 — report_generator 단위 테스트.
+일별 HTML 리포트 자동 생성 — report_generator 단위 테스트.
 """
 
 import os
@@ -53,7 +53,7 @@ class TestGenerateMarketSection:
     def test_contains_header(self):
         from utils.report_generator import generate_market_section
         section = generate_market_section("KOSPI", _sample_data(), "11:00")
-        assert "## 당일주도주 — KOSPI" in section
+        assert "당일주도주 — KOSPI" in section
 
     def test_contains_all_stocks(self):
         from utils.report_generator import generate_market_section
@@ -75,18 +75,23 @@ class TestGenerateMarketSection:
     def test_close_buy_candidate_marked(self):
         from utils.report_generator import generate_market_section
         section = generate_market_section("KOSPI", _sample_data(), "11:00")
-        # 삼성전자(+5.3%, near_high, vol+rise rank) → ✅
         assert "✅" in section
 
     def test_highlight_section_present(self):
         from utils.report_generator import generate_market_section
         section = generate_market_section("KOSPI", _sample_data(), "11:00")
-        assert "### 연속 등장 하이라이트" in section
+        assert "연속 등장 하이라이트" in section
 
     def test_close_buy_section_present(self):
         from utils.report_generator import generate_market_section
         section = generate_market_section("KOSPI", _sample_data(), "11:00")
-        assert "### 종가매매 후보" in section
+        assert "종가매매 후보" in section
+
+    def test_section_markers(self):
+        from utils.report_generator import generate_market_section
+        section = generate_market_section("KOSPI", _sample_data(), "11:00")
+        assert "<!-- SECTION:KOSPI -->" in section
+        assert "<!-- /SECTION:KOSPI -->" in section
 
 
 class TestAppendToDailyReport:
@@ -95,41 +100,37 @@ class TestAppendToDailyReport:
         from utils.report_generator import append_to_daily_report, _report_path
         path = append_to_daily_report("KOSPI", _sample_data())
         assert os.path.exists(path)
+        assert path.endswith(".html")
 
     def test_file_has_title(self, tmp_reports):
         from utils.report_generator import append_to_daily_report
         path = append_to_daily_report("KOSPI", _sample_data())
         content = open(path, encoding="utf-8").read()
-        assert "# Daily Report" in content
+        assert "Daily Report" in content
 
     def test_append_two_markets(self, tmp_reports):
         from utils.report_generator import append_to_daily_report
         append_to_daily_report("KOSPI", _sample_data("KOSPI"))
         path = append_to_daily_report("KOSDAQ", _sample_data("KOSDAQ"))
         content = open(path, encoding="utf-8").read()
-        assert "## 당일주도주 — KOSPI" in content
-        assert "## 당일주도주 — KOSDAQ" in content
+        assert "당일주도주 — KOSPI" in content
+        assert "당일주도주 — KOSDAQ" in content
 
     def test_replace_existing_section(self, tmp_reports):
         from utils.report_generator import append_to_daily_report
         path = append_to_daily_report("KOSPI", _sample_data())
-        # 두 번째 호출: 교체
         new_data = _sample_data()
         new_data[0]["name"] = "삼성전자_업데이트"
         append_to_daily_report("KOSPI", new_data)
         content = open(path, encoding="utf-8").read()
         assert "삼성전자_업데이트" in content
-        # KOSPI 섹션이 2개 생기지 않아야 함
-        assert content.count("## 당일주도주 — KOSPI") == 1
+        assert content.count("당일주도주 — KOSPI") == 1
 
-    def test_existing_file_preserved(self, tmp_reports):
-        """리포트 파일에 기존 내용이 있을 때 다른 섹션은 유지된다."""
-        from utils.report_generator import append_to_daily_report, _report_path
-        path = _report_path()
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "w", encoding="utf-8") as f:
-            f.write("# Daily Report — 2026-06-16\n\n## 작업 요약\n\n기존 내용\n")
-        append_to_daily_report("KOSPI", _sample_data())
+    def test_existing_html_section_preserved(self, tmp_reports):
+        """다른 마켓 섹션이 있는 HTML 파일에 추가 시 기존 섹션 유지."""
+        from utils.report_generator import append_to_daily_report
+        append_to_daily_report("KOSPI", _sample_data("KOSPI"))
+        path = append_to_daily_report("KOSDAQ", _sample_data("KOSDAQ"))
         content = open(path, encoding="utf-8").read()
-        assert "기존 내용" in content
-        assert "## 당일주도주 — KOSPI" in content
+        assert "당일주도주 — KOSPI" in content
+        assert "당일주도주 — KOSDAQ" in content
