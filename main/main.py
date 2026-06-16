@@ -284,6 +284,13 @@ class State(rx.State):
     leaders_data_date: str = ""        # 데이터 기준일 (YYYY-MM-DD (요))
     leaders_data_is_prev: bool = False # 오늘 날짜와 다른 전일 데이터이면 True
 
+    # 섹터 모멘텀
+    sector_data: List[dict] = []
+    sector_loading: bool = False
+    sector_error: str = ""
+    sector_region: str = "KR"
+    sector_period: int = 20
+
     # UI state
     is_scanning: bool = False
     is_backtesting: bool = False
@@ -542,6 +549,31 @@ class State(rx.State):
         self.portfolio_pnl_pct = (
             round(total_pnl / total_investment * 100, 1) if total_investment > 0 else 0.0
         )
+
+    def set_sector_region(self, v: str):
+        self.sector_region = v
+
+    def set_sector_period(self, v: int):
+        self.sector_period = v
+
+    async def fetch_sector_momentum(self):
+        if self.sector_loading:
+            return
+        self.sector_loading = True
+        self.sector_error = ""
+        self.sector_data = []
+        yield
+        import asyncio
+        from utils.sector_scanner import fetch_sector_momentum
+        try:
+            data = await asyncio.to_thread(
+                fetch_sector_momentum, self.sector_region, self.sector_period
+            )
+            self.sector_data = data
+        except Exception as e:
+            self.sector_error = str(e)
+        finally:
+            self.sector_loading = False
 
     async def stop_whale_scan(self):
         """탐색 중단 요청 (다음 단계 시작 전 반영)."""
@@ -3590,6 +3622,96 @@ def momentum_tab() -> rx.Component:
             width="100%",
         ),
         rx.text("※ 투자 조언이 아닙니다. 참고용으로만 활용하세요.", size="1", color="gray"),
+        # ── 섹터 모멘텀 ──────────────────────────────────────────
+        rx.divider(),
+        rx.vstack(
+            rx.hstack(
+                rx.heading("섹터 모멘텀", size="3"),
+                rx.spacer(),
+                # 지역 선택
+                rx.hstack(
+                    rx.button("KR", size="1",
+                        variant=rx.cond(State.sector_region == "KR", "solid", "soft"),
+                        on_click=State.set_sector_region("KR")),
+                    rx.button("US", size="1",
+                        variant=rx.cond(State.sector_region == "US", "solid", "soft"),
+                        on_click=State.set_sector_region("US")),
+                    spacing="1",
+                ),
+                # 기간 선택
+                rx.hstack(
+                    rx.button("1M",  size="1",
+                        variant=rx.cond(State.sector_period == 20,  "solid", "soft"),
+                        on_click=State.set_sector_period(20)),
+                    rx.button("3M",  size="1",
+                        variant=rx.cond(State.sector_period == 60,  "solid", "soft"),
+                        on_click=State.set_sector_period(60)),
+                    rx.button("6M",  size="1",
+                        variant=rx.cond(State.sector_period == 120, "solid", "soft"),
+                        on_click=State.set_sector_period(120)),
+                    spacing="1",
+                ),
+                rx.button(
+                    rx.cond(State.sector_loading, rx.spinner(size="1"), rx.text("조회")),
+                    on_click=State.fetch_sector_momentum,
+                    disabled=State.sector_loading,
+                    size="1", color_scheme="blue",
+                ),
+                width="100%", align="center", spacing="3", wrap="wrap",
+            ),
+            rx.cond(
+                State.sector_error != "",
+                rx.callout.root(
+                    rx.callout.text(State.sector_error),
+                    color_scheme="red", variant="soft",
+                ),
+            ),
+            rx.cond(
+                State.sector_data.length() > 0,
+                rx.vstack(
+                    # 데스크탑 테이블
+                    rx.box(
+                        rx.table.root(
+                            rx.table.header(
+                                rx.table.row(
+                                    rx.table.column_header_cell("순위"),
+                                    rx.table.column_header_cell("섹터"),
+                                    rx.table.column_header_cell("ETF"),
+                                    rx.table.column_header_cell("수익률"),
+                                )
+                            ),
+                            rx.table.body(
+                                rx.foreach(
+                                    State.sector_data,
+                                    lambda s: rx.table.row(
+                                        rx.table.cell(s["rank"]),
+                                        rx.table.cell(s["sector"]),
+                                        rx.table.cell(s["name"]),
+                                        rx.table.cell(
+                                            rx.badge(
+                                                s["ret_str"],
+                                                color_scheme=rx.cond(s["ret_positive"], "green", "red"),
+                                                variant=rx.cond(s["has_data"], "soft", "outline"),
+                                            )
+                                        ),
+                                    ),
+                                )
+                            ),
+                            variant="surface", width="100%",
+                        ),
+                        width="100%",
+                    ),
+                    width="100%", spacing="2",
+                ),
+                rx.cond(
+                    State.sector_loading,
+                    rx.hstack(rx.spinner(size="2"), rx.text("섹터 데이터 조회 중...", color="gray"),
+                              spacing="2", align="center", padding_top="20px"),
+                    rx.text("조회 버튼을 눌러 섹터 수익률을 확인하세요.", size="2", color="gray"),
+                ),
+            ),
+            width="100%", spacing="3",
+        ),
         spacing="5",
         width="100%",
     )
