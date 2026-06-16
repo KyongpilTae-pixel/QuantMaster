@@ -289,7 +289,6 @@ class State(rx.State):
     sector_loading: bool = False
     sector_error: str = ""
     sector_region: str = "KR"
-    sector_period: int = 20
 
     # UI state
     is_scanning: bool = False
@@ -553,9 +552,6 @@ class State(rx.State):
     def set_sector_region(self, v: str):
         self.sector_region = v
 
-    def set_sector_period(self, v: int):
-        self.sector_period = v
-
     async def fetch_sector_momentum(self):
         if self.sector_loading:
             return
@@ -567,7 +563,7 @@ class State(rx.State):
         from utils.sector_scanner import fetch_sector_momentum
         try:
             data = await asyncio.to_thread(
-                fetch_sector_momentum, self.sector_region, self.sector_period
+                fetch_sector_momentum, self.sector_region
             )
             self.sector_data = data
         except Exception as e:
@@ -3627,12 +3623,27 @@ def momentum_tab() -> rx.Component:
     )
 
 
+def _ret_badge(ret_str, ret_positive, has_data) -> rx.Component:
+    return rx.cond(
+        has_data,
+        rx.badge(
+            ret_str,
+            color_scheme=rx.cond(ret_positive, "green", "red"),
+            variant="solid",
+            size="2",
+            min_width="80px",
+            justify="center",
+        ),
+        rx.text("-", color="gray", size="2"),
+    )
+
+
 def sector_tab() -> rx.Component:
     return rx.vstack(
+        # ── 컨트롤 바 ──────────────────────────────────────────────
         rx.hstack(
             rx.heading("섹터 모멘텀", size="4"),
             rx.spacer(),
-            # 지역 선택
             rx.hstack(
                 rx.button("KR", size="1",
                     variant=rx.cond(State.sector_region == "KR", "solid", "soft"),
@@ -3642,27 +3653,15 @@ def sector_tab() -> rx.Component:
                     on_click=State.set_sector_region("US")),
                 spacing="1",
             ),
-            # 기간 선택
-            rx.hstack(
-                rx.button("1M", size="1",
-                    variant=rx.cond(State.sector_period == 20,  "solid", "soft"),
-                    on_click=State.set_sector_period(20)),
-                rx.button("3M", size="1",
-                    variant=rx.cond(State.sector_period == 60,  "solid", "soft"),
-                    on_click=State.set_sector_period(60)),
-                rx.button("6M", size="1",
-                    variant=rx.cond(State.sector_period == 120, "solid", "soft"),
-                    on_click=State.set_sector_period(120)),
-                spacing="1",
-            ),
             rx.button(
                 rx.cond(State.sector_loading, rx.spinner(size="1"), rx.text("조회")),
                 on_click=State.fetch_sector_momentum,
                 disabled=State.sector_loading,
                 size="1", color_scheme="blue",
             ),
-            width="100%", align="center", spacing="3", wrap="wrap",
+            width="100%", align="center", spacing="3",
         ),
+        # ── 에러 ──────────────────────────────────────────────────
         rx.cond(
             State.sector_error != "",
             rx.callout.root(
@@ -3670,31 +3669,28 @@ def sector_tab() -> rx.Component:
                 color_scheme="red", variant="soft",
             ),
         ),
+        # ── 테이블 / 안내 ─────────────────────────────────────────
         rx.cond(
             State.sector_data.length() > 0,
             rx.table.root(
                 rx.table.header(
                     rx.table.row(
-                        rx.table.column_header_cell("순위"),
-                        rx.table.column_header_cell("섹터"),
-                        rx.table.column_header_cell("ETF"),
-                        rx.table.column_header_cell("수익률"),
+                        rx.table.column_header_cell("자산"),
+                        rx.table.column_header_cell("1개월"),
+                        rx.table.column_header_cell("3개월"),
+                        rx.table.column_header_cell("6개월"),
+                        rx.table.column_header_cell("12개월"),
                     )
                 ),
                 rx.table.body(
                     rx.foreach(
                         State.sector_data,
                         lambda s: rx.table.row(
-                            rx.table.cell(s["rank"]),
                             rx.table.cell(s["sector"]),
-                            rx.table.cell(s["name"]),
-                            rx.table.cell(
-                                rx.badge(
-                                    s["ret_str"],
-                                    color_scheme=rx.cond(s["ret_positive"], "green", "red"),
-                                    variant=rx.cond(s["has_data"], "soft", "outline"),
-                                )
-                            ),
+                            rx.table.cell(_ret_badge(s["ret_1m_str"],  s["ret_1m_positive"],  s["ret_1m_has_data"])),
+                            rx.table.cell(_ret_badge(s["ret_3m_str"],  s["ret_3m_positive"],  s["ret_3m_has_data"])),
+                            rx.table.cell(_ret_badge(s["ret_6m_str"],  s["ret_6m_positive"],  s["ret_6m_has_data"])),
+                            rx.table.cell(_ret_badge(s["ret_12m_str"], s["ret_12m_positive"], s["ret_12m_has_data"])),
                         ),
                     )
                 ),
