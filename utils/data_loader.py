@@ -1016,11 +1016,31 @@ def fetch_leaders_combined(market: str = "KOSPI", top_n: int = 30) -> list[dict]
     if market == "US":
         return _fetch_leaders_combined_us(top_n)
 
+    _NO_CACHE_HINT = "평일 장중에 한 번 조회하면 이후 주말·공휴일에도 표시됩니다."
+
+    # 주말: NAVER 요청 없이 바로 캐시 조회
+    today = datetime.today()
+    if today.weekday() in (5, 6):
+        day_name = "토요일" if today.weekday() == 5 else "일요일"
+        cached = _load_recent_leaders_cache(market)
+        if cached:
+            return cached
+        raise RuntimeError(f"{day_name}입니다 — {market} 이전 거래일 캐시 없음. {_NO_CACHE_HINT}")
+
     with ThreadPoolExecutor(max_workers=2) as ex:
         vol_fut  = ex.submit(fetch_market_leaders, "volume", market, top_n)
         rise_fut = ex.submit(fetch_market_leaders, "rise",   market, top_n)
         vol_list  = vol_fut.result()
         rise_list = rise_fut.result()
+
+    # 장 시작 전 또는 공휴일: NAVER 빈 결과 → 직전 거래일 캐시로 대체
+    if not vol_list and not rise_list:
+        cached = _load_recent_leaders_cache(market)
+        if cached:
+            return cached
+        raise RuntimeError(
+            f"{market} 거래 데이터 없음 (장 시작 전 또는 공휴일) — 이전 캐시도 없습니다. {_NO_CACHE_HINT}"
+        )
 
     vol_rank_map  = {item["code"]: item["rank"] for item in vol_list}
     rise_rank_map = {item["code"]: item["rank"] for item in rise_list}
@@ -1029,6 +1049,11 @@ def fetch_leaders_combined(market: str = "KOSPI", top_n: int = 30) -> list[dict]
     for item in vol_list + rise_list:
         if item["code"] not in info_by_code:
             info_by_code[item["code"]] = item
+
+    # KR 기준일: 한국 시간 오늘 날짜
+    _today_kr = datetime.today().strftime("%Y-%m-%d")
+    _dn_kr = ["월", "화", "수", "목", "금", "토", "일"][datetime.today().weekday()]
+    _kr_data_date = f"{_today_kr} ({_dn_kr})"
 
     combined = []
     for code, base in info_by_code.items():
@@ -1053,6 +1078,7 @@ def fetch_leaders_combined(market: str = "KOSPI", top_n: int = 30) -> list[dict]
             "mktcap_str":  "-",
             "is_us":       False,
             "is_near_high": False,
+            "data_date":   _kr_data_date,
         })
 
     # ETF/ETN 여부 배치 체크
@@ -1120,18 +1146,44 @@ def _fmt_us_mktcap(raw: float) -> str:
 
 
 def _fetch_us_yahoo_screener(scr_id: str, top_n: int = 30) -> list[dict]:
-    """Yahoo Finance 스크리너 API로 미국 시장 상위 종목 조회."""
+    """Yahoo Finance 스크리너 API로 미국 시장 상위 종목 조회.
+
+    result=null 은 미국 장 전/후에 발생할 수 있으므로 빈 리스트로 처리.
+    """
+    def _parse_quotes(resp) -> list:
+        result_obj = resp.json().get("finance", {}).get("result")
+        if not result_obj:
+            return []
+        return result_obj[0].get("quotes") or []
+
     url = _YF_SCREENER_URL.format(count=top_n, scr_id=scr_id)
+    quotes: list = []
     try:
         r = requests.get(url, headers=_YF_HEADERS, timeout=10)
         r.raise_for_status()
-        quotes = r.json()["finance"]["result"][0]["quotes"]
+        quotes = _parse_quotes(r)
     except Exception:
+        pass
+
+    if not quotes:
         # query2 fallback
-        url2 = url.replace("query1", "query2")
-        r = requests.get(url2, headers=_YF_HEADERS, timeout=10)
-        r.raise_for_status()
-        quotes = r.json()["finance"]["result"][0]["quotes"]
+        try:
+            url2 = url.replace("query1", "query2")
+            r2 = requests.get(url2, headers=_YF_HEADERS, timeout=10)
+            r2.raise_for_status()
+            quotes = _parse_quotes(r2)
+        except Exception:
+            quotes = []
+
+    # 첫 번째 quote 의 regularMarketTime → 미국 동부시간(EDT=UTC-4) 기준 날짜 문자열
+    data_date = ""
+    first_ts = next((q.get("regularMarketTime") for q in quotes if q.get("regularMarketTime")), None)
+    if first_ts:
+        from datetime import timezone, timedelta as _td
+        _edt = timezone(_td(hours=-4))
+        _dt  = datetime.fromtimestamp(first_ts, tz=_edt)
+        _dn  = ["월", "화", "수", "목", "금", "토", "일"][_dt.weekday()]
+        data_date = f"{_dt.strftime('%Y-%m-%d')} ({_dn})"
 
     results = []
     for i, q in enumerate(quotes):
@@ -1161,6 +1213,7 @@ def _fetch_us_yahoo_screener(scr_id: str, top_n: int = 30) -> list[dict]:
             "quote_type": quote_type,
             "day_high": day_high,
             "price_raw": price,
+            "data_date": data_date,
         })
         if len(results) >= top_n:
             break
@@ -1169,12 +1222,22 @@ def _fetch_us_yahoo_screener(scr_id: str, top_n: int = 30) -> list[dict]:
 
 
 def _fetch_leaders_combined_us(top_n: int = 30) -> list[dict]:
-    """미국 시장 거래량 상위 + 상승률 상위 합산 (Yahoo Finance 스크리너)."""
+    """미국 시장 거래량 상위 + 상승률 상위 합산 (Yahoo Finance 스크리너).
+
+    미국 장 전/후에 day_gainers 가 빈 결과를 반환할 수 있으므로
+    most_actives 단독으로도 의미 있는 결과를 반환한다.
+    """
     with ThreadPoolExecutor(max_workers=2) as ex:
         vol_fut  = ex.submit(_fetch_us_yahoo_screener, "most_actives", top_n)
         rise_fut = ex.submit(_fetch_us_yahoo_screener, "day_gainers",  top_n)
         vol_list  = vol_fut.result()
         rise_list = rise_fut.result()
+
+    if not vol_list and not rise_list:
+        raise RuntimeError(
+            "미국 시장 데이터를 가져올 수 없습니다. "
+            "미국 장이 열리지 않았거나 Yahoo Finance API 일시 오류입니다."
+        )
 
     vol_rank_map  = {item["code"]: item["rank"] for item in vol_list}
     rise_rank_map = {item["code"]: item["rank"] for item in rise_list}
@@ -1248,6 +1311,76 @@ def load_leaders_cache(market: str) -> list[dict] | None:
             return json.load(f)
     except Exception:
         return None
+
+
+def _load_recent_leaders_cache(market: str, max_days: int = 14) -> list[dict] | None:
+    """장 시작 전·주말·공휴일 fallback: 최근 N일 내 가장 최근 캐시 파일을 반환.
+
+    주말/공휴일은 캐시 파일 자체가 없으므로 파일 존재 여부만으로 거래일을 자동 판별.
+    각 항목의 data_date 를 해당 캐시 날짜로 업데이트한다.
+    """
+    from datetime import timedelta
+    for i in range(1, max_days + 1):
+        prev = datetime.today() - timedelta(days=i)
+        date_str = prev.strftime("%Y%m%d")
+        path = os.path.join(_CACHE_DIR, f"leaders_{market}_{date_str}.json")
+        if not os.path.exists(path):
+            continue
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if not data:
+                continue
+            day_kr = ["월", "화", "수", "목", "금", "토", "일"][prev.weekday()]
+            prev_date_label = f"{prev.strftime('%Y-%m-%d')} ({day_kr})"
+            for item in data:
+                item["data_date"] = prev_date_label
+            return data
+        except Exception:
+            continue
+    return None
+
+
+def compute_consecutive_days(market: str, current_data: list[dict], max_days: int = 5) -> list[dict]:
+    """각 종목이 오늘 포함 며칠 연속 당일주도주에 등장했는지 계산한다.
+
+    주말은 건너뛰고, 평일에 캐시 파일이 없으면 (공휴일·첫 실행) 연속 횟수를 끊는다.
+    반환: consecutive_days(int), has_streak(bool, ≥2일) 필드가 추가된 리스트.
+    """
+    # 과거 max_days 거래일의 코드 집합 수집 (주말 건너뜀, 캐시 없는 평일=연속 끊김)
+    past_sets: list[set] = []
+    i = 1
+    while len(past_sets) < max_days and i < 30:
+        prev = datetime.today() - timedelta(days=i)
+        i += 1
+        if prev.weekday() in (5, 6):          # 토·일 건너뜀
+            continue
+        date_str = prev.strftime("%Y%m%d")
+        path = os.path.join(_CACHE_DIR, f"leaders_{market}_{date_str}.json")
+        if not os.path.exists(path):
+            break                              # 평일 캐시 없음 → 연속 끊김
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                past_data = json.load(f)
+            past_sets.append({item["code"] for item in past_data})
+        except Exception:
+            break
+
+    result = []
+    for item in current_data:
+        code = item["code"]
+        streak = 1                             # 오늘 포함
+        for past_set in past_sets:
+            if code in past_set:
+                streak += 1
+            else:
+                break
+        result.append({
+            **item,
+            "consecutive_days": streak,
+            "has_streak": streak >= 2,
+        })
+    return result
 
 
 def compute_score_b(items: list[dict]) -> list[dict]:
