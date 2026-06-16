@@ -3882,10 +3882,18 @@ def leaders_tab() -> rx.Component:
                     align="center",
                     padding_top="40px",
                 ),
-                rx.callout.root(
-                    rx.callout.text("'조회' 버튼을 눌러 오늘의 주도주를 가져오세요."),
-                    color_scheme="blue",
-                    variant="soft",
+                rx.cond(
+                    State.leaders_data_raw.length() > 0,
+                    rx.callout.root(
+                        rx.callout.text("해당하는 후보가 없습니다."),
+                        color_scheme="amber",
+                        variant="soft",
+                    ),
+                    rx.callout.root(
+                        rx.callout.text("'조회' 버튼을 눌러 오늘의 주도주를 가져오세요."),
+                        color_scheme="blue",
+                        variant="soft",
+                    ),
                 ),
             ),
             # ── 데이터 뷰 (모바일 카드 + 데스크탑 테이블) ────────
