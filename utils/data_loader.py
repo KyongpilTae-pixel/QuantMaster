@@ -1379,6 +1379,7 @@ def compute_consecutive_days(market: str, current_data: list[dict], max_days: in
             **item,
             "consecutive_days": streak,
             "has_streak": streak >= 2,
+            "streak_hot": streak >= 3,
         })
     return result
 

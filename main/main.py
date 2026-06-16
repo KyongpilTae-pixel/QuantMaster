@@ -739,7 +739,7 @@ class State(rx.State):
                 )
             else:
                 # US: consecutive_days 필드 기본값
-                data = [{**item, "consecutive_days": 1, "has_streak": False} for item in data]
+                data = [{**item, "consecutive_days": 1, "has_streak": False, "streak_hot": False} for item in data]
 
             self.leaders_data_raw = data
             self._apply_filter_and_sort()
@@ -3904,7 +3904,7 @@ def leaders_tab() -> rx.Component:
                                     rx.badge(
                                         h["consecutive_days"].to_string() + "일 연속",
                                         color_scheme=rx.cond(
-                                            h["consecutive_days"] >= 3, "tomato", "amber"
+                                            h["streak_hot"], "tomato", "amber"
                                         ),
                                         variant="solid", size="1",
                                     ),
@@ -4002,7 +4002,7 @@ def leaders_tab() -> rx.Component:
                                         rx.badge(
                                             h["consecutive_days"].to_string() + "일",
                                             color_scheme=rx.cond(
-                                                h["consecutive_days"] >= 3, "tomato", "amber"
+                                                h["streak_hot"], "tomato", "amber"
                                             ),
                                             variant="solid", size="1",
                                         ),
