@@ -602,6 +602,9 @@ class State(rx.State):
     def set_momentum_detail(self, v: str):
         self.momentum_detail = v
 
+    def set_momentum_bt_years(self, v: int):
+        self.momentum_bt_years = v
+
     async def fetch_momentum(self):
         from utils.momentum_scanner import fetch_momentum_data
         self.momentum_loading = True
