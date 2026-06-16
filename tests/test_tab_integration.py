@@ -126,8 +126,9 @@ class TestScannerTab:
 
     def test_scanner_instantiable(self):
         from scanner import QuantScanner
-        s = QuantScanner(market="KOSPI", pbr_limit=2.0, min_cap_label="대형주+")
+        s = QuantScanner()
         assert s is not None
+        assert hasattr(s, "run_advanced_scan")
 
     def test_kr_stock_listing_fallback(self):
         """KRX 404 대응: fdr 실패해도 fetch_kr_stock_listing이 데이터 반환."""

@@ -190,7 +190,14 @@ def load_run_list() -> list[dict]:
                 f"[퀀트]  {r['scan_date']}  {r['market']}  "
                 f"VWAP{r['vwap_period']}  PBR≤{r['target_pbr']}  [{count}종목]"
             )
-        result.append({"id": str(r["id"]), "label": label, "scan_mode": mode})
+        result.append({
+            "id":         str(r["id"]),
+            "run_id":     str(r["id"]),   # test_tab_integration 호환
+            "label":      label,
+            "scan_mode":  mode,
+            "market":     r["market"],
+            "scan_count": int(count),
+        })
     return result
 
 

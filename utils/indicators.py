@@ -32,3 +32,15 @@ class TechnicalIndicators:
         df["OBV_Sig"] = df["OBV"].rolling(window=20).mean()
 
         return df
+
+
+def compute_vwap(df: pd.DataFrame, period: int = 20) -> float | None:
+    """DataFrame의 마지막 행 VWAP(period) 값을 반환. 데이터 부족 시 None."""
+    if len(df) < period:
+        return None
+    tp = (df["High"] + df["Low"] + df["Close"]) / 3
+    pv = (tp * df["Volume"]).rolling(window=period).sum()
+    vol = df["Volume"].rolling(window=period).sum()
+    vwap_series = pv / vol
+    val = vwap_series.iloc[-1]
+    return float(val) if pd.notna(val) else None
