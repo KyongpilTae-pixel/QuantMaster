@@ -290,6 +290,15 @@ class State(rx.State):
     sector_error: str = ""
     sector_region: str = "KR"
 
+    # 종목 모멘텀 스캔 (scanner 탭)
+    stock_momentum_results: List[dict] = []
+    stock_momentum_period: str = "1M"      # "1W" | "1M" | "3M"
+    stock_momentum_mktcap: int = 3_000     # 억원
+
+    # 당일주도주 기간 확장
+    leaders_period: str = "1D"            # "1D" | "1W" | "1M" | "3M"
+    leaders_multi_results: List[dict] = []
+
     # UI state
     is_scanning: bool = False
     is_backtesting: bool = False
@@ -657,6 +666,20 @@ class State(rx.State):
     def set_leaders_market(self, v: str):
         self.leaders_market = v
 
+    def set_leaders_period(self, v: str):
+        self.leaders_period = v
+        self.leaders_multi_results = []
+        self.leaders_data = []
+        self.leaders_data_raw = []
+        self.leaders_data_date = ""
+        self.leaders_error = ""
+
+    def set_stock_momentum_period(self, v: str):
+        self.stock_momentum_period = v
+
+    def set_stock_momentum_mktcap(self, v: int):
+        self.stock_momentum_mktcap = v
+
     def _apply_filter_and_sort(self):
         """leaders_data_raw에 타입 필터 + 정렬을 적용해 leaders_data 갱신."""
         key_map = {
@@ -720,10 +743,29 @@ class State(rx.State):
         self.leaders_cache_time = ""
         self.leaders_data_date = ""
         self.leaders_data_is_prev = False
+        self.leaders_multi_results = []
         yield
 
         import asyncio
         from datetime import datetime as _dt
+
+        # ── 기간 선택 모드 (1W / 1M / 3M) ────────────────────────────────
+        if self.leaders_period != "1D":
+            from utils.stock_scanner import scan_stock_momentum
+            mkt = self.leaders_market  # "KOSPI" | "KOSDAQ" | "US"
+            try:
+                data = await asyncio.to_thread(
+                    scan_stock_momentum, mkt, self.leaders_period, 1_000, 30
+                )
+                self.leaders_multi_results = data
+                self.leaders_data_date = _dt.today().strftime("%Y-%m-%d")
+            except Exception as e:
+                self.leaders_error = str(e)
+            finally:
+                self.leaders_loading = False
+            return
+
+        # ── 당일(1D) 모드 — 기존 로직 ────────────────────────────────────
         from utils.data_loader import fetch_leaders_combined
 
         try:
@@ -1374,6 +1416,44 @@ class State(rx.State):
             yield
             return
 
+        # ── 종목 모멘텀 스캔 ─────────────────────────────────────────────
+        if self.scan_mode == "stock_momentum":
+            from utils.stock_scanner import scan_stock_momentum
+            self.is_scanning = True
+            self.stock_momentum_results = []
+            mkt_map = {
+                "SP500": "SP500", "NASDAQ": "SP500",
+                "KR-ETF": "KOSPI", "US-ETF": "SP500",
+            }
+            mkt = mkt_map.get(self.market, self.market)
+            if mkt not in ("KOSPI", "KOSDAQ", "SP500"):
+                mkt = "KOSPI"
+            period_lbl = {"1W": "1주", "1M": "1개월", "3M": "3개월"}.get(
+                self.stock_momentum_period, ""
+            )
+            self.status_msg = f"{mkt} {period_lbl} 모멘텀 스캔 중... (약 1~2분 소요)"
+            yield
+            try:
+                raw = await asyncio.to_thread(
+                    scan_stock_momentum,
+                    mkt,
+                    self.stock_momentum_period,
+                    self.stock_momentum_mktcap,
+                    30,
+                )
+                self.stock_momentum_results = raw
+                cnt = len(raw)
+                self.status_msg = (
+                    f"모멘텀 {cnt}개 종목 발굴 완료" if cnt
+                    else "조건을 만족하는 종목이 없습니다."
+                )
+            except Exception as e:
+                self.status_msg = f"오류: {e}"
+            finally:
+                self.is_scanning = False
+            yield
+            return
+
         # ── 퀀트 스캔 ────────────────────────────────────────────────────
         self.is_scanning = True
         self.status_msg = "시장 데이터 수집 중..."
@@ -1531,6 +1611,7 @@ def sidebar_controls() -> rx.Component:
                 rx.select.item("퀀트 스캔", value="quant"),
                 rx.select.item("세력 탐지", value="whale"),
                 rx.select.item("하락방어", value="defensive"),
+                rx.select.item("모멘텀 스캔", value="stock_momentum"),
             ),
             value=State.scan_mode,
             on_change=State.set_scan_mode,
@@ -1656,6 +1737,22 @@ def sidebar_controls() -> rx.Component:
         wrap="wrap",
     )
 
+    # ── 종목 모멘텀 전용 옵션 행 ────────────────────────────────
+    momentum_scan_opts = rx.hstack(
+        rx.text("기간", size="1", color="gray"),
+        rx.button("1주",   size="1", variant=rx.cond(State.stock_momentum_period == "1W", "solid", "soft"), on_click=State.set_stock_momentum_period("1W")),
+        rx.button("1개월", size="1", variant=rx.cond(State.stock_momentum_period == "1M", "solid", "soft"), on_click=State.set_stock_momentum_period("1M")),
+        rx.button("3개월", size="1", variant=rx.cond(State.stock_momentum_period == "3M", "solid", "soft"), on_click=State.set_stock_momentum_period("3M")),
+        rx.separator(orientation="vertical", size="1"),
+        rx.text("시총", size="1", color="gray"),
+        rx.button("3천억+", size="1", variant=rx.cond(State.stock_momentum_mktcap == 3_000,  "solid", "soft"), on_click=State.set_stock_momentum_mktcap(3_000)),
+        rx.button("1조+",   size="1", variant=rx.cond(State.stock_momentum_mktcap == 10_000, "solid", "soft"), on_click=State.set_stock_momentum_mktcap(10_000)),
+        rx.button("전체",   size="1", variant=rx.cond(State.stock_momentum_mktcap == 0,      "solid", "soft"), on_click=State.set_stock_momentum_mktcap(0)),
+        spacing="2",
+        align="center",
+        wrap="wrap",
+    )
+
     # ── 실행 버튼 그룹 ─────────────────────────────────────────
     action_btns = rx.hstack(
         rx.button(
@@ -1703,7 +1800,15 @@ def sidebar_controls() -> rx.Component:
         rx.cond(
             State.scan_mode == "quant",
             quant_opts,
-            rx.cond(State.scan_mode == "whale", whale_opts, defensive_opts),
+            rx.cond(
+                State.scan_mode == "whale",
+                whale_opts,
+                rx.cond(
+                    State.scan_mode == "stock_momentum",
+                    momentum_scan_opts,
+                    defensive_opts,
+                ),
+            ),
         ),
         # 세력 탐지 진행률
         rx.cond(
@@ -1743,7 +1848,10 @@ def scanner_tab() -> rx.Component:
                 State.scan_mode == "whale",
                 whale_scanner_table(),
                 rx.cond(
-                    State.scan_results.length() == 0,
+                    State.scan_mode == "stock_momentum",
+                    stock_momentum_table(),
+                    rx.cond(
+                        State.scan_results.length() == 0,
                     rx.center(
                         rx.text("스캔 실행 버튼을 눌러 결과를 조회하세요.", color="gray"),
                         height="200px",
@@ -1803,9 +1911,67 @@ def scanner_tab() -> rx.Component:
                 ),
                 ),
             ),
+            ),
         ),
         width="100%",
         spacing="4",
+    )
+
+
+def stock_momentum_table() -> rx.Component:
+    """종목 모멘텀 스캔 결과 테이블."""
+    return rx.cond(
+        State.stock_momentum_results.length() == 0,
+        rx.center(
+            rx.text("위 패널에서 모멘텀 스캔을 실행하세요.", color="gray"),
+            height="200px",
+        ),
+        rx.table.root(
+            rx.table.header(
+                rx.table.row(
+                    rx.table.column_header_cell("순위"),
+                    rx.table.column_header_cell("종목명"),
+                    rx.table.column_header_cell("수익률"),
+                    rx.table.column_header_cell("1주수익률"),
+                    rx.table.column_header_cell("거래량비"),
+                    rx.table.column_header_cell("현재가"),
+                    rx.table.column_header_cell("시가총액"),
+                    rx.table.column_header_cell(""),
+                )
+            ),
+            rx.table.body(
+                rx.foreach(
+                    State.stock_momentum_results,
+                    lambda r: rx.table.row(
+                        rx.table.cell(r["rank"]),
+                        rx.table.cell(rx.text(r["name"], weight="medium")),
+                        rx.table.cell(
+                            rx.text(r["ret_str"], color=rx.cond(r["ret_positive"], "green", "red"), weight="medium")
+                        ),
+                        rx.table.cell(
+                            rx.cond(
+                                r["has_ret_1w"],
+                                rx.text(r["ret_1w_str"], color=rx.cond(r["ret_1w_positive"], "green", "red"), size="1"),
+                                rx.text("-", color="gray", size="1"),
+                            )
+                        ),
+                        rx.table.cell(
+                            rx.badge(r["vol_ratio_str"], color_scheme=rx.cond(r["vol_up"], "green", "gray"), variant="soft", size="1")
+                        ),
+                        rx.table.cell(r["close_str"]),
+                        rx.table.cell(r["mktcap_str"]),
+                        rx.table.cell(
+                            rx.button(
+                                "조회", size="1", variant="soft", color_scheme="blue",
+                                on_click=State.goto_lookup_from_leaders(r["code"], r["is_us"]),
+                            )
+                        ),
+                    ),
+                )
+            ),
+            variant="surface",
+            width="100%",
+        ),
     )
 
 
@@ -3724,8 +3890,30 @@ def leaders_tab() -> rx.Component:
     return rx.vstack(
         # ── 컨트롤 바 ──────────────────────────────────────────
         rx.hstack(
-            rx.heading("당일 주도주", size="4"),
+            rx.heading(
+                rx.cond(State.leaders_period == "1D", "당일 주도주", "기간 모멘텀 TOP30"),
+                size="4",
+            ),
             rx.spacer(),
+            rx.hstack(
+                rx.button("오늘",  size="1",
+                    variant=rx.cond(State.leaders_period == "1D", "solid", "soft"),
+                    color_scheme="gray",
+                    on_click=State.set_leaders_period("1D")),
+                rx.button("1주",   size="1",
+                    variant=rx.cond(State.leaders_period == "1W", "solid", "soft"),
+                    color_scheme="blue",
+                    on_click=State.set_leaders_period("1W")),
+                rx.button("1개월", size="1",
+                    variant=rx.cond(State.leaders_period == "1M", "solid", "soft"),
+                    color_scheme="blue",
+                    on_click=State.set_leaders_period("1M")),
+                rx.button("3개월", size="1",
+                    variant=rx.cond(State.leaders_period == "3M", "solid", "soft"),
+                    color_scheme="blue",
+                    on_click=State.set_leaders_period("3M")),
+                spacing="1",
+            ),
             rx.select(
                 ["KOSPI", "KOSDAQ", "US"],
                 value=State.leaders_market,
@@ -3744,7 +3932,7 @@ def leaders_tab() -> rx.Component:
         ),
         # ── 행1: 정렬 + B점수 계산 ───────────────────────────────
         rx.cond(
-            State.leaders_data.length() > 0,
+            (State.leaders_period == "1D") & (State.leaders_data.length() > 0),
             rx.vstack(
                 rx.hstack(
                     rx.text("정렬:", size="2", color="gray", weight="medium"),
@@ -3801,7 +3989,7 @@ def leaders_tab() -> rx.Component:
         ),
         # ── 점수 설명 ───────────────────────────────────────────
         rx.cond(
-            State.leaders_data.length() > 0,
+            (State.leaders_period == "1D") & (State.leaders_data.length() > 0),
             rx.hstack(
                 rx.badge("방법A = 1/거래량순위 + 1/상승률순위", color_scheme="blue", variant="soft"),
                 rx.badge("방법B = (오늘거래량 ÷ 20일평균) × 상승률%", color_scheme="amber", variant="soft"),
@@ -3810,7 +3998,7 @@ def leaders_tab() -> rx.Component:
         ),
         # ── 종가매매 필터 기준 안내 ──────────────────────────────
         rx.cond(
-            State.leaders_close_buy,
+            (State.leaders_period == "1D") & State.leaders_close_buy,
             rx.callout.root(
                 rx.callout.text(
                     rx.hstack(
@@ -3832,7 +4020,7 @@ def leaders_tab() -> rx.Component:
         ),
         # ── 캐시 알림 ───────────────────────────────────────────
         rx.cond(
-            State.leaders_from_cache,
+            (State.leaders_period == "1D") & State.leaders_from_cache,
             rx.hstack(
                 rx.badge(
                     "캐시 로드 (" + State.leaders_cache_time + ")",
@@ -3846,7 +4034,7 @@ def leaders_tab() -> rx.Component:
         ),
         # ── 데이터 기준일 ─────────────────────────────────────────
         rx.cond(
-            State.leaders_data_date != "",
+            (State.leaders_period == "1D") & (State.leaders_data_date != ""),
             rx.hstack(
                 rx.badge(
                     "데이터 기준: " + State.leaders_data_date,
@@ -3872,9 +4060,75 @@ def leaders_tab() -> rx.Component:
                 variant="soft",
             ),
         ),
-        # ── 미조회 안내 ─────────────────────────────────────────
+        # ── 기간 모멘텀 뷰 (1W / 1M / 3M) ──────────────────────────
         rx.cond(
-            State.leaders_data.length() == 0,
+            State.leaders_period != "1D",
+            rx.cond(
+                State.leaders_loading,
+                rx.hstack(
+                    rx.spinner(size="3"),
+                    rx.text(State.leaders_market + " " + State.leaders_period + " 모멘텀 조회 중...", color="gray"),
+                    spacing="2", align="center", padding_top="40px",
+                ),
+                rx.cond(
+                    State.leaders_multi_results.length() > 0,
+                    rx.table.root(
+                        rx.table.header(
+                            rx.table.row(
+                                rx.table.column_header_cell("순위"),
+                                rx.table.column_header_cell("종목명"),
+                                rx.table.column_header_cell("수익률"),
+                                rx.table.column_header_cell("1주수익률"),
+                                rx.table.column_header_cell("거래량비"),
+                                rx.table.column_header_cell("현재가"),
+                                rx.table.column_header_cell("시가총액"),
+                                rx.table.column_header_cell(""),
+                            )
+                        ),
+                        rx.table.body(
+                            rx.foreach(
+                                State.leaders_multi_results,
+                                lambda r: rx.table.row(
+                                    rx.table.cell(r["rank"]),
+                                    rx.table.cell(rx.text(r["name"], weight="medium")),
+                                    rx.table.cell(
+                                        rx.text(r["ret_str"], color=rx.cond(r["ret_positive"], "green", "red"), weight="medium")
+                                    ),
+                                    rx.table.cell(
+                                        rx.cond(
+                                            r["has_ret_1w"],
+                                            rx.text(r["ret_1w_str"], color=rx.cond(r["ret_1w_positive"], "green", "red"), size="1"),
+                                            rx.text("-", color="gray", size="1"),
+                                        )
+                                    ),
+                                    rx.table.cell(
+                                        rx.badge(r["vol_ratio_str"], color_scheme=rx.cond(r["vol_up"], "green", "gray"), variant="soft", size="1")
+                                    ),
+                                    rx.table.cell(r["close_str"]),
+                                    rx.table.cell(r["mktcap_str"]),
+                                    rx.table.cell(
+                                        rx.button("조회", size="1", variant="soft", color_scheme="blue",
+                                            on_click=State.goto_lookup_from_leaders(r["code"], r["is_us"]))
+                                    ),
+                                ),
+                            )
+                        ),
+                        variant="surface",
+                        width="100%",
+                    ),
+                    rx.callout.root(
+                        rx.callout.text("'조회' 버튼을 눌러 기간 모멘텀 종목을 가져오세요."),
+                        color_scheme="blue",
+                        variant="soft",
+                    ),
+                ),
+            ),
+        ),
+        # ── 당일 주도주 뷰 (1D) ─────────────────────────────────
+        rx.cond(
+            State.leaders_period == "1D",
+            rx.cond(
+                State.leaders_data.length() == 0,
             rx.cond(
                 State.leaders_loading,
                 rx.hstack(
@@ -4050,6 +4304,7 @@ def leaders_tab() -> rx.Component:
                 width="100%", spacing="0",
             ),
         ),
+        ),  # rx.cond(leaders_period == "1D")
         width="100%",
         spacing="4",
     )
