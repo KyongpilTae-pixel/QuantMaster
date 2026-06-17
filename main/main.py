@@ -3690,7 +3690,13 @@ def sector_tab() -> rx.Component:
                     rx.foreach(
                         State.sector_data,
                         lambda s: rx.table.row(
-                            rx.table.cell(s["sector"]),
+                            rx.table.cell(
+                                rx.vstack(
+                                    rx.text(s["sector"], weight="bold", size="2"),
+                                    rx.text(s["name"], size="1", color="gray"),
+                                    spacing="0",
+                                )
+                            ),
                             rx.table.cell(_ret_badge(s["ret_5d_str"],  s["ret_5d_positive"],  s["ret_5d_has_data"])),
                             rx.table.cell(_ret_badge(s["ret_1m_str"],  s["ret_1m_positive"],  s["ret_1m_has_data"])),
                             rx.table.cell(_ret_badge(s["ret_3m_str"],  s["ret_3m_positive"],  s["ret_3m_has_data"])),
