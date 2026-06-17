@@ -43,9 +43,9 @@ class TestSectorDefinitions:
 
     def test_periods_defined(self):
         from utils.sector_scanner import PERIODS
-        assert len(PERIODS) == 4
+        assert len(PERIODS) == 5
         keys = [k for k, _, _ in PERIODS]
-        assert keys == ["1m", "3m", "6m", "12m"]
+        assert keys == ["5d", "1m", "3m", "6m", "12m"]
 
 
 # ── fetch_sector_momentum 반환 형식 테스트 ────────────────────────────────────

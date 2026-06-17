@@ -3679,6 +3679,7 @@ def sector_tab() -> rx.Component:
                 rx.table.header(
                     rx.table.row(
                         rx.table.column_header_cell("자산"),
+                        rx.table.column_header_cell("5일"),
                         rx.table.column_header_cell("1개월"),
                         rx.table.column_header_cell("3개월"),
                         rx.table.column_header_cell("6개월"),
@@ -3690,6 +3691,7 @@ def sector_tab() -> rx.Component:
                         State.sector_data,
                         lambda s: rx.table.row(
                             rx.table.cell(s["sector"]),
+                            rx.table.cell(_ret_badge(s["ret_5d_str"],  s["ret_5d_positive"],  s["ret_5d_has_data"])),
                             rx.table.cell(_ret_badge(s["ret_1m_str"],  s["ret_1m_positive"],  s["ret_1m_has_data"])),
                             rx.table.cell(_ret_badge(s["ret_3m_str"],  s["ret_3m_positive"],  s["ret_3m_has_data"])),
                             rx.table.cell(_ret_badge(s["ret_6m_str"],  s["ret_6m_positive"],  s["ret_6m_has_data"])),
