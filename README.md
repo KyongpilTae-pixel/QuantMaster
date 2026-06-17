@@ -229,7 +229,7 @@ pytest tests/test_data_loader.py -m integration -v
 QuantMaster Pro
 ├── [스캐너 탭 — 사이드바]
 │   ├── 스캔 모드 선택
-│   │   ├── 퀀트 스캔      (저PBR + GPA + VWAP 돌파 + MFI/OBV)
+│   │   ├── 밸류 돌파      (저PBR + GPA + VWAP 돌파 + MFI/OBV)
 │   │   ├── 세력 탐지      (OBV 스파이크 + 돌파 + 알파 + 숏커버)
 │   │   ├── 하락방어       (Beta + RS + Downside Capture, KR 전용)
 │   │   └── 모멘텀 스캔    (기간별 수익률 상위 종목 — 삼성전기/LG이노텍 류)
@@ -258,7 +258,7 @@ QuantMaster Pro
     │   └── 연속 등장 추적 (오늘 모드)
     │
     ├── 스캐너 탭
-    │   ├── [퀀트 모드] 결과 테이블
+    │   ├── [밸류 돌파 모드] 결과 테이블
     │   │   └── 종목명 · 심볼 · 시가총액 · PBR · PSR · 배당률
     │   │       MFI · 현재가 · VWAP · 괴리율 · 조건 · [분석]
     │   ├── [세력 탐지 모드] 결과 테이블

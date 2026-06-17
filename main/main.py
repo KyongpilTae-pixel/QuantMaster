@@ -1608,7 +1608,7 @@ def sidebar_controls() -> rx.Component:
         rx.select.root(
             rx.select.trigger(placeholder="모드"),
             rx.select.content(
-                rx.select.item("퀀트 스캔", value="quant"),
+                rx.select.item("밸류 돌파", value="quant"),
                 rx.select.item("세력 탐지", value="whale"),
                 rx.select.item("하락방어", value="defensive"),
                 rx.select.item("모멘텀 스캔", value="stock_momentum"),
