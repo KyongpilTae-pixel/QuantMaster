@@ -3450,17 +3450,6 @@ def momentum_tab() -> rx.Component:
     return rx.vstack(
         # 컨트롤 바
         rx.hstack(
-            rx.button(
-                rx.cond(
-                    State.momentum_loading,
-                    rx.hstack(rx.spinner(size="2"), rx.text("조회 중..."), spacing="2"),
-                    rx.text("조회"),
-                ),
-                on_click=State.fetch_momentum,
-                disabled=State.momentum_loading,
-                color_scheme="blue",
-            ),
-            rx.divider(orientation="vertical", height="24px"),
             rx.text("기간 (단순모멘텀):", size="2", color="gray"),
             rx.button("1M", size="1",
                 variant=rx.cond(State.momentum_show_1m, "solid", "soft"),
@@ -3474,7 +3463,18 @@ def momentum_tab() -> rx.Component:
             rx.button("12M", size="1",
                 variant=rx.cond(State.momentum_show_12m, "solid", "soft"),
                 color_scheme="gray", on_click=State.toggle_momentum_12m),
-            spacing="3", align="center", wrap="wrap",
+            rx.spacer(),
+            rx.button(
+                rx.cond(
+                    State.momentum_loading,
+                    rx.hstack(rx.spinner(size="2"), rx.text("조회 중..."), spacing="2"),
+                    rx.text("조회"),
+                ),
+                on_click=State.fetch_momentum,
+                disabled=State.momentum_loading,
+                color_scheme="blue",
+            ),
+            spacing="3", align="center", wrap="wrap", width="100%",
         ),
         # 오류
         rx.cond(
