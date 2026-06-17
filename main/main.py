@@ -1810,6 +1810,32 @@ def sidebar_controls() -> rx.Component:
                 ),
             ),
         ),
+        # 행3: 모드 설명
+        rx.cond(
+            State.scan_mode == "quant",
+            rx.callout.root(
+                rx.callout.text("💡 저PBR·고GPA 종목 중 VWAP 돌파 + MFI·OBV 스마트머니 유입을 확인하는 가치+기술 복합 스캔. 결과 저장 후 히스토리에서 재조회 가능."),
+                color_scheme="blue", variant="surface", size="1",
+            ),
+            rx.cond(
+                State.scan_mode == "whale",
+                rx.callout.root(
+                    rx.callout.text("💡 OBV 급등·가격 돌파·지수 대비 알파·숏커버 신호를 복합 채점해 세력 매집 가능성이 높은 종목을 탐지. 급등 초기 포착에 특화."),
+                    color_scheme="amber", variant="surface", size="1",
+                ),
+                rx.cond(
+                    State.scan_mode == "defensive",
+                    rx.callout.root(
+                        rx.callout.text("💡 하락장에서 시장 대비 낙폭이 작고 반등력이 강한 종목을 Beta·RS·Downside Capture로 선별. KOSPI/KOSDAQ 전용."),
+                        color_scheme="green", variant="surface", size="1",
+                    ),
+                    rx.callout.root(
+                        rx.callout.text("💡 하루 급등이 아닌 1주~3개월 꾸준한 우상향 종목을 탐색. 삼성전기·LG이노텍 류 소재·부품株 발굴에 적합. 시총 상위 300개 기준."),
+                        color_scheme="violet", variant="surface", size="1",
+                    ),
+                ),
+            ),
+        ),
         # 세력 탐지 진행률
         rx.cond(
             (State.scan_mode == "whale") & (State.whale_progress != ""),
