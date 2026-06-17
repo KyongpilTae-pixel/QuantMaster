@@ -303,7 +303,7 @@ class State(rx.State):
     is_scanning: bool = False
     is_backtesting: bool = False
     status_msg: str = ""
-    active_tab: str = "scanner"
+    active_tab: str = "momentum"
 
     # ------------------------------------------------------------------
     # Setters (explicit — required in Reflex 0.8+)
