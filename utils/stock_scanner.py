@@ -38,7 +38,7 @@ def _calc_stock(args: tuple) -> dict | None:
         cal_days   = _CALENDAR_DAYS.get(period, _CALENDAR_DAYS["1M"])
         trade_days = _TRADE_DAYS.get(period, _TRADE_DAYS["1M"])
         end   = datetime.today()
-        start = end - timedelta(days=cal_days + 30)
+        start = end - timedelta(days=cal_days + 10)
 
         df = fdr.DataReader(code, start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d"))
         df = df[df["Volume"] > 0].dropna(subset=["Close"])
@@ -82,6 +82,7 @@ def scan_stock_momentum(
     period: str = "1M",
     min_mktcap_eok: int = 3_000,
     top_n: int = 30,
+    max_universe: int = 300,
 ) -> list[dict]:
     """기간별 수익률 상위 종목 스캔 (꾸준한 강세주 발굴).
 
@@ -90,6 +91,7 @@ def scan_stock_momentum(
         period: "1W" | "1M" | "3M"
         min_mktcap_eok: 최소 시가총액 억원 단위 (KR). US는 S&P500 구성이므로 무시.
         top_n: 반환 최대 종목 수.
+        max_universe: 시총 상위 N개로 사전 제한 — 속도 제어. 0이면 전체 사용.
     Returns:
         rank·code·name·ret_pct·vol_ratio 등 bool 플래그 포함 dict 리스트.
     """
@@ -115,6 +117,10 @@ def scan_stock_momentum(
         if listing.empty:
             return []
 
+        # 시총 내림차순 정렬 후 상위 max_universe개로 제한 (속도 최적화)
+        if max_universe > 0:
+            listing = listing.head(max_universe)
+
         codes = listing[code_col].tolist()
         names = dict(zip(listing[code_col], listing[name_col]))
         caps: dict = {}
@@ -128,6 +134,8 @@ def scan_stock_momentum(
             code_col = "Symbol" if "Symbol" in sp500.columns else sp500.columns[0]
             name_col = "Name"   if "Name"   in sp500.columns else sp500.columns[1]
             codes = sp500[code_col].dropna().tolist()
+            if max_universe > 0:
+                codes = codes[:max_universe]
             names = dict(zip(sp500[code_col], sp500[name_col]))
             caps = {}
         except Exception:
@@ -135,7 +143,7 @@ def scan_stock_momentum(
 
     args_list = [(c, names.get(c, c), caps.get(c, 0.0), period) for c in codes]
 
-    with ThreadPoolExecutor(max_workers=15) as ex:
+    with ThreadPoolExecutor(max_workers=30) as ex:
         raw = list(ex.map(_calc_stock, args_list))
 
     results = [r for r in raw if r is not None]
