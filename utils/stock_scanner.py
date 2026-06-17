@@ -32,6 +32,19 @@ PERIOD_LABELS: dict[str, str] = {
 }
 
 
+class ScanResults(list):
+    """list 서브클래스 — 기존 코드와 완전 호환되면서 경고 메시지를 함께 반환.
+
+    callers:
+        results = scan_stock_momentum(...)   # isinstance(results, list) == True
+        if results.warning:
+            show_warning(results.warning)
+    """
+    def __init__(self, items=(), *, warning: str = ""):
+        super().__init__(items)
+        self.warning = warning
+
+
 def _calc_stock(args: tuple) -> dict | None:
     """단일 종목 OHLCV에서 N일 수익률 + 거래량비를 계산."""
     code, name, mktcap_eok, period = args
@@ -85,7 +98,7 @@ def scan_stock_momentum(
     top_n: int = 30,
     max_universe: int = 150,
     _timeout_s: float = 90,
-) -> list[dict]:
+) -> "ScanResults":
     """기간별 수익률 상위 종목 스캔 (꾸준한 강세주 발굴).
 
     Args:
@@ -94,8 +107,9 @@ def scan_stock_momentum(
         min_mktcap_eok: 최소 시가총액 억원 단위 (KR). US는 S&P500 구성이므로 무시.
         top_n: 반환 최대 종목 수.
         max_universe: 시총 상위 N개로 사전 제한 — 속도 제어. 0이면 전체 사용.
+        _timeout_s: 전체 데이터 수신 제한 시간(초). 테스트에서 단축 가능.
     Returns:
-        rank·code·name·ret_pct·vol_ratio 등 bool 플래그 포함 dict 리스트.
+        ScanResults — list[dict] 호환. .warning 속성에 문제 발생 시 경고 메시지.
     """
     if period not in _CALENDAR_DAYS:
         period = "1M"
@@ -107,7 +121,7 @@ def scan_stock_momentum(
         from utils.data_loader import fetch_kr_stock_listing
         listing = fetch_kr_stock_listing(market, min_mktcap_eok)
         if listing.empty:
-            return []
+            return ScanResults(warning="종목 목록을 불러오지 못했습니다.")
 
         cols_lower = {c.lower(): c for c in listing.columns}
         code_col = cols_lower.get("code") or cols_lower.get("symbol", listing.columns[0])
@@ -117,7 +131,7 @@ def scan_stock_momentum(
         if cap_col and min_mktcap_eok > 0:
             listing = listing[listing[cap_col].fillna(0) >= min_mktcap_eok * 1e8]
         if listing.empty:
-            return []
+            return ScanResults(warning="시가총액 조건을 만족하는 종목이 없습니다.")
 
         # 시총 내림차순 정렬 후 상위 max_universe개로 제한 (속도 최적화)
         if max_universe > 0:
@@ -141,16 +155,20 @@ def scan_stock_momentum(
             names = dict(zip(sp500[code_col], sp500[name_col]))
             caps = {}
         except Exception:
-            return []
+            return ScanResults(warning="S&P500 종목 목록을 불러오지 못했습니다.")
 
     args_list = [(c, names.get(c, c), caps.get(c, 0.0), period) for c in codes]
+
+    total_requested = len(args_list)
 
     # 30 workers로 Stooq 동시 요청 시 레이트리밋 → hang 발생.
     # 10 workers + _timeout_s 전체 타임아웃으로 제한; 미완료 스레드는 백그라운드 종료.
     executor = ThreadPoolExecutor(max_workers=10)
     futures = [executor.submit(_calc_stock, a) for a in args_list]
-    done, _ = cf.wait(futures, timeout=_timeout_s)
+    done, not_done = cf.wait(futures, timeout=_timeout_s)
     executor.shutdown(wait=False)
+
+    timed_out = len(not_done)
 
     raw = []
     for f in done:
@@ -158,6 +176,22 @@ def scan_stock_momentum(
             raw.append(f.result(timeout=0))
         except Exception:
             pass
+
+    failed = len([r for r in raw if r is None])
+    completed = len(done)
+
+    # ── 경고 메시지 조립 ────────────────────────────────────────────
+    warn_parts: list[str] = []
+    if timed_out > 0:
+        warn_parts.append(
+            f"⏱ {timed_out}개 종목이 {int(_timeout_s)}초 내 응답하지 않아 제외됨"
+        )
+    if completed > 0 and failed / completed > 0.4:
+        warn_parts.append(
+            f"데이터 수신 실패 {failed}/{completed}개 "
+            "(시장 데이터 서버 혼잡 가능)"
+        )
+    warning = " · ".join(warn_parts)
 
     results = [r for r in raw if r is not None]
     results.sort(key=lambda x: x["ret_pct"], reverse=True)
@@ -187,4 +221,4 @@ def scan_stock_momentum(
         r["ret_1w_positive"] = ret1w is not None and ret1w > 0
         r["has_ret_1w"]      = ret1w is not None
 
-    return top
+    return ScanResults(top, warning=warning)

@@ -303,6 +303,7 @@ class State(rx.State):
     is_scanning: bool = False
     is_backtesting: bool = False
     status_msg: str = ""
+    scan_warning: str = ""   # 스캔 중 데이터 수신 문제 발생 시 경고 메시지
     active_tab: str = "momentum"
 
     # ------------------------------------------------------------------
@@ -757,8 +758,11 @@ class State(rx.State):
                 data = await asyncio.to_thread(
                     scan_stock_momentum, mkt, self.leaders_period, 1_000, 30
                 )
-                self.leaders_multi_results = data
+                self.leaders_multi_results = list(data)
                 self.leaders_data_date = _dt.today().strftime("%Y-%m-%d")
+                warn = getattr(data, "warning", "")
+                if warn:
+                    self.leaders_error = warn
             except Exception as e:
                 self.leaders_error = str(e)
             finally:
@@ -1421,6 +1425,7 @@ class State(rx.State):
             from utils.stock_scanner import scan_stock_momentum
             self.is_scanning = True
             self.stock_momentum_results = []
+            self.scan_warning = ""
             mkt_map = {
                 "SP500": "SP500", "NASDAQ": "SP500",
                 "KR-ETF": "KOSPI", "US-ETF": "SP500",
@@ -1441,7 +1446,8 @@ class State(rx.State):
                     self.stock_momentum_mktcap,
                     30,
                 )
-                self.stock_momentum_results = raw
+                self.stock_momentum_results = list(raw)
+                self.scan_warning = getattr(raw, "warning", "")
                 cnt = len(raw)
                 self.status_msg = (
                     f"모멘텀 {cnt}개 종목 발굴 완료" if cnt
@@ -1946,58 +1952,74 @@ def scanner_tab() -> rx.Component:
 
 def stock_momentum_table() -> rx.Component:
     """종목 모멘텀 스캔 결과 테이블."""
-    return rx.cond(
-        State.stock_momentum_results.length() == 0,
-        rx.center(
-            rx.text("위 패널에서 모멘텀 스캔을 실행하세요.", color="gray"),
-            height="200px",
-        ),
-        rx.table.root(
-            rx.table.header(
-                rx.table.row(
-                    rx.table.column_header_cell("순위"),
-                    rx.table.column_header_cell("종목명"),
-                    rx.table.column_header_cell("수익률"),
-                    rx.table.column_header_cell("1주수익률"),
-                    rx.table.column_header_cell("거래량비"),
-                    rx.table.column_header_cell("현재가"),
-                    rx.table.column_header_cell("시가총액"),
-                    rx.table.column_header_cell(""),
-                )
-            ),
-            rx.table.body(
-                rx.foreach(
-                    State.stock_momentum_results,
-                    lambda r: rx.table.row(
-                        rx.table.cell(r["rank"]),
-                        rx.table.cell(rx.text(r["name"], weight="medium")),
-                        rx.table.cell(
-                            rx.text(r["ret_str"], color=rx.cond(r["ret_positive"], "green", "red"), weight="medium")
-                        ),
-                        rx.table.cell(
-                            rx.cond(
-                                r["has_ret_1w"],
-                                rx.text(r["ret_1w_str"], color=rx.cond(r["ret_1w_positive"], "green", "red"), size="1"),
-                                rx.text("-", color="gray", size="1"),
-                            )
-                        ),
-                        rx.table.cell(
-                            rx.badge(r["vol_ratio_str"], color_scheme=rx.cond(r["vol_up"], "green", "gray"), variant="soft", size="1")
-                        ),
-                        rx.table.cell(r["close_str"]),
-                        rx.table.cell(r["mktcap_str"]),
-                        rx.table.cell(
-                            rx.button(
-                                "조회", size="1", variant="soft", color_scheme="blue",
-                                on_click=State.goto_lookup_from_leaders(r["code"], r["is_us"]),
-                            )
-                        ),
-                    ),
-                )
-            ),
+    warning_callout = rx.cond(
+        State.scan_warning != "",
+        rx.callout.root(
+            rx.callout.icon(rx.icon("triangle-alert", size=16)),
+            rx.callout.text(State.scan_warning),
+            color_scheme="amber",
             variant="surface",
             width="100%",
+            margin_bottom="2",
         ),
+    )
+    return rx.vstack(
+        warning_callout,
+        rx.cond(
+            State.stock_momentum_results.length() == 0,
+            rx.center(
+                rx.text("위 패널에서 모멘텀 스캔을 실행하세요.", color="gray"),
+                height="200px",
+            ),
+            rx.table.root(
+                rx.table.header(
+                    rx.table.row(
+                        rx.table.column_header_cell("순위"),
+                        rx.table.column_header_cell("종목명"),
+                        rx.table.column_header_cell("수익률"),
+                        rx.table.column_header_cell("1주수익률"),
+                        rx.table.column_header_cell("거래량비"),
+                        rx.table.column_header_cell("현재가"),
+                        rx.table.column_header_cell("시가총액"),
+                        rx.table.column_header_cell(""),
+                    )
+                ),
+                rx.table.body(
+                    rx.foreach(
+                        State.stock_momentum_results,
+                        lambda r: rx.table.row(
+                            rx.table.cell(r["rank"]),
+                            rx.table.cell(rx.text(r["name"], weight="medium")),
+                            rx.table.cell(
+                                rx.text(r["ret_str"], color=rx.cond(r["ret_positive"], "green", "red"), weight="medium")
+                            ),
+                            rx.table.cell(
+                                rx.cond(
+                                    r["has_ret_1w"],
+                                    rx.text(r["ret_1w_str"], color=rx.cond(r["ret_1w_positive"], "green", "red"), size="1"),
+                                    rx.text("-", color="gray", size="1"),
+                                )
+                            ),
+                            rx.table.cell(
+                                rx.badge(r["vol_ratio_str"], color_scheme=rx.cond(r["vol_up"], "green", "gray"), variant="soft", size="1")
+                            ),
+                            rx.table.cell(r["close_str"]),
+                            rx.table.cell(r["mktcap_str"]),
+                            rx.table.cell(
+                                rx.button(
+                                    "조회", size="1", variant="soft", color_scheme="blue",
+                                    on_click=State.goto_lookup_from_leaders(r["code"], r["is_us"]),
+                                )
+                            ),
+                        ),
+                    )
+                ),
+                variant="surface",
+                width="100%",
+            ),
+        ),
+        width="100%",
+        spacing="0",
     )
 
 

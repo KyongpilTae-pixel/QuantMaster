@@ -253,7 +253,7 @@ class TestTimeout:
         monkeypatch.setattr(dl, "fetch_kr_stock_listing", lambda m, mc=0: self._make_listing_2())
 
         def hanging(args):
-            time.sleep(999)   # 무한 대기 시뮬레이션
+            time.sleep(999)
 
         monkeypatch.setattr(ss, "_calc_stock", hanging)
 
@@ -263,9 +263,10 @@ class TestTimeout:
 
         assert result == [], "hang된 종목만 있으면 빈 리스트 반환"
         assert elapsed < 3.0, f"타임아웃 초과: {elapsed:.1f}s"
+        assert "응답하지 않아" in result.warning, "타임아웃 경고 메시지가 있어야 함"
 
     def test_partial_results_when_some_hang(self, monkeypatch):
-        """일부 종목이 hang해도 완료된 종목 결과는 정상 반환한다."""
+        """일부 종목이 hang해도 완료된 종목 결과는 정상 반환하고 경고가 포함된다."""
         import time
         import utils.stock_scanner as ss
         import utils.data_loader as dl
@@ -280,7 +281,7 @@ class TestTimeout:
         def selective(args):
             code, name, cap, period = args
             if code == "000660":
-                time.sleep(999)   # SK하이닉스 hang
+                time.sleep(999)
                 return None
             ret_1w = 3.0 if period in ("1M", "3M") else None
             return {
@@ -296,6 +297,7 @@ class TestTimeout:
         codes = [r["code"] for r in result]
         assert "000660" not in codes, "hang된 종목은 결과에 없어야 함"
         assert len(result) >= 1, "완료된 종목은 반환돼야 함"
+        assert "1개" in result.warning, "타임아웃 1개 경고 포함"
 
     def test_executor_does_not_block_after_timeout(self, monkeypatch):
         """shutdown(wait=False)으로 hang 스레드를 기다리지 않고 즉시 반환한다."""
@@ -323,6 +325,99 @@ class TestTimeout:
 
         # shutdown(wait=True)였다면 10초 이상 걸린다
         assert elapsed < 3.0, f"shutdown(wait=False) 미적용: {elapsed:.1f}s"
+
+
+# ── ScanResults 경고 메시지 ───────────────────────────────────────────────────
+
+class TestWarning:
+    """
+    ScanResults는 list 서브클래스로 기존 코드와 완전 호환된다.
+    .warning 속성으로 데이터 수신 문제를 호출자에게 전달한다.
+    """
+
+    def _listing_2(self):
+        return _make_listing(
+            ["005930", "000660"],
+            ["삼성전자", "SK하이닉스"],
+            [300_000, 150_000],
+        )
+
+    def test_is_list_instance(self, monkeypatch):
+        """ScanResults는 list이므로 기존 isinstance 체크가 그대로 통과한다."""
+        from utils.stock_scanner import ScanResults
+        r = ScanResults([1, 2, 3], warning="test")
+        assert isinstance(r, list)
+        assert r == [1, 2, 3]
+        assert r.warning == "test"
+
+    def test_empty_scan_results_equals_empty_list(self, monkeypatch):
+        """경고가 있어도 결과 없으면 == [] 비교가 True다."""
+        from utils.stock_scanner import ScanResults
+        assert ScanResults(warning="문제 발생") == []
+
+    def test_no_warning_when_all_succeed(self, monkeypatch):
+        """정상 완료 시 .warning은 빈 문자열이다."""
+        import utils.stock_scanner as ss
+        import utils.data_loader as dl
+
+        monkeypatch.setattr(dl, "fetch_kr_stock_listing", lambda m, mc=0: self._listing_2())
+
+        def ok(args):
+            code, name, cap, period = args
+            ret_1w = 3.0 if period in ("1M", "3M") else None
+            return {"code": code, "name": name, "close": 100.0,
+                    "ret_pct": 10.0, "ret_1w": ret_1w, "vol_ratio": 1.5, "mktcap_eok": cap}
+
+        monkeypatch.setattr(ss, "_calc_stock", ok)
+        result = ss.scan_stock_momentum("KOSPI", "1M", 0, 30)
+        assert result.warning == "", f"경고 없어야 함: '{result.warning}'"
+
+    def test_warning_when_timeout(self, monkeypatch):
+        """타임아웃 발생 시 .warning에 '응답하지 않아' 문구 포함."""
+        import time
+        import utils.stock_scanner as ss
+        import utils.data_loader as dl
+
+        monkeypatch.setattr(dl, "fetch_kr_stock_listing", lambda m, mc=0: self._listing_2())
+        monkeypatch.setattr(ss, "_calc_stock", lambda a: time.sleep(999))
+
+        result = ss.scan_stock_momentum("KOSPI", "1M", 0, 30, _timeout_s=0.2)
+        assert "응답하지 않아" in result.warning
+
+    def test_warning_when_high_failure_rate(self, monkeypatch):
+        """완료됐지만 None 반환 비율이 40% 초과 시 .warning에 '실패' 문구 포함."""
+        import utils.stock_scanner as ss
+        import utils.data_loader as dl
+
+        listing = _make_listing(
+            ["A", "B", "C", "D", "E"],
+            ["A사", "B사", "C사", "D사", "E사"],
+            [100_000] * 5,
+        )
+        monkeypatch.setattr(dl, "fetch_kr_stock_listing", lambda m, mc=0: listing)
+
+        def mostly_fail(args):
+            code, name, cap, period = args
+            if code == "A":  # 1개만 성공
+                return {"code": code, "name": name, "close": 100.0,
+                        "ret_pct": 5.0, "ret_1w": None, "vol_ratio": 1.0, "mktcap_eok": cap}
+            return None  # 4개 실패 → 80% 실패율
+
+        monkeypatch.setattr(ss, "_calc_stock", mostly_fail)
+        result = ss.scan_stock_momentum("KOSPI", "1M", 0, 30)
+        assert "실패" in result.warning
+
+    def test_warning_accessible_on_empty_result(self, monkeypatch):
+        """.warning은 결과가 비어 있어도 접근 가능하다."""
+        import utils.stock_scanner as ss
+        import utils.data_loader as dl
+
+        monkeypatch.setattr(dl, "fetch_kr_stock_listing", lambda m, mc=0: self._listing_2())
+        monkeypatch.setattr(ss, "_calc_stock", lambda a: None)  # 전부 None
+
+        result = ss.scan_stock_momentum("KOSPI", "1M", 0, 30)
+        assert hasattr(result, "warning")
+        assert isinstance(result.warning, str)
 
 
 # ── is_us 플래그 ─────────────────────────────────────────────────────────────
