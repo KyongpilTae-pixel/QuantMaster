@@ -101,7 +101,8 @@ def fetch_sector_momentum(region: str = "KR") -> list[dict]:
     rows = []
     for code, name, sector in sectors:
         rets = results.get(code, {key: None for key, _, _ in PERIODS})
-        row: dict = {"code": code, "name": name, "sector": sector}
+        row: dict = {"code": code, "name": name, "sector": sector,
+                     "label": f"{sector}({name})"}
         for key, _, _ in PERIODS:
             ret = rets.get(key)
             row[f"ret_{key}"]          = ret if ret is not None else 0.0
