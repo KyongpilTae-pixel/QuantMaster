@@ -229,6 +229,102 @@ class TestCalcStock:
         assert result is None
 
 
+# ── 타임아웃 / hang 방어 ──────────────────────────────────────────────────────
+
+class TestTimeout:
+    """
+    기존 테스트가 _calc_stock을 monkeypatch해 ThreadPoolExecutor 경로를 우회했기 때문에
+    hang 시나리오가 감지되지 않았다. 이 클래스는 실제 executor 경로를 통해 검증한다.
+    """
+
+    def _make_listing_2(self):
+        return _make_listing(
+            ["005930", "000660"],
+            ["삼성전자", "SK하이닉스"],
+            [300_000, 150_000],
+        )
+
+    def test_returns_within_timeout_when_all_hang(self, monkeypatch):
+        """모든 _calc_stock이 무한 대기해도 _timeout_s 이내에 빈 리스트를 반환한다."""
+        import time
+        import utils.stock_scanner as ss
+        import utils.data_loader as dl
+
+        monkeypatch.setattr(dl, "fetch_kr_stock_listing", lambda m, mc=0: self._make_listing_2())
+
+        def hanging(args):
+            time.sleep(999)   # 무한 대기 시뮬레이션
+
+        monkeypatch.setattr(ss, "_calc_stock", hanging)
+
+        start = time.monotonic()
+        result = ss.scan_stock_momentum("KOSPI", "1M", 0, 30, _timeout_s=0.3)
+        elapsed = time.monotonic() - start
+
+        assert result == [], "hang된 종목만 있으면 빈 리스트 반환"
+        assert elapsed < 3.0, f"타임아웃 초과: {elapsed:.1f}s"
+
+    def test_partial_results_when_some_hang(self, monkeypatch):
+        """일부 종목이 hang해도 완료된 종목 결과는 정상 반환한다."""
+        import time
+        import utils.stock_scanner as ss
+        import utils.data_loader as dl
+
+        listing = _make_listing(
+            ["005930", "000660", "009150"],
+            ["삼성전자", "SK하이닉스", "삼성전기"],
+            [300_000, 150_000, 80_000],
+        )
+        monkeypatch.setattr(dl, "fetch_kr_stock_listing", lambda m, mc=0: listing)
+
+        def selective(args):
+            code, name, cap, period = args
+            if code == "000660":
+                time.sleep(999)   # SK하이닉스 hang
+                return None
+            ret_1w = 3.0 if period in ("1M", "3M") else None
+            return {
+                "code": code, "name": name, "close": 100.0,
+                "ret_pct": 10.0, "ret_1w": ret_1w,
+                "vol_ratio": 1.5, "mktcap_eok": cap,
+            }
+
+        monkeypatch.setattr(ss, "_calc_stock", selective)
+
+        result = ss.scan_stock_momentum("KOSPI", "1M", 0, 30, _timeout_s=0.5)
+
+        codes = [r["code"] for r in result]
+        assert "000660" not in codes, "hang된 종목은 결과에 없어야 함"
+        assert len(result) >= 1, "완료된 종목은 반환돼야 함"
+
+    def test_executor_does_not_block_after_timeout(self, monkeypatch):
+        """shutdown(wait=False)으로 hang 스레드를 기다리지 않고 즉시 반환한다."""
+        import time
+        import utils.stock_scanner as ss
+        import utils.data_loader as dl
+
+        monkeypatch.setattr(dl, "fetch_kr_stock_listing", lambda m, mc=0: self._make_listing_2())
+
+        def slow(args):
+            time.sleep(10)
+            code, name, cap, period = args
+            ret_1w = 3.0 if period in ("1M", "3M") else None
+            return {
+                "code": code, "name": name, "close": 100.0,
+                "ret_pct": 5.0, "ret_1w": ret_1w,
+                "vol_ratio": 1.0, "mktcap_eok": cap,
+            }
+
+        monkeypatch.setattr(ss, "_calc_stock", slow)
+
+        start = time.monotonic()
+        ss.scan_stock_momentum("KOSPI", "1M", 0, 30, _timeout_s=0.2)
+        elapsed = time.monotonic() - start
+
+        # shutdown(wait=True)였다면 10초 이상 걸린다
+        assert elapsed < 3.0, f"shutdown(wait=False) 미적용: {elapsed:.1f}s"
+
+
 # ── is_us 플래그 ─────────────────────────────────────────────────────────────
 
 class TestIsUsFlag:

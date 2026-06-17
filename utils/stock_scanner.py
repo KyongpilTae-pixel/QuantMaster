@@ -4,6 +4,7 @@
 당일 급등(세력 탐지)이 아닌 수주/수개월 상승 추세 종목 탐색.
 """
 
+import concurrent.futures as cf
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 
@@ -82,7 +83,8 @@ def scan_stock_momentum(
     period: str = "1M",
     min_mktcap_eok: int = 3_000,
     top_n: int = 30,
-    max_universe: int = 300,
+    max_universe: int = 150,
+    _timeout_s: float = 90,
 ) -> list[dict]:
     """기간별 수익률 상위 종목 스캔 (꾸준한 강세주 발굴).
 
@@ -143,8 +145,19 @@ def scan_stock_momentum(
 
     args_list = [(c, names.get(c, c), caps.get(c, 0.0), period) for c in codes]
 
-    with ThreadPoolExecutor(max_workers=30) as ex:
-        raw = list(ex.map(_calc_stock, args_list))
+    # 30 workers로 Stooq 동시 요청 시 레이트리밋 → hang 발생.
+    # 10 workers + _timeout_s 전체 타임아웃으로 제한; 미완료 스레드는 백그라운드 종료.
+    executor = ThreadPoolExecutor(max_workers=10)
+    futures = [executor.submit(_calc_stock, a) for a in args_list]
+    done, _ = cf.wait(futures, timeout=_timeout_s)
+    executor.shutdown(wait=False)
+
+    raw = []
+    for f in done:
+        try:
+            raw.append(f.result(timeout=0))
+        except Exception:
+            pass
 
     results = [r for r in raw if r is not None]
     results.sort(key=lambda x: x["ret_pct"], reverse=True)
