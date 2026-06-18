@@ -667,6 +667,8 @@ class State(rx.State):
         yield
 
     def set_leaders_market(self, v: str):
+        if v == self.leaders_market:
+            return
         self.leaders_market = v
 
     def set_leaders_period(self, v: str):
@@ -4000,11 +4002,20 @@ def leaders_tab() -> rx.Component:
                     on_click=State.set_leaders_period("3M")),
                 spacing="1",
             ),
-            rx.select(
-                ["KOSPI", "KOSDAQ", "US"],
-                value=State.leaders_market,
-                on_change=State.set_leaders_market,
-                width="110px",
+            rx.hstack(
+                rx.button("KOSPI", size="1",
+                    variant=rx.cond(State.leaders_market == "KOSPI", "solid", "soft"),
+                    color_scheme="violet",
+                    on_click=State.set_leaders_market("KOSPI")),
+                rx.button("KOSDAQ", size="1",
+                    variant=rx.cond(State.leaders_market == "KOSDAQ", "solid", "soft"),
+                    color_scheme="violet",
+                    on_click=State.set_leaders_market("KOSDAQ")),
+                rx.button("US", size="1",
+                    variant=rx.cond(State.leaders_market == "US", "solid", "soft"),
+                    color_scheme="violet",
+                    on_click=State.set_leaders_market("US")),
+                spacing="1",
             ),
             rx.button(
                 "조회",

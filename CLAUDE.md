@@ -90,7 +90,7 @@ QuantMaster/
   - `value=[State.float_var]` 형태(Python 리스트로 감싸기)는 반응형 작동 안 함
 - **State setter**: Reflex 0.8+에서 명시적 setter 메서드 필요
 - **recharts reference_line label**: dict 불가, 문자열만 허용
-- **rx.radio_group value 바인딩 루프**: `value=State.var` + `on_change` 조합 시 Reflex가 상태를 프론트엔드로 보낼 때마다 `on_change`가 재발화 → 무한루프. 일반 `rx.button` 배열로 대체할 것
+- **rx.radio_group / rx.tabs.root / rx.select value 바인딩 루프**: `value=State.var` + `on_change` 조합 시 Reflex가 상태를 프론트엔드로 보낼 때마다 `on_change`가 재발화 → 무한루프 또는 콘텐츠 사라짐 (Reflex 0.8.x, Radix SelectRoot 계열 전체 해당). 해결: `on_change` 제거 + 각 트리거에 `on_click=State.set_xxx("yyy")` 개별 추가. `rx.radio_group` · `rx.select`는 `rx.button` 배열로 대체. setter에 `if v == self.xxx: return` 가드도 함께 추가할 것
 - **List[dict] in-place 변경 루프**: `sorted_data`가 `leaders_data_raw`와 dict 객체를 공유할 때 `item["rank"]=i+1` 직접 변경 → Reflex가 raw도 변경됐다고 감지 → 루프. `{**item, "rank": i+1}` 새 dict 생성으로 해결
 - **프로세스 종료**: `cmd //c "taskkill /f /im python.exe & taskkill /f /im node.exe"`
 
@@ -166,3 +166,4 @@ pytest tests/test_data_loader.py -m integration -v
 | rx.cond(False) 내 버튼 이벤트 미등록 | `display=rx.cond(...)` CSS 토글로 대체 |
 | rx.foreach 내 dict var 비교 (`> 0`) TypeError | List[dict]에 bool 플래그 미리 계산 후 저장 |
 | add_to_holdings 버튼 무반응 | selected_* 14개 필드에 선택 시점 메타 저장 방식으로 전환 |
+| rx.select value+on_change 무한루프 (당일주도주) | `rx.select` → `rx.button` 배열 교체 + setter에 동일값 가드 |
