@@ -589,6 +589,8 @@ class State(rx.State):
         yield
 
     def set_tab(self, tab: str):
+        if not tab or tab == self.active_tab:
+            return
         self.active_tab = tab
         if tab == "history":
             from utils.scan_db import load_run_list
@@ -5059,14 +5061,22 @@ def main_content() -> rx.Component:
         app_header(),
         rx.tabs.root(
         rx.tabs.list(
-            rx.tabs.trigger("시장모멘텀", value="momentum"),
-            rx.tabs.trigger("섹터모멘텀", value="sector"),
-            rx.tabs.trigger("당일주도주", value="leaders"),
-            rx.tabs.trigger("스캐너", value="scanner"),
-            rx.tabs.trigger("분석", value="analysis"),
-            rx.tabs.trigger("종목조회", value="lookup"),
-            rx.tabs.trigger("포트폴리오", value="portfolio"),
-            rx.tabs.trigger("히스토리", value="history"),
+            rx.tabs.trigger("시장모멘텀", value="momentum",
+                on_click=State.set_tab("momentum")),
+            rx.tabs.trigger("섹터모멘텀", value="sector",
+                on_click=State.set_tab("sector")),
+            rx.tabs.trigger("당일주도주", value="leaders",
+                on_click=State.set_tab("leaders")),
+            rx.tabs.trigger("스캐너", value="scanner",
+                on_click=State.set_tab("scanner")),
+            rx.tabs.trigger("분석", value="analysis",
+                on_click=State.set_tab("analysis")),
+            rx.tabs.trigger("종목조회", value="lookup",
+                on_click=State.set_tab("lookup")),
+            rx.tabs.trigger("포트폴리오", value="portfolio",
+                on_click=State.set_tab("portfolio")),
+            rx.tabs.trigger("히스토리", value="history",
+                on_click=State.set_tab("history")),
             overflow_x="auto",
             white_space="nowrap",
             width="100%",
@@ -5104,7 +5114,6 @@ def main_content() -> rx.Component:
             value="sector",
         ),
         value=State.active_tab,
-        on_change=State.set_tab,
         width="100%",
         ),
         spacing="0",
