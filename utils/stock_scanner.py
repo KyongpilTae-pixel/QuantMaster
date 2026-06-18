@@ -101,6 +101,7 @@ def scan_stock_momentum(
     top_n: int = 30,
     max_universe: int = 150,
     _timeout_s: float = 90,
+    progress_fn=None,
 ) -> "ScanResults":
     """기간별 수익률 상위 종목 스캔 (꾸준한 강세주 발굴).
 
@@ -163,25 +164,37 @@ def scan_stock_momentum(
     args_list = [(c, names.get(c, c), caps.get(c, 0.0), period) for c in codes]
 
     total_requested = len(args_list)
+    if progress_fn:
+        progress_fn(0, total_requested)
 
-    # 30 workers로 Stooq 동시 요청 시 레이트리밋 → hang 발생.
-    # 10 workers + _timeout_s 전체 타임아웃으로 제한; 미완료 스레드는 백그라운드 종료.
+    # 10 workers + as_completed로 순차 결과 수집 + progress 콜백 지원
+    import time as _time
     executor = ThreadPoolExecutor(max_workers=10)
     futures = [executor.submit(_calc_stock, a) for a in args_list]
-    done, not_done = cf.wait(futures, timeout=_timeout_s)
-    executor.shutdown(wait=False)
-
-    timed_out = len(not_done)
+    deadline = _time.monotonic() + _timeout_s
 
     raw = []
-    for f in done:
-        try:
-            raw.append(f.result(timeout=0))
-        except Exception:
-            pass
+    not_done_count = 0
+    completed_count = 0
+    try:
+        for f in cf.as_completed(futures, timeout=_timeout_s):
+            try:
+                raw.append(f.result(timeout=0))
+            except Exception:
+                pass
+            completed_count += 1
+            if progress_fn:
+                progress_fn(completed_count, total_requested)
+            if _time.monotonic() >= deadline:
+                break
+    except cf.TimeoutError:
+        not_done_count = total_requested - completed_count
+    executor.shutdown(wait=False)
+
+    timed_out = not_done_count
 
     failed = len([r for r in raw if r is None])
-    completed = len(done)
+    completed = completed_count
 
     # ── 경고 메시지 조립 ────────────────────────────────────────────
     warn_parts: list[str] = []

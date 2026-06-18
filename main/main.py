@@ -9,7 +9,19 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import asyncio
 import math
+import logging
+from datetime import datetime as _now
 from typing import List
+
+_log = logging.getLogger("leaders_debug")
+logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(name)s %(message)s")
+
+
+def _dbg(msg: str):
+    """콘솔에 타임스탬프와 함께 디버그 메시지 출력."""
+    line = f"[DBG {_now.now().strftime('%H:%M:%S.%f')[:-3]}] {msg}\n"
+    sys.stdout.buffer.write(line.encode("utf-8", errors="replace"))
+    sys.stdout.flush()
 
 import reflex as rx
 from pydantic import BaseModel
@@ -298,6 +310,7 @@ class State(rx.State):
     # 당일주도주 기간 확장
     leaders_period: str = "1D"            # "1D" | "1W" | "1M" | "2M" | "3M"
     leaders_multi_results: List[dict] = []
+    leaders_scan_progress: str = ""       # 기간 모멘텀 스캔 진행 메시지
 
     # UI state
     is_scanning: bool = False
@@ -311,6 +324,7 @@ class State(rx.State):
     # ------------------------------------------------------------------
 
     def set_market(self, value: str):
+        _dbg(f"set_market CALLED  v={value!r}  current={self.market!r}")
         self.market = value
 
     def set_vwap_period(self, value: str):
@@ -327,6 +341,7 @@ class State(rx.State):
         self.budget_input = value
 
     def set_scan_mode(self, value: str):
+        _dbg(f"set_scan_mode CALLED  v={value!r}  current={self.scan_mode!r}")
         self.scan_mode = value
         self.status_msg = ""
 
@@ -559,6 +574,31 @@ class State(rx.State):
             round(total_pnl / total_investment * 100, 1) if total_investment > 0 else 0.0
         )
 
+    def load_leaders_from_cache_on_init(self):
+        """서버 재시작 시 오늘 캐시가 있으면 자동 복구한다."""
+        import os
+        from datetime import datetime as _dt
+        from utils.data_loader import load_leaders_cache, _cache_path
+
+        data = load_leaders_cache(self.leaders_market)
+        if not data:
+            return
+
+        self.leaders_data_raw = data
+        self._apply_filter_and_sort()
+
+        today_prefix = _dt.today().strftime("%Y-%m-%d")
+        date_str = data[0].get("data_date", "") if data else ""
+        self.leaders_data_date = date_str
+        self.leaders_data_is_prev = bool(date_str) and not date_str.startswith(today_prefix)
+        self.leaders_from_cache = True
+        try:
+            path = _cache_path(self.leaders_market)
+            mtime = os.path.getmtime(path)
+            self.leaders_cache_time = _dt.fromtimestamp(mtime).strftime("%H:%M")
+        except Exception:
+            self.leaders_cache_time = ""
+
     def set_sector_region(self, v: str):
         self.sector_region = v
 
@@ -589,6 +629,7 @@ class State(rx.State):
         yield
 
     def set_tab(self, tab: str):
+        _dbg(f"set_tab CALLED  tab={tab!r}  current={self.active_tab!r}")
         if not tab or tab == self.active_tab:
             return
         self.active_tab = tab
@@ -667,11 +708,14 @@ class State(rx.State):
         yield
 
     def set_leaders_market(self, v: str):
+        _dbg(f"set_leaders_market CALLED  v={v!r}  current={self.leaders_market!r}")
         if v == self.leaders_market:
+            _dbg("set_leaders_market SKIPPED (same value)")
             return
         self.leaders_market = v
 
     def set_leaders_period(self, v: str):
+        _dbg(f"set_leaders_period CALLED  v={v!r}  current={self.leaders_period!r}")
         self.leaders_period = v
         self.leaders_multi_results = []
         self.leaders_data = []
@@ -727,14 +771,17 @@ class State(rx.State):
             self._apply_filter_and_sort()
 
     def set_leaders_type_filter(self, v: str):
-        if v == self.leaders_type_filter:
-            return
+        changed = v != self.leaders_type_filter
         self.leaders_type_filter = v
-        if self.leaders_data_raw:
+        if v == "전체":
+            self.leaders_close_buy = False  # 전체 = 모든 필터 해제
+        if (changed or v == "전체") and self.leaders_data_raw:
             self._apply_filter_and_sort()
 
     async def do_fetch_leaders(self):
+        _dbg(f"do_fetch_leaders CALLED  loading={self.leaders_loading}  period={self.leaders_period}  market={self.leaders_market}")
         if self.leaders_loading:
+            _dbg("do_fetch_leaders BLOCKED (already loading)")
             return
         self.leaders_loading = True
         self.leaders_error = ""
@@ -749,73 +796,117 @@ class State(rx.State):
         self.leaders_data_date = ""
         self.leaders_data_is_prev = False
         self.leaders_multi_results = []
+        _dbg(f"do_fetch_leaders YIELDING  period={self.leaders_period}  market={self.leaders_market}")
         yield
+        _dbg("do_fetch_leaders RESUMED after yield - starting async fetch")
 
         import asyncio
         from datetime import datetime as _dt
 
         # ── 기간 선택 모드 (1W / 1M / 2M / 3M) ─────────────────────────────
         if self.leaders_period != "1D":
+            import threading
             from utils.stock_scanner import scan_stock_momentum
-            mkt = self.leaders_market  # "KOSPI" | "KOSDAQ" | "US"
+            mkt = self.leaders_market
+
+            # 스레드 안전 progress 공유
+            _prog: dict = {"current": 0, "total": 0}
+            _lock = threading.Lock()
+
+            def _on_progress(current: int, total: int):
+                with _lock:
+                    _prog["current"] = current
+                    _prog["total"] = total
+
             try:
-                data = await asyncio.to_thread(
-                    scan_stock_momentum, mkt, self.leaders_period, 1_000, 30
+                scan_task = asyncio.create_task(
+                    asyncio.to_thread(
+                        scan_stock_momentum, mkt, self.leaders_period,
+                        1_000, 30, 150, 90, _on_progress
+                    )
                 )
+                # 1초마다 진행 상황을 UI에 반영
+                while not scan_task.done():
+                    with _lock:
+                        curr, tot = _prog["current"], _prog["total"]
+                    if tot > 0:
+                        self.leaders_scan_progress = f"{curr}/{tot}개 종목 처리 중..."
+                    yield
+                    await asyncio.sleep(1)
+
+                data = scan_task.result()
+                self.leaders_scan_progress = ""
                 self.leaders_multi_results = list(data)
                 self.leaders_data_date = _dt.today().strftime("%Y-%m-%d")
                 warn = getattr(data, "warning", "")
                 if warn:
                     self.leaders_error = warn
+                _dbg(f"do_fetch_leaders multi-period DONE  results={len(self.leaders_multi_results)}")
             except Exception as e:
+                _dbg(f"do_fetch_leaders multi-period ERROR  {e}")
                 self.leaders_error = str(e)
+                self.leaders_scan_progress = ""
             finally:
+                _dbg("do_fetch_leaders multi-period FINALLY  loading=False")
                 self.leaders_loading = False
             return
 
         # ── 당일(1D) 모드 — 기존 로직 ────────────────────────────────────
         from utils.data_loader import fetch_leaders_combined
+        _dbg(f"do_fetch_leaders 1D fetch START  market={self.leaders_market}")
 
         try:
             data = await asyncio.to_thread(
                 fetch_leaders_combined, self.leaders_market
             )
+            _dbg(f"do_fetch_leaders fetch_leaders_combined DONE  items={len(data)}")
             # KR: 연속 등장 횟수 계산
             if self.leaders_market in ("KOSPI", "KOSDAQ"):
                 from utils.data_loader import compute_consecutive_days
                 data = await asyncio.to_thread(
                     compute_consecutive_days, self.leaders_market, data
                 )
+                _dbg(f"do_fetch_leaders compute_consecutive_days DONE  items={len(data)}")
             else:
                 # US: consecutive_days 필드 기본값
                 data = [{**item, "consecutive_days": 1, "has_streak": False, "streak_hot": False} for item in data]
 
             self.leaders_data_raw = data
             self._apply_filter_and_sort()
+            _dbg(f"do_fetch_leaders _apply_filter_and_sort DONE  leaders_data={len(self.leaders_data)}")
             # 데이터 기준일 추출 및 전일 여부 판단
             today_prefix = _dt.today().strftime("%Y-%m-%d")
             date_str = data[0].get("data_date", "") if data else ""
             self.leaders_data_date = date_str
             self.leaders_data_is_prev = bool(date_str) and not date_str.startswith(today_prefix)
+            _dbg(f"do_fetch_leaders date={date_str!r}  is_prev={self.leaders_data_is_prev}")
             # KR: 당일 데이터일 때만 캐시 저장 + 일별 리포트 갱신
             if self.leaders_market in ("KOSPI", "KOSDAQ") and not self.leaders_data_is_prev:
+                _dbg("do_fetch_leaders saving cache...")
                 from utils.data_loader import save_leaders_cache
                 await asyncio.to_thread(save_leaders_cache, self.leaders_market, data)
+                _dbg("do_fetch_leaders cache saved. appending daily report...")
                 try:
                     from utils.report_generator import append_to_daily_report
                     await asyncio.to_thread(append_to_daily_report, self.leaders_market, data)
-                except Exception:
+                    _dbg("do_fetch_leaders daily report done")
+                except Exception as rep_e:
+                    _dbg(f"do_fetch_leaders daily report ERROR (ignored)  {rep_e}")
                     pass  # 리포트 실패는 UI에 영향 주지 않음
         except Exception as e:
+            _dbg(f"do_fetch_leaders EXCEPTION  {e}")
             self.leaders_error = str(e)
         finally:
+            _dbg(f"do_fetch_leaders FINALLY  loading=False  data_items={len(self.leaders_data)}")
             self.leaders_loading = False
+        _dbg("do_fetch_leaders FUNCTION END")
 
     async def do_refresh_leaders_quick(self):
         """기간 모멘텀 결과의 기존 30종목 가격만 재조회 (빠른 갱신).
 
         전체 유니버스를 재스캔하지 않고 이미 발굴된 종목의 수익률을 최신화한다.
         """
+        _dbg(f"do_refresh_leaders_quick CALLED  loading={self.leaders_loading}  results={len(self.leaders_multi_results)}")
         if self.leaders_loading or not self.leaders_multi_results:
             return
         self.leaders_loading = True
@@ -838,6 +929,7 @@ class State(rx.State):
             self.leaders_loading = False
 
     async def do_compute_score_b(self):
+        _dbg(f"do_compute_score_b CALLED  raw_items={len(self.leaders_data_raw)}")
         if not self.leaders_data_raw:
             return
         # Reflex 리액티브 래퍼를 순수 Python 객체로 변환 후 스레드에 전달
@@ -4060,7 +4152,7 @@ def leaders_tab() -> rx.Component:
                     ),
                     width="100%", align_items="center", spacing="2",
                 ),
-                # ── 행2: 종류 필터 + 종가매매 후보 ─────────────────
+                # ── 행2: 종류 필터 ──────────────────────────────────
                 rx.hstack(
                     rx.text("종류:", size="2", color="gray", weight="medium"),
                     rx.button("전체", size="1", color_scheme="gray",
@@ -4072,7 +4164,11 @@ def leaders_tab() -> rx.Component:
                     rx.button("일반주", size="1", color_scheme="green",
                         on_click=State.set_leaders_type_filter("일반주"),
                         variant=rx.cond(State.leaders_type_filter == "일반주", "solid", "soft")),
-                    rx.separator(orientation="vertical", size="1"),
+                    width="100%", align_items="center", spacing="2",
+                ),
+                # ── 행3: 추가 필터 (독립 레벨) ──────────────────────
+                rx.hstack(
+                    rx.text("필터:", size="2", color="gray", weight="medium"),
                     rx.button(
                         "종가매매 후보",
                         on_click=State.toggle_leaders_close_buy,
@@ -4162,10 +4258,21 @@ def leaders_tab() -> rx.Component:
             State.leaders_period != "1D",
             rx.cond(
                 State.leaders_loading,
-                rx.hstack(
-                    rx.spinner(size="3"),
-                    rx.text(State.leaders_market + " " + State.leaders_period + " 모멘텀 조회 중...", color="gray"),
-                    spacing="2", align="center", padding_top="40px",
+                rx.vstack(
+                    rx.hstack(
+                        rx.spinner(size="3"),
+                        rx.text(State.leaders_market + " " + State.leaders_period + " 모멘텀 조회 중...", color="gray"),
+                        spacing="2", align="center",
+                    ),
+                    rx.cond(
+                        State.leaders_scan_progress != "",
+                        rx.text(
+                            State.leaders_scan_progress,
+                            size="2", color="blue", weight="medium",
+                        ),
+                        rx.text("종목 데이터 수집 준비 중...", size="1", color="gray"),
+                    ),
+                    align="center", spacing="2", padding_top="40px",
                 ),
                 rx.cond(
                     State.leaders_multi_results.length() > 0,
@@ -5156,4 +5263,8 @@ app = rx.App(
         radius="medium",
     )
 )
-app.add_page(index, title="QuantMaster Pro", on_load=State.load_holdings_from_db)
+app.add_page(
+    index,
+    title="QuantMaster Pro",
+    on_load=[State.load_holdings_from_db, State.load_leaders_from_cache_on_init],
+)
