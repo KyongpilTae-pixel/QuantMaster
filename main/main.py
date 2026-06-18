@@ -793,10 +793,15 @@ class State(rx.State):
             date_str = data[0].get("data_date", "") if data else ""
             self.leaders_data_date = date_str
             self.leaders_data_is_prev = bool(date_str) and not date_str.startswith(today_prefix)
-            # KR: 당일 데이터일 때만 캐시 저장 (전일 캐시를 오늘 것으로 덮어쓰지 않음)
+            # KR: 당일 데이터일 때만 캐시 저장 + 일별 리포트 갱신
             if self.leaders_market in ("KOSPI", "KOSDAQ") and not self.leaders_data_is_prev:
                 from utils.data_loader import save_leaders_cache
                 await asyncio.to_thread(save_leaders_cache, self.leaders_market, data)
+                try:
+                    from utils.report_generator import append_to_daily_report
+                    await asyncio.to_thread(append_to_daily_report, self.leaders_market, data)
+                except Exception:
+                    pass  # 리포트 실패는 UI에 영향 주지 않음
         except Exception as e:
             self.leaders_error = str(e)
         finally:
