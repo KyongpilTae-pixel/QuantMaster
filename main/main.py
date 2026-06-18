@@ -311,6 +311,8 @@ class State(rx.State):
     leaders_period: str = "1D"            # "1D" | "1W" | "1M" | "2M" | "3M"
     leaders_multi_results: List[dict] = []
     leaders_scan_progress: str = ""       # 기간 모멘텀 스캔 진행 메시지
+    leaders_prefetch_status: str = ""     # 백그라운드 캐싱 진행 메시지
+    leaders_cached_markets: List[str] = []  # 오늘 캐시가 준비된 시장 목록
 
     # UI state
     is_scanning: bool = False
@@ -598,6 +600,16 @@ class State(rx.State):
             self.leaders_cache_time = _dt.fromtimestamp(mtime).strftime("%H:%M")
         except Exception:
             self.leaders_cache_time = ""
+        # 기간 모멘텀 캐시 현황 갱신
+        self._refresh_momentum_cache_status()
+
+    def _refresh_momentum_cache_status(self):
+        """오늘 기간 모멘텀 캐시가 있는 시장 목록을 상태에 반영한다."""
+        from utils.stock_scanner import load_momentum_cache_all
+        self.leaders_cached_markets = [
+            m for m in ("KOSPI", "KOSDAQ", "SP500")
+            if load_momentum_cache_all(m)
+        ]
 
     def set_sector_region(self, v: str):
         self.sector_region = v
@@ -806,26 +818,47 @@ class State(rx.State):
         # ── 기간 선택 모드 (1W / 1M / 2M / 3M) ─────────────────────────────
         if self.leaders_period != "1D":
             import threading
-            from utils.stock_scanner import scan_stock_momentum
-            mkt = self.leaders_market
+            from utils.stock_scanner import (
+                scan_stock_momentum_all_periods,
+                load_momentum_cache_all,
+                save_momentum_cache_all,
+            )
+            mkt    = self.leaders_market
+            period = self.leaders_period
 
-            # 스레드 안전 progress 공유
+            # ── 캐시 먼저 확인 → 즉시 로드 ─────────────────────────
+            cached_all = load_momentum_cache_all(mkt)
+            if cached_all and period in cached_all and cached_all[period]:
+                import os as _os
+                from utils.stock_scanner import _momentum_all_cache_path
+                self.leaders_multi_results = cached_all[period]
+                self.leaders_data_date     = _dt.today().strftime("%Y-%m-%d")
+                self.leaders_from_cache    = True
+                try:
+                    mtime = _os.path.getmtime(_momentum_all_cache_path(mkt))
+                    self.leaders_cache_time = _dt.fromtimestamp(mtime).strftime("%H:%M")
+                except Exception:
+                    self.leaders_cache_time = ""
+                _dbg(f"do_fetch_leaders FROM CACHE  {mkt}/{period}  results={len(cached_all[period])}")
+                self.leaders_loading = False
+                return
+
+            # ── 캐시 없음: 3개월 OHLCV 1회 수집 → 전체 기간 동시 계산 ──
             _prog: dict = {"current": 0, "total": 0}
             _lock = threading.Lock()
 
             def _on_progress(current: int, total: int):
                 with _lock:
                     _prog["current"] = current
-                    _prog["total"] = total
+                    _prog["total"]   = total
 
             try:
                 scan_task = asyncio.create_task(
                     asyncio.to_thread(
-                        scan_stock_momentum, mkt, self.leaders_period,
-                        1_000, 30, 150, 90, _on_progress
+                        scan_stock_momentum_all_periods,
+                        mkt, 1_000, 30, 150, 90, _on_progress,
                     )
                 )
-                # 1초마다 진행 상황을 UI에 반영
                 while not scan_task.done():
                     with _lock:
                         curr, tot = _prog["current"], _prog["total"]
@@ -834,14 +867,24 @@ class State(rx.State):
                     yield
                     await asyncio.sleep(1)
 
-                data = scan_task.result()
+                data_all = scan_task.result()   # dict[str, ScanResults]
                 self.leaders_scan_progress = ""
-                self.leaders_multi_results = list(data)
-                self.leaders_data_date = _dt.today().strftime("%Y-%m-%d")
-                warn = getattr(data, "warning", "")
-                if warn:
-                    self.leaders_error = warn
-                _dbg(f"do_fetch_leaders multi-period DONE  results={len(self.leaders_multi_results)}")
+
+                if data_all:
+                    # 모든 기간 캐시 저장 후 상태 갱신
+                    await asyncio.to_thread(save_momentum_cache_all, mkt, data_all)
+                    self._refresh_momentum_cache_status()
+                    # 현재 선택 기간 표시
+                    self.leaders_multi_results = list(data_all.get(period, []))
+                    self.leaders_data_date     = _dt.today().strftime("%Y-%m-%d")
+                    # 대표 경고 메시지 (어느 기간이든 동일)
+                    for v in data_all.values():
+                        w = getattr(v, "warning", "")
+                        if w:
+                            self.leaders_error = w
+                            break
+
+                _dbg(f"do_fetch_leaders SCANNED  {mkt}  results={len(self.leaders_multi_results)}")
             except Exception as e:
                 _dbg(f"do_fetch_leaders multi-period ERROR  {e}")
                 self.leaders_error = str(e)
@@ -900,6 +943,43 @@ class State(rx.State):
             _dbg(f"do_fetch_leaders FINALLY  loading=False  data_items={len(self.leaders_data)}")
             self.leaders_loading = False
         _dbg("do_fetch_leaders FUNCTION END")
+
+    async def do_prefetch_momentum_bg(self):
+        """서버 시작 시 KOSPI/KOSDAQ 기간 모멘텀 캐시를 백그라운드로 미리 수집한다.
+
+        오늘 캐시가 없는 시장만 스캔하며, 완료된 시장부터 즉시 로드 가능해진다.
+        다중 사용자 환경에서도 파일 캐시를 공유하므로 1회 수집으로 전체 수혜.
+        """
+        import asyncio as _aio
+        from utils.stock_scanner import (
+            scan_stock_momentum_all_periods,
+            load_momentum_cache_all,
+            save_momentum_cache_all,
+        )
+
+        markets = ["KOSPI", "KOSDAQ"]
+        need = [m for m in markets if not load_momentum_cache_all(m)]
+        if not need:
+            self._refresh_momentum_cache_status()
+            return
+
+        total = len(need)
+        for idx, market in enumerate(need, 1):
+            self.leaders_prefetch_status = f"기간 데이터 캐싱 중... {market} ({idx}/{total})"
+            yield
+            try:
+                data_all = await _aio.to_thread(
+                    scan_stock_momentum_all_periods, market, 1_000, 30, 150, 90
+                )
+                if data_all:
+                    await _aio.to_thread(save_momentum_cache_all, market, data_all)
+                    self._refresh_momentum_cache_status()
+                    _dbg(f"do_prefetch_momentum_bg DONE  {market}")
+            except Exception as e:
+                _dbg(f"do_prefetch_momentum_bg ERROR  {market}  {e}")
+            yield
+
+        self.leaders_prefetch_status = ""
 
     async def do_refresh_leaders_quick(self):
         """기간 모멘텀 결과의 기존 30종목 가격만 재조회 (빠른 갱신).
@@ -4076,19 +4156,51 @@ def leaders_tab() -> rx.Component:
                     variant=rx.cond(State.leaders_period == "1D", "solid", "soft"),
                     color_scheme="gray",
                     on_click=State.set_leaders_period("1D")),
-                rx.button("1주",   size="1",
+                rx.button(
+                    rx.hstack(
+                        rx.text("1주"),
+                        rx.cond(State.leaders_cached_markets.contains(State.leaders_market),
+                            rx.badge("✓", color_scheme="green", variant="soft", radius="full"),
+                            rx.fragment()),
+                        spacing="1", align="center",
+                    ),
+                    size="1",
                     variant=rx.cond(State.leaders_period == "1W", "solid", "soft"),
                     color_scheme="blue",
                     on_click=State.set_leaders_period("1W")),
-                rx.button("1개월", size="1",
+                rx.button(
+                    rx.hstack(
+                        rx.text("1개월"),
+                        rx.cond(State.leaders_cached_markets.contains(State.leaders_market),
+                            rx.badge("✓", color_scheme="green", variant="soft", radius="full"),
+                            rx.fragment()),
+                        spacing="1", align="center",
+                    ),
+                    size="1",
                     variant=rx.cond(State.leaders_period == "1M", "solid", "soft"),
                     color_scheme="blue",
                     on_click=State.set_leaders_period("1M")),
-                rx.button("2개월", size="1",
+                rx.button(
+                    rx.hstack(
+                        rx.text("2개월"),
+                        rx.cond(State.leaders_cached_markets.contains(State.leaders_market),
+                            rx.badge("✓", color_scheme="green", variant="soft", radius="full"),
+                            rx.fragment()),
+                        spacing="1", align="center",
+                    ),
+                    size="1",
                     variant=rx.cond(State.leaders_period == "2M", "solid", "soft"),
                     color_scheme="blue",
                     on_click=State.set_leaders_period("2M")),
-                rx.button("3개월", size="1",
+                rx.button(
+                    rx.hstack(
+                        rx.text("3개월"),
+                        rx.cond(State.leaders_cached_markets.contains(State.leaders_market),
+                            rx.badge("✓", color_scheme="green", variant="soft", radius="full"),
+                            rx.fragment()),
+                        spacing="1", align="center",
+                    ),
+                    size="1",
                     variant=rx.cond(State.leaders_period == "3M", "solid", "soft"),
                     color_scheme="blue",
                     on_click=State.set_leaders_period("3M")),
@@ -4118,6 +4230,17 @@ def leaders_tab() -> rx.Component:
             width="100%",
             align_items="center",
             spacing="3",
+        ),
+        # ── 백그라운드 캐싱 상태 바 ──────────────────────────────
+        rx.cond(
+            State.leaders_prefetch_status != "",
+            rx.hstack(
+                rx.spinner(size="1"),
+                rx.text(State.leaders_prefetch_status, size="1", color="gray"),
+                spacing="2", align="center",
+                padding_x="2px",
+            ),
+            rx.fragment(),
         ),
         # ── 행1: 정렬 + B점수 계산 ───────────────────────────────
         rx.cond(
@@ -5266,5 +5389,5 @@ app = rx.App(
 app.add_page(
     index,
     title="QuantMaster Pro",
-    on_load=[State.load_holdings_from_db, State.load_leaders_from_cache_on_init],
+    on_load=[State.load_holdings_from_db, State.load_leaders_from_cache_on_init, State.do_prefetch_momentum_bg],
 )
