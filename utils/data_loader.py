@@ -7,6 +7,7 @@ NAVER Finance 기반 시장 데이터 로더 (한국 + 미국).
 import json
 import os
 import time
+import concurrent.futures as _cf
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 
@@ -435,33 +436,43 @@ _kr_etf_listing_cache: pd.DataFrame | None = None
 _kr_etn_listing_cache: pd.DataFrame | None = None
 
 
+def _fdr_listing_bounded(key: str, timeout: float = 15.0) -> pd.DataFrame:
+    """fdr.StockListing을 최대 timeout초 내에 실행. 초과하면 빈 DataFrame 반환.
+
+    fdr.StockListing은 내부적으로 타임아웃 없이 HTTP 요청을 수행하므로
+    직접 호출하면 네트워크 문제 시 무한 hang이 발생함.
+    """
+    _ex = ThreadPoolExecutor(max_workers=1)
+    try:
+        return _ex.submit(fdr.StockListing, key).result(timeout=timeout)
+    except Exception:
+        return pd.DataFrame()
+    finally:
+        _ex.shutdown(wait=False)
+
+
 def _get_kr_listing() -> pd.DataFrame:
     global _kr_listing_cache
     if _kr_listing_cache is None:
-        try:
-            _kr_listing_cache = fdr.StockListing("KRX")
-        except Exception:
-            return pd.DataFrame()  # 실패 시 캐시하지 않고 빈 DataFrame 반환
+        result = _fdr_listing_bounded("KRX")
+        if not result.empty:
+            _kr_listing_cache = result
+        else:
+            return pd.DataFrame()  # 실패 시 캐시하지 않음
     return _kr_listing_cache
 
 
 def _get_kr_etf_listing() -> pd.DataFrame:
     global _kr_etf_listing_cache
     if _kr_etf_listing_cache is None:
-        try:
-            _kr_etf_listing_cache = fdr.StockListing("ETF/KR")
-        except Exception:
-            _kr_etf_listing_cache = pd.DataFrame()
+        _kr_etf_listing_cache = _fdr_listing_bounded("ETF/KR")
     return _kr_etf_listing_cache
 
 
 def _get_kr_etn_listing() -> pd.DataFrame:
     global _kr_etn_listing_cache
     if _kr_etn_listing_cache is None:
-        try:
-            _kr_etn_listing_cache = fdr.StockListing("ETN/KR")
-        except Exception:
-            _kr_etn_listing_cache = pd.DataFrame()
+        _kr_etn_listing_cache = _fdr_listing_bounded("ETN/KR")
     return _kr_etn_listing_cache
 
 
@@ -1027,11 +1038,16 @@ def fetch_leaders_combined(market: str = "KOSPI", top_n: int = 30) -> list[dict]
             return cached
         raise RuntimeError(f"{day_name}입니다 — {market} 이전 거래일 캐시 없음. {_NO_CACHE_HINT}")
 
-    with ThreadPoolExecutor(max_workers=2) as ex:
-        vol_fut  = ex.submit(fetch_market_leaders, "volume", market, top_n)
-        rise_fut = ex.submit(fetch_market_leaders, "rise",   market, top_n)
-        vol_list  = vol_fut.result()
-        rise_list = rise_fut.result()
+    _ex_main = ThreadPoolExecutor(max_workers=2)
+    try:
+        vol_fut  = _ex_main.submit(fetch_market_leaders, "volume", market, top_n)
+        rise_fut = _ex_main.submit(fetch_market_leaders, "rise",   market, top_n)
+        vol_list  = vol_fut.result(timeout=15)
+        rise_list = rise_fut.result(timeout=15)
+    except Exception:
+        vol_list, rise_list = [], []
+    finally:
+        _ex_main.shutdown(wait=False)
 
     # 장 시작 전 또는 공휴일: NAVER 빈 결과 → 직전 거래일 캐시로 대체
     if not vol_list and not rise_list:
@@ -1107,10 +1123,18 @@ def fetch_leaders_combined(market: str = "KOSPI", top_n: int = 30) -> list[dict]
     for i, item in enumerate(top):
         item["rank"] = i + 1
 
-    # 시가총액 + 고가 근처 여부 병렬 조회
+    # 시가총액 + 고가 근처 여부 병렬 조회 (timeout=20s)
     codes = [item["code"] for item in top]
-    with ThreadPoolExecutor(max_workers=10) as ex:
-        extra_results = list(ex.map(_get_leaders_extra, codes))
+    _ex_extra = ThreadPoolExecutor(max_workers=10)
+    _futs = [_ex_extra.submit(_get_leaders_extra, c) for c in codes]
+    done_extra, _ = _cf.wait(_futs, timeout=20)
+    _ex_extra.shutdown(wait=False)
+    extra_results = []
+    for idx, f in enumerate(_futs):
+        try:
+            extra_results.append(f.result(timeout=0) if f in done_extra else (codes[idx], "-", False))
+        except Exception:
+            extra_results.append((codes[idx], "-", False))
     extra_map = {code: (mktcap, near_high) for code, mktcap, near_high in extra_results}
     for item in top:
         mktcap, near_high = extra_map.get(item["code"], ("-", False))
