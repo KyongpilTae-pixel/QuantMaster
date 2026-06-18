@@ -15,6 +15,7 @@ import pandas as pd
 _CALENDAR_DAYS: dict[str, int] = {
     "1W":  12,
     "1M":  35,
+    "2M":  65,
     "3M": 100,
 }
 
@@ -22,12 +23,14 @@ _CALENDAR_DAYS: dict[str, int] = {
 _TRADE_DAYS: dict[str, int] = {
     "1W":  5,
     "1M": 20,
+    "2M": 40,
     "3M": 60,
 }
 
 PERIOD_LABELS: dict[str, str] = {
     "1W": "1주",
     "1M": "1개월",
+    "2M": "2개월",
     "3M": "3개월",
 }
 
@@ -222,3 +225,80 @@ def scan_stock_momentum(
         r["has_ret_1w"]      = ret1w is not None
 
     return ScanResults(top, warning=warning)
+
+
+def refresh_stock_momentum(
+    existing: list[dict],
+    period: str = "1M",
+    _timeout_s: float = 60,
+) -> "ScanResults":
+    """기존 스캔 결과의 종목 코드만 다시 조회해 수익률을 최신화한다.
+
+    전체 유니버스(150종목)를 재스캔하지 않고 이미 발굴된 30종목만 재조회하므로
+    훨씬 빠르다 (~10초).
+
+    Args:
+        existing: scan_stock_momentum 이 반환한 기존 결과 list[dict].
+        period:   재조회 기간. 기존과 다른 기간으로 변환도 가능.
+        _timeout_s: 전체 타임아웃(초). 30종목이라 기본 60초면 충분.
+    Returns:
+        ScanResults — 수익률 내림차순으로 재정렬된 결과.
+    """
+    if period not in _CALENDAR_DAYS:
+        period = "1M"
+
+    if not existing:
+        return ScanResults(warning="갱신할 기존 결과가 없습니다.")
+
+    is_us = existing[0].get("is_us", False)
+    args_list = [
+        (r["code"], r["name"], r.get("mktcap_eok", 0.0), period)
+        for r in existing
+    ]
+
+    executor = ThreadPoolExecutor(max_workers=10)
+    futures = [executor.submit(_calc_stock, a) for a in args_list]
+    done, not_done = cf.wait(futures, timeout=_timeout_s)
+    executor.shutdown(wait=False)
+
+    timed_out = len(not_done)
+    raw = []
+    for f in done:
+        try:
+            raw.append(f.result(timeout=0))
+        except Exception:
+            pass
+
+    warn_parts: list[str] = []
+    if timed_out > 0:
+        warn_parts.append(f"⏱ {timed_out}개 종목이 {int(_timeout_s)}초 내 응답하지 않아 제외됨")
+    warning = " · ".join(warn_parts)
+
+    results = [r for r in raw if r is not None]
+    results.sort(key=lambda x: x["ret_pct"], reverse=True)
+
+    for i, r in enumerate(results):
+        r["rank"]  = i + 1
+        r["is_us"] = is_us
+
+        r["ret_str"]       = f"{r['ret_pct']:+.2f}%"
+        r["ret_positive"]  = r["ret_pct"] > 0
+        r["vol_ratio_str"] = f"{r['vol_ratio']:.2f}x"
+        r["vol_up"]        = r["vol_ratio"] >= 1.2
+
+        c = r["close"]
+        r["close_str"] = f"{c:,.0f}" if c >= 1 else f"{c:.2f}"
+
+        cap = r.get("mktcap_eok", 0)
+        r["mktcap_str"] = (
+            f"{cap/10000:.1f}조" if cap >= 10_000
+            else f"{cap:,.0f}억"  if cap > 0
+            else "-"
+        )
+
+        ret1w = r.get("ret_1w")
+        r["ret_1w_str"]      = f"{ret1w:+.2f}%" if ret1w is not None else "-"
+        r["ret_1w_positive"] = ret1w is not None and ret1w > 0
+        r["has_ret_1w"]      = ret1w is not None
+
+    return ScanResults(results, warning=warning)

@@ -292,11 +292,11 @@ class State(rx.State):
 
     # 종목 모멘텀 스캔 (scanner 탭)
     stock_momentum_results: List[dict] = []
-    stock_momentum_period: str = "1M"      # "1W" | "1M" | "3M"
+    stock_momentum_period: str = "1M"      # "1W" | "1M" | "2M" | "3M"
     stock_momentum_mktcap: int = 3_000     # 억원
 
     # 당일주도주 기간 확장
-    leaders_period: str = "1D"            # "1D" | "1W" | "1M" | "3M"
+    leaders_period: str = "1D"            # "1D" | "1W" | "1M" | "2M" | "3M"
     leaders_multi_results: List[dict] = []
 
     # UI state
@@ -750,7 +750,7 @@ class State(rx.State):
         import asyncio
         from datetime import datetime as _dt
 
-        # ── 기간 선택 모드 (1W / 1M / 3M) ────────────────────────────────
+        # ── 기간 선택 모드 (1W / 1M / 2M / 3M) ─────────────────────────────
         if self.leaders_period != "1D":
             from utils.stock_scanner import scan_stock_momentum
             mkt = self.leaders_market  # "KOSPI" | "KOSDAQ" | "US"
@@ -802,6 +802,32 @@ class State(rx.State):
                     await asyncio.to_thread(append_to_daily_report, self.leaders_market, data)
                 except Exception:
                     pass  # 리포트 실패는 UI에 영향 주지 않음
+        except Exception as e:
+            self.leaders_error = str(e)
+        finally:
+            self.leaders_loading = False
+
+    async def do_refresh_leaders_quick(self):
+        """기간 모멘텀 결과의 기존 30종목 가격만 재조회 (빠른 갱신).
+
+        전체 유니버스를 재스캔하지 않고 이미 발굴된 종목의 수익률을 최신화한다.
+        """
+        if self.leaders_loading or not self.leaders_multi_results:
+            return
+        self.leaders_loading = True
+        self.leaders_error = ""
+        yield
+        import asyncio
+        try:
+            from utils.stock_scanner import refresh_stock_momentum
+            existing = [dict(r) for r in self.leaders_multi_results]
+            data = await asyncio.to_thread(
+                refresh_stock_momentum, existing, self.leaders_period
+            )
+            self.leaders_multi_results = list(data)
+            warn = getattr(data, "warning", "")
+            if warn:
+                self.leaders_error = warn
         except Exception as e:
             self.leaders_error = str(e)
         finally:
@@ -1438,7 +1464,7 @@ class State(rx.State):
             mkt = mkt_map.get(self.market, self.market)
             if mkt not in ("KOSPI", "KOSDAQ", "SP500"):
                 mkt = "KOSPI"
-            period_lbl = {"1W": "1주", "1M": "1개월", "3M": "3개월"}.get(
+            period_lbl = {"1W": "1주", "1M": "1개월", "2M": "2개월", "3M": "3개월"}.get(
                 self.stock_momentum_period, ""
             )
             self.status_msg = f"{mkt} {period_lbl} 모멘텀 스캔 중... (약 1~2분 소요)"
@@ -1753,6 +1779,7 @@ def sidebar_controls() -> rx.Component:
         rx.text("기간", size="1", color="gray"),
         rx.button("1주",   size="1", variant=rx.cond(State.stock_momentum_period == "1W", "solid", "soft"), on_click=State.set_stock_momentum_period("1W")),
         rx.button("1개월", size="1", variant=rx.cond(State.stock_momentum_period == "1M", "solid", "soft"), on_click=State.set_stock_momentum_period("1M")),
+        rx.button("2개월", size="1", variant=rx.cond(State.stock_momentum_period == "2M", "solid", "soft"), on_click=State.set_stock_momentum_period("2M")),
         rx.button("3개월", size="1", variant=rx.cond(State.stock_momentum_period == "3M", "solid", "soft"), on_click=State.set_stock_momentum_period("3M")),
         rx.separator(orientation="vertical", size="1"),
         rx.text("시총", size="1", color="gray"),
@@ -3961,6 +3988,10 @@ def leaders_tab() -> rx.Component:
                     variant=rx.cond(State.leaders_period == "1M", "solid", "soft"),
                     color_scheme="blue",
                     on_click=State.set_leaders_period("1M")),
+                rx.button("2개월", size="1",
+                    variant=rx.cond(State.leaders_period == "2M", "solid", "soft"),
+                    color_scheme="blue",
+                    on_click=State.set_leaders_period("2M")),
                 rx.button("3개월", size="1",
                     variant=rx.cond(State.leaders_period == "3M", "solid", "soft"),
                     color_scheme="blue",
@@ -4125,49 +4156,75 @@ def leaders_tab() -> rx.Component:
                 ),
                 rx.cond(
                     State.leaders_multi_results.length() > 0,
-                    rx.table.root(
-                        rx.table.header(
-                            rx.table.row(
-                                rx.table.column_header_cell("순위"),
-                                rx.table.column_header_cell("종목명"),
-                                rx.table.column_header_cell("수익률"),
-                                rx.table.column_header_cell("1주수익률"),
-                                rx.table.column_header_cell("거래량비"),
-                                rx.table.column_header_cell("현재가"),
-                                rx.table.column_header_cell("시가총액"),
-                                rx.table.column_header_cell(""),
-                            )
+                    rx.vstack(
+                        # ── 빠른 갱신 / 전체 재스캔 버튼 바 ────────
+                        rx.hstack(
+                            rx.text("기존 결과를 최신화하거나 전체 재스캔을 선택하세요.", size="1", color="gray"),
+                            rx.spacer(),
+                            rx.button(
+                                rx.icon("refresh-cw", size=13), "빠른 갱신",
+                                size="1", variant="soft", color_scheme="green",
+                                loading=State.leaders_loading,
+                                on_click=State.do_refresh_leaders_quick,
+                                title="기존 종목 가격만 재조회 (~10초)",
+                            ),
+                            rx.button(
+                                rx.icon("rotate-ccw", size=13), "전체 재스캔",
+                                size="1", variant="soft", color_scheme="amber",
+                                loading=State.leaders_loading,
+                                on_click=State.do_fetch_leaders,
+                                title="유니버스 150종목 전체 재스캔 (~1~2분)",
+                            ),
+                            width="100%",
+                            spacing="2",
+                            align="center",
                         ),
-                        rx.table.body(
-                            rx.foreach(
-                                State.leaders_multi_results,
-                                lambda r: rx.table.row(
-                                    rx.table.cell(r["rank"]),
-                                    rx.table.cell(rx.text(r["name"], weight="medium")),
-                                    rx.table.cell(
-                                        rx.text(r["ret_str"], color=rx.cond(r["ret_positive"], "green", "red"), weight="medium")
+                        rx.table.root(
+                            rx.table.header(
+                                rx.table.row(
+                                    rx.table.column_header_cell("순위"),
+                                    rx.table.column_header_cell("종목명"),
+                                    rx.table.column_header_cell("수익률"),
+                                    rx.table.column_header_cell("1주수익률"),
+                                    rx.table.column_header_cell("거래량비"),
+                                    rx.table.column_header_cell("현재가"),
+                                    rx.table.column_header_cell("시가총액"),
+                                    rx.table.column_header_cell(""),
+                                )
+                            ),
+                            rx.table.body(
+                                rx.foreach(
+                                    State.leaders_multi_results,
+                                    lambda r: rx.table.row(
+                                        rx.table.cell(r["rank"]),
+                                        rx.table.cell(rx.text(r["name"], weight="medium")),
+                                        rx.table.cell(
+                                            rx.text(r["ret_str"], color=rx.cond(r["ret_positive"], "green", "red"), weight="medium")
+                                        ),
+                                        rx.table.cell(
+                                            rx.cond(
+                                                r["has_ret_1w"],
+                                                rx.text(r["ret_1w_str"], color=rx.cond(r["ret_1w_positive"], "green", "red"), size="1"),
+                                                rx.text("-", color="gray", size="1"),
+                                            )
+                                        ),
+                                        rx.table.cell(
+                                            rx.badge(r["vol_ratio_str"], color_scheme=rx.cond(r["vol_up"], "green", "gray"), variant="soft", size="1")
+                                        ),
+                                        rx.table.cell(r["close_str"]),
+                                        rx.table.cell(r["mktcap_str"]),
+                                        rx.table.cell(
+                                            rx.button("조회", size="1", variant="soft", color_scheme="blue",
+                                                on_click=State.goto_lookup_from_leaders(r["code"], r["is_us"]))
+                                        ),
                                     ),
-                                    rx.table.cell(
-                                        rx.cond(
-                                            r["has_ret_1w"],
-                                            rx.text(r["ret_1w_str"], color=rx.cond(r["ret_1w_positive"], "green", "red"), size="1"),
-                                            rx.text("-", color="gray", size="1"),
-                                        )
-                                    ),
-                                    rx.table.cell(
-                                        rx.badge(r["vol_ratio_str"], color_scheme=rx.cond(r["vol_up"], "green", "gray"), variant="soft", size="1")
-                                    ),
-                                    rx.table.cell(r["close_str"]),
-                                    rx.table.cell(r["mktcap_str"]),
-                                    rx.table.cell(
-                                        rx.button("조회", size="1", variant="soft", color_scheme="blue",
-                                            on_click=State.goto_lookup_from_leaders(r["code"], r["is_us"]))
-                                    ),
-                                ),
-                            )
+                                )
+                            ),
+                            variant="surface",
+                            width="100%",
                         ),
-                        variant="surface",
                         width="100%",
+                        spacing="2",
                     ),
                     rx.callout.root(
                         rx.callout.text("'조회' 버튼을 눌러 기간 모멘텀 종목을 가져오세요."),

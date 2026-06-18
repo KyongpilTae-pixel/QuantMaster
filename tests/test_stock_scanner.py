@@ -36,18 +36,20 @@ class TestConstants:
 
     def test_calendar_days_keys(self):
         from utils.stock_scanner import _CALENDAR_DAYS
-        assert set(_CALENDAR_DAYS.keys()) == {"1W", "1M", "3M"}
+        assert set(_CALENDAR_DAYS.keys()) == {"1W", "1M", "2M", "3M"}
 
     def test_trade_days_values(self):
         from utils.stock_scanner import _TRADE_DAYS
         assert _TRADE_DAYS["1W"] == 5
         assert _TRADE_DAYS["1M"] == 20
+        assert _TRADE_DAYS["2M"] == 40
         assert _TRADE_DAYS["3M"] == 60
 
     def test_period_labels(self):
         from utils.stock_scanner import PERIOD_LABELS
         assert PERIOD_LABELS["1W"] == "1주"
         assert PERIOD_LABELS["1M"] == "1개월"
+        assert PERIOD_LABELS["2M"] == "2개월"
         assert PERIOD_LABELS["3M"] == "3개월"
 
 
@@ -418,6 +420,99 @@ class TestWarning:
         result = ss.scan_stock_momentum("KOSPI", "1M", 0, 30)
         assert hasattr(result, "warning")
         assert isinstance(result.warning, str)
+
+
+# ── refresh_stock_momentum ───────────────────────────────────────────────────
+
+class TestRefreshStockMomentum:
+    """기존 결과의 코드만 재조회해 수익률을 최신화하는 함수 검증."""
+
+    def _existing(self, count=3, is_us=False):
+        return [
+            {"code": f"00{i}000", "name": f"종목{i}", "close": 100.0,
+             "ret_pct": float(i * 5), "ret_1w": 2.0, "vol_ratio": 1.2,
+             "mktcap_eok": 10_000.0, "is_us": is_us,
+             "rank": i, "ret_str": f"+{i*5:.2f}%", "ret_positive": True,
+             "vol_ratio_str": "1.20x", "vol_up": True, "close_str": "100",
+             "mktcap_str": "1.0조", "ret_1w_str": "+2.00%",
+             "ret_1w_positive": True, "has_ret_1w": True}
+            for i in range(1, count + 1)
+        ]
+
+    def test_returns_scan_results(self, monkeypatch):
+        """결과가 ScanResults 인스턴스(list 서브클래스)여야 한다."""
+        import utils.stock_scanner as ss
+        monkeypatch.setattr(ss, "_calc_stock", lambda a: {
+            "code": a[0], "name": a[1], "close": 110.0,
+            "ret_pct": 8.0, "ret_1w": 2.0, "vol_ratio": 1.1, "mktcap_eok": a[2],
+        })
+        result = ss.refresh_stock_momentum(self._existing(), "1M")
+        assert isinstance(result, list)
+        assert hasattr(result, "warning")
+
+    def test_only_fetches_existing_codes(self, monkeypatch):
+        """기존 결과 코드만 _calc_stock 에 전달한다."""
+        import utils.stock_scanner as ss
+        called_codes = []
+
+        def track(args):
+            code, name, cap, period = args
+            called_codes.append(code)
+            return {"code": code, "name": name, "close": 100.0,
+                    "ret_pct": 5.0, "ret_1w": None, "vol_ratio": 1.0, "mktcap_eok": cap}
+
+        monkeypatch.setattr(ss, "_calc_stock", track)
+        existing = self._existing(3)
+        ss.refresh_stock_momentum(existing, "1M")
+        expected_codes = {r["code"] for r in existing}
+        assert set(called_codes) == expected_codes
+
+    def test_results_sorted_by_ret(self, monkeypatch):
+        """반환 결과는 수익률 내림차순으로 정렬된다."""
+        import utils.stock_scanner as ss
+        counter = [10]
+
+        def varying(args):
+            code, name, cap, period = args
+            ret = counter[0]
+            counter[0] -= 3
+            return {"code": code, "name": name, "close": 100.0,
+                    "ret_pct": float(ret), "ret_1w": None, "vol_ratio": 1.0, "mktcap_eok": cap}
+
+        monkeypatch.setattr(ss, "_calc_stock", varying)
+        result = ss.refresh_stock_momentum(self._existing(3), "1M")
+        rets = [r["ret_pct"] for r in result]
+        assert rets == sorted(rets, reverse=True)
+
+    def test_empty_existing_returns_with_warning(self, monkeypatch):
+        """기존 결과가 없으면 빈 리스트 + 경고를 반환한다."""
+        import utils.stock_scanner as ss
+        result = ss.refresh_stock_momentum([], "1M")
+        assert result == []
+        assert result.warning != ""
+
+    def test_2m_period_supported(self, monkeypatch):
+        """2M 기간을 정상 처리한다."""
+        import utils.stock_scanner as ss
+        called_periods = []
+
+        def track_period(args):
+            code, name, cap, period = args
+            called_periods.append(period)
+            return {"code": code, "name": name, "close": 100.0,
+                    "ret_pct": 5.0, "ret_1w": 2.0, "vol_ratio": 1.0, "mktcap_eok": cap}
+
+        monkeypatch.setattr(ss, "_calc_stock", track_period)
+        ss.refresh_stock_momentum(self._existing(2), "2M")
+        assert all(p == "2M" for p in called_periods)
+
+    def test_warning_on_timeout(self, monkeypatch):
+        """타임아웃 발생 시 .warning에 경고 포함."""
+        import time
+        import utils.stock_scanner as ss
+        monkeypatch.setattr(ss, "_calc_stock", lambda a: time.sleep(999))
+        result = ss.refresh_stock_momentum(self._existing(2), "1M", _timeout_s=0.2)
+        assert "응답하지 않아" in result.warning
 
 
 # ── is_us 플래그 ─────────────────────────────────────────────────────────────
