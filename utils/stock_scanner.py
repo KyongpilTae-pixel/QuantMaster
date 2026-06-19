@@ -38,6 +38,11 @@ PERIOD_LABELS: dict[str, str] = {
     "3M": "3개월",
 }
 
+# apply_sort_and_cols 용 내부 상수
+_PERIOD_ORDER = ["1W", "1M", "2M", "3M"]
+_PERIOD_KEYS  = {"1W": "ret_1w", "1M": "ret_1m", "2M": "ret_2m", "3M": "ret_3m"}
+_PERIOD_DISPLAY = {"1W": "1주수익률", "1M": "1개월수익률", "2M": "2개월수익률", "3M": "3개월수익률"}
+
 
 class ScanResults(list):
     """list 서브클래스 — 기존 코드와 완전 호환되면서 경고 메시지를 함께 반환.
@@ -331,26 +336,30 @@ def _momentum_all_cache_path(market: str) -> str:
     return os.path.join(_CACHE_DIR, f"momentum_{market}_{date_str}.json")
 
 
-def load_momentum_cache_all(market: str) -> "dict[str, list[dict]] | None":
-    """오늘 날짜 전체 기간 캐시가 있으면 {"1W": [...], "1M": [...], ...} 반환."""
+def load_momentum_cache_all(market: str) -> "list[dict] | None":
+    """오늘 날짜 전체 기간 캐시(flat list)가 있으면 반환.
+
+    구형 dict-of-lists 포맷({period: [...]})은 None 반환 → 자동 재스캔 유도.
+    """
     path = _momentum_all_cache_path(market)
     if not os.path.exists(path):
         return None
     try:
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
+        if isinstance(data, dict):  # 구형 포맷 → 무효
+            return None
         return data if data else None
     except Exception:
         return None
 
 
-def save_momentum_cache_all(market: str, data_by_period: "dict[str, list]") -> None:
-    """전체 기간 모멘텀 결과를 캐시에 저장하고 30일 이상 된 파일 정리."""
+def save_momentum_cache_all(market: str, rows: "list | ScanResults") -> None:
+    """전체 기간 모멘텀 flat 리스트를 캐시에 저장하고 30일 이상 된 파일 정리."""
     path = _momentum_all_cache_path(market)
     try:
-        serializable = {k: list(v) for k, v in data_by_period.items()}
         with open(path, "w", encoding="utf-8") as f:
-            json.dump(serializable, f, ensure_ascii=False, indent=2)
+            json.dump(list(rows), f, ensure_ascii=False, indent=2)
     except Exception:
         pass
     # 30일 초과 파일 자동 정리
@@ -369,8 +378,8 @@ def save_momentum_cache_all(market: str, data_by_period: "dict[str, list]") -> N
         pass
 
 
-def _calc_stock_all_periods(args: tuple) -> "dict[str, dict] | None":
-    """단일 종목 OHLCV 1회 수집으로 1W/1M/2M/3M 수익률을 동시 계산."""
+def _calc_stock_all_periods(args: tuple) -> "dict | None":
+    """단일 종목 OHLCV 1회 수집으로 1W/1M/2M/3M 수익률을 한 행(flat dict)으로 반환."""
     code, name, mktcap_eok = args
     try:
         end   = datetime.today()
@@ -387,37 +396,34 @@ def _calc_stock_all_periods(args: tuple) -> "dict[str, dict] | None":
         vol_20d   = float(df["Volume"].tail(20).mean())
         vol_ratio = round(vol_5d / vol_20d, 2) if vol_20d > 0 else 1.0
 
-        # 1주 수익률 (1M/2M/3M 부가 컬럼)
-        ret_1w = None
-        if len(df) >= 5:
-            c_1w = float(df["Close"].iloc[-5])
-            if c_1w > 0:
-                ret_1w = round((close_now - c_1w) / c_1w * 100, 2)
-
-        results: dict[str, dict] = {}
+        rets: dict[str, float | None] = {}
         for period, trade_days in _TRADE_DAYS.items():
-            if len(df) < max(trade_days, 20):
-                continue
-            close_start = float(df["Close"].iloc[-trade_days])
-            if close_start == 0:
-                continue
-            ret = round((close_now - close_start) / close_start * 100, 2)
-            results[period] = {
-                "code":       code,
-                "name":       name,
-                "close":      close_now,
-                "ret_pct":    ret,
-                "ret_1w":     ret_1w if period != "1W" else None,
-                "vol_ratio":  vol_ratio,
-                "mktcap_eok": mktcap_eok,
-            }
-        return results if results else None
+            if len(df) >= max(trade_days, 20):
+                cs = float(df["Close"].iloc[-trade_days])
+                rets[period] = round((close_now - cs) / cs * 100, 2) if cs > 0 else None
+            else:
+                rets[period] = None
+
+        if all(v is None for v in rets.values()):
+            return None
+
+        return {
+            "code":       code,
+            "name":       name,
+            "close":      close_now,
+            "ret_1w":     rets.get("1W"),
+            "ret_1m":     rets.get("1M"),
+            "ret_2m":     rets.get("2M"),
+            "ret_3m":     rets.get("3M"),
+            "vol_ratio":  vol_ratio,
+            "mktcap_eok": mktcap_eok,
+        }
     except Exception:
         return None
 
 
 def _format_results(top: list, is_us: bool) -> list:
-    """상위 종목 리스트에 rank·표시용 문자열 필드 추가."""
+    """상위 종목 리스트에 rank·표시용 문자열 필드 추가 (scan_stock_momentum 전용)."""
     for i, r in enumerate(top):
         r["rank"]  = i + 1
         r["is_us"] = is_us
@@ -444,6 +450,40 @@ def _format_results(top: list, is_us: bool) -> list:
     return top
 
 
+def apply_sort_and_cols(
+    rows: list,
+    sort_period: str = "3M",
+    top_n: int = 30,
+) -> "tuple[list, list[str]]":
+    """rows를 sort_period 기준으로 정렬·상위 top_n 추출 후 col1~col4 위치 필드 추가.
+
+    Returns:
+        (sorted_rows, col_labels) — col_labels[0]이 선택된 기간 헤더.
+    """
+    if sort_period not in _PERIOD_KEYS:
+        sort_period = "3M"
+
+    sort_key = _PERIOD_KEYS[sort_period]
+    sorted_rows = sorted(rows, key=lambda x: (x.get(sort_key) or -9999.0), reverse=True)
+    if top_n > 0:
+        sorted_rows = sorted_rows[:top_n]
+
+    # 선택 기간 → col1, 나머지는 1W→1M→2M→3M 순서
+    col_order  = [sort_period] + [p for p in _PERIOD_ORDER if p != sort_period]
+    col_labels = [_PERIOD_DISPLAY[p] for p in col_order]
+
+    result = []
+    for i, row in enumerate(sorted_rows):
+        r = {**row, "rank": i + 1}
+        for j, period in enumerate(col_order, start=1):
+            val = row.get(_PERIOD_KEYS[period])
+            r[f"col{j}_str"] = f"{val:+.2f}%" if val is not None else "-"
+            r[f"col{j}_pos"] = val is not None and val > 0
+        result.append(r)
+
+    return result, col_labels
+
+
 def scan_stock_momentum_all_periods(
     market: str = "KOSPI",
     min_mktcap_eok: int = 1_000,
@@ -451,12 +491,14 @@ def scan_stock_momentum_all_periods(
     max_universe: int = 150,
     _timeout_s: float = 90,
     progress_fn=None,
-) -> "dict[str, ScanResults]":
-    """3개월 OHLCV 1회 수집으로 1W/1M/2M/3M 기간별 TOP N을 동시 반환.
+) -> "ScanResults":
+    """3개월 OHLCV 1회 수집으로 1W/1M/2M/3M 수익률을 한 행에 동시 저장한 평탄 리스트 반환.
+
+    정렬·컬럼 순서 배치는 apply_sort_and_cols() 로 후처리한다.
 
     Returns:
-        {"1W": ScanResults([...]), "1M": ScanResults([...]), ...}
-        각 ScanResults는 list[dict] 호환이며 .warning 속성 포함.
+        ScanResults (flat list) — 각 항목에 ret_1w/ret_1m/ret_2m/ret_3m 포함.
+        top_n 제한은 apply_sort_and_cols() 에서 적용한다 (이 함수는 전체 raw 반환).
     """
     is_us = market not in ("KOSPI", "KOSDAQ")
 
@@ -465,7 +507,7 @@ def scan_stock_momentum_all_periods(
         from utils.data_loader import fetch_kr_stock_listing
         listing = fetch_kr_stock_listing(market, min_mktcap_eok)
         if listing.empty:
-            return {p: ScanResults(warning="종목 목록을 불러오지 못했습니다.") for p in _TRADE_DAYS}
+            return ScanResults(warning="종목 목록을 불러오지 못했습니다.")
 
         cols_lower = {c.lower(): c for c in listing.columns}
         code_col = cols_lower.get("code") or cols_lower.get("symbol", listing.columns[0])
@@ -475,7 +517,7 @@ def scan_stock_momentum_all_periods(
         if cap_col and min_mktcap_eok > 0:
             listing = listing[listing[cap_col].fillna(0) >= min_mktcap_eok * 1e8]
         if listing.empty:
-            return {p: ScanResults(warning="시가총액 조건을 만족하는 종목이 없습니다.") for p in _TRADE_DAYS}
+            return ScanResults(warning="시가총액 조건을 만족하는 종목이 없습니다.")
 
         if max_universe > 0:
             listing = listing.head(max_universe)
@@ -497,7 +539,7 @@ def scan_stock_momentum_all_periods(
             names = dict(zip(sp500[code_col], sp500[name_col]))
             caps = {}
         except Exception:
-            return {p: ScanResults(warning="S&P500 종목 목록을 불러오지 못했습니다.") for p in _TRADE_DAYS}
+            return ScanResults(warning="S&P500 종목 목록을 불러오지 못했습니다.")
 
     args_list = [(c, names.get(c, c), caps.get(c, 0.0)) for c in codes]
     total_requested = len(args_list)
@@ -510,7 +552,7 @@ def scan_stock_momentum_all_periods(
     futures  = [executor.submit(_calc_stock_all_periods, a) for a in args_list]
     deadline = _time.monotonic() + _timeout_s
 
-    per_period: dict[str, list] = {p: [] for p in _TRADE_DAYS}
+    raw_rows: list[dict] = []
     completed_count = 0
     timed_out = 0
     try:
@@ -518,8 +560,7 @@ def scan_stock_momentum_all_periods(
             try:
                 result = f.result(timeout=0)
                 if result:
-                    for period, row in result.items():
-                        per_period[period].append(row)
+                    raw_rows.append(result)
             except Exception:
                 pass
             completed_count += 1
@@ -532,15 +573,22 @@ def scan_stock_momentum_all_periods(
         timed_out = total_requested - completed_count
     executor.shutdown(wait=False)
 
-    # ── 경고 메시지 ─────────────────────────────────────────────────
     warn = f"⏱ {timed_out}개 종목이 {int(_timeout_s)}초 내 응답하지 않아 제외됨" if timed_out > 0 else ""
 
-    # ── 기간별 정렬·TOP N·포맷팅 ────────────────────────────────────
-    output: dict[str, ScanResults] = {}
-    for period, rows in per_period.items():
-        rows.sort(key=lambda x: x["ret_pct"], reverse=True)
-        top = rows[:top_n]
-        _format_results(top, is_us)
-        output[period] = ScanResults(top, warning=warn)
+    # ── 표시용 고정 필드 추가 (정렬·순위·col positions는 apply_sort_and_cols에서) ──
+    formatted: list[dict] = []
+    for r in raw_rows:
+        c = r["close"]
+        cap = r.get("mktcap_eok", 0)
+        formatted.append({
+            **r,
+            "close_str":     f"{c:,.0f}" if c >= 1 else f"{c:.2f}",
+            "mktcap_str":    (f"{cap/10000:.1f}조" if cap >= 10_000
+                              else f"{cap:,.0f}억" if cap > 0 else "-"),
+            "vol_ratio_str": f"{r['vol_ratio']:.2f}x",
+            "vol_up":        r["vol_ratio"] >= 1.2,
+            "is_us":         is_us,
+            "rank":          0,
+        })
 
-    return output
+    return ScanResults(formatted, warning=warn)

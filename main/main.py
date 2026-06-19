@@ -316,13 +316,15 @@ class State(rx.State):
 
     # 기간 모멘텀 전용 탭
     pmom_market: str = "KOSPI"
-    pmom_period: str = "3M"
+    pmom_period: str = "3M"          # 현재 정렬 기준 기간
     pmom_results: List[dict] = []
     pmom_loading: bool = False
     pmom_error: str = ""
     pmom_scan_progress: str = ""
     pmom_from_cache: bool = False
     pmom_cache_time: str = ""
+    # col1~col4 헤더 라벨 (apply_sort_and_cols 결과 — 기본 3M 정렬 순서)
+    pmom_col_labels: List[str] = ["3M수익률", "1주수익률", "1M수익률", "2M수익률"]
 
     # UI state
     is_scanning: bool = False
@@ -827,23 +829,25 @@ class State(rx.State):
         import asyncio
         from datetime import datetime as _dt
 
-        # ── 기간 선택 모드 (1W / 1M / 2M / 3M) ─────────────────────────────
+        # ── 기간 선택 모드 (1W / 1M / 2M / 3M) — 현재 UI 미사용, pmom 탭으로 이전 ──
         if self.leaders_period != "1D":
             import threading
             from utils.stock_scanner import (
                 scan_stock_momentum_all_periods,
                 load_momentum_cache_all,
                 save_momentum_cache_all,
+                apply_sort_and_cols,
             )
             mkt    = self.leaders_market
             period = self.leaders_period
 
             # ── 캐시 먼저 확인 → 즉시 로드 ─────────────────────────
             cached_all = load_momentum_cache_all(mkt)
-            if cached_all and period in cached_all and cached_all[period]:
+            if cached_all:
                 import os as _os
                 from utils.stock_scanner import _momentum_all_cache_path
-                self.leaders_multi_results = cached_all[period]
+                sorted_rows, _ = apply_sort_and_cols(list(cached_all), period, top_n=30)
+                self.leaders_multi_results = sorted_rows
                 self.leaders_data_date     = _dt.today().strftime("%Y-%m-%d")
                 self.leaders_from_cache    = True
                 try:
@@ -851,11 +855,11 @@ class State(rx.State):
                     self.leaders_cache_time = _dt.fromtimestamp(mtime).strftime("%H:%M")
                 except Exception:
                     self.leaders_cache_time = ""
-                _dbg(f"do_fetch_leaders FROM CACHE  {mkt}/{period}  results={len(cached_all[period])}")
+                _dbg(f"do_fetch_leaders FROM CACHE  {mkt}/{period}  results={len(sorted_rows)}")
                 self.leaders_loading = False
                 return
 
-            # ── 캐시 없음: 3개월 OHLCV 1회 수집 → 전체 기간 동시 계산 ──
+            # ── 캐시 없음: 3개월 OHLCV 1회 수집 ─────────────────────
             _prog: dict = {"current": 0, "total": 0}
             _lock = threading.Lock()
 
@@ -879,22 +883,18 @@ class State(rx.State):
                     yield
                     await asyncio.sleep(1)
 
-                data_all = scan_task.result()   # dict[str, ScanResults]
+                data_all = scan_task.result()   # ScanResults (flat list)
                 self.leaders_scan_progress = ""
 
                 if data_all:
-                    # 모든 기간 캐시 저장 후 상태 갱신
                     await asyncio.to_thread(save_momentum_cache_all, mkt, data_all)
                     self._refresh_momentum_cache_status()
-                    # 현재 선택 기간 표시
-                    self.leaders_multi_results = list(data_all.get(period, []))
+                    sorted_rows, _ = apply_sort_and_cols(list(data_all), period, top_n=30)
+                    self.leaders_multi_results = sorted_rows
                     self.leaders_data_date     = _dt.today().strftime("%Y-%m-%d")
-                    # 대표 경고 메시지 (어느 기간이든 동일)
-                    for v in data_all.values():
-                        w = getattr(v, "warning", "")
-                        if w:
-                            self.leaders_error = w
-                            break
+                    w = getattr(data_all, "warning", "")
+                    if w:
+                        self.leaders_error = w
 
                 _dbg(f"do_fetch_leaders SCANNED  {mkt}  results={len(self.leaders_multi_results)}")
             except Exception as e:
@@ -1010,14 +1010,12 @@ class State(rx.State):
         if v == self.pmom_period:
             return
         self.pmom_period = v
-        from utils.stock_scanner import load_momentum_cache_all
-        cached = load_momentum_cache_all(self.pmom_market)
-        if cached and v in cached and cached[v]:
-            self.pmom_results = cached[v]
-            self.pmom_from_cache = True
-        else:
-            self.pmom_results = []
-            self.pmom_from_cache = False
+        if not self.pmom_results:
+            return
+        from utils.stock_scanner import apply_sort_and_cols
+        sorted_rows, labels = apply_sort_and_cols(list(self.pmom_results), v, top_n=30)
+        self.pmom_results = sorted_rows
+        self.pmom_col_labels = labels
 
     async def do_load_pmom(self):
         """기간 모멘텀 탭 진입 시 캐시 즉시 로드, 없으면 스캔 실행."""
@@ -1032,10 +1030,14 @@ class State(rx.State):
             _momentum_all_cache_path,
         )
 
+        from utils.stock_scanner import apply_sort_and_cols
+
         # 캐시 확인 → 즉시 반환
         cached = load_momentum_cache_all(self.pmom_market)
-        if cached and self.pmom_period in cached and cached[self.pmom_period]:
-            self.pmom_results = cached[self.pmom_period]
+        if cached:
+            sorted_rows, labels = apply_sort_and_cols(list(cached), self.pmom_period, top_n=30)
+            self.pmom_results = sorted_rows
+            self.pmom_col_labels = labels
             self.pmom_from_cache = True
             try:
                 mtime = _os.path.getmtime(_momentum_all_cache_path(self.pmom_market))
@@ -1080,7 +1082,9 @@ class State(rx.State):
             if data_all:
                 await _aio.to_thread(save_momentum_cache_all, self.pmom_market, data_all)
                 self._refresh_momentum_cache_status()
-                self.pmom_results = list(data_all.get(self.pmom_period, []))
+                sorted_rows, labels = apply_sort_and_cols(list(data_all), self.pmom_period, top_n=30)
+                self.pmom_results = sorted_rows
+                self.pmom_col_labels = labels
                 self.pmom_from_cache = False
         except Exception as e:
             self.pmom_error = str(e)
@@ -2267,19 +2271,9 @@ def scanner_tab() -> rx.Component:
 
 def pmom_tab() -> rx.Component:
     """기간 모멘텀 전용 탭 — 3개월 슬라이딩 윈도우 캐시에서 즉시 로드."""
-    _period_labels = {"1W": "1주", "1M": "1개월", "2M": "2개월", "3M": "3개월"}
-
     def _period_btn(val: str, label: str):
         return rx.button(
-            rx.hstack(
-                rx.text(label),
-                rx.cond(
-                    State.leaders_cached_markets.contains(State.pmom_market),
-                    rx.badge("✓", color_scheme="green", variant="soft", radius="full"),
-                    rx.fragment(),
-                ),
-                spacing="1", align="center",
-            ),
+            label,
             size="1",
             variant=rx.cond(State.pmom_period == val, "solid", "soft"),
             color_scheme="blue",
@@ -2310,8 +2304,13 @@ def pmom_tab() -> rx.Component:
                 rx.table.row(
                     rx.table.column_header_cell("순위"),
                     rx.table.column_header_cell("종목명"),
-                    rx.table.column_header_cell("수익률"),
-                    rx.table.column_header_cell("1주수익"),
+                    # col1: 정렬 기준 기간 (선택된 기간 → 굵게 강조)
+                    rx.table.column_header_cell(
+                        rx.text(State.pmom_col_labels[0], weight="bold", color="blue")
+                    ),
+                    rx.table.column_header_cell(State.pmom_col_labels[1]),
+                    rx.table.column_header_cell(State.pmom_col_labels[2]),
+                    rx.table.column_header_cell(State.pmom_col_labels[3]),
                     rx.table.column_header_cell("거래량비"),
                     rx.table.column_header_cell("현재가"),
                     rx.table.column_header_cell("시가총액"),
@@ -2324,19 +2323,27 @@ def pmom_tab() -> rx.Component:
                     lambda r: rx.table.row(
                         rx.table.cell(r["rank"]),
                         rx.table.cell(rx.text(r["name"], weight="medium")),
+                        # col1: 선택된 기간 수익률 (굵게)
                         rx.table.cell(
-                            rx.text(r["ret_str"],
-                                color=rx.cond(r["ret_positive"], "green", "red"),
+                            rx.text(r["col1_str"],
+                                color=rx.cond(r["col1_pos"], "green", "red"),
                                 weight="bold")
                         ),
+                        # col2~col4: 나머지 기간 수익률
                         rx.table.cell(
-                            rx.cond(
-                                r["has_ret_1w"],
-                                rx.text(r["ret_1w_str"],
-                                    color=rx.cond(r["ret_1w_positive"], "green", "red"),
-                                    size="1"),
-                                rx.text("-", color="gray", size="1"),
-                            )
+                            rx.text(r["col2_str"],
+                                color=rx.cond(r["col2_pos"], "green", "red"),
+                                size="1")
+                        ),
+                        rx.table.cell(
+                            rx.text(r["col3_str"],
+                                color=rx.cond(r["col3_pos"], "green", "red"),
+                                size="1")
+                        ),
+                        rx.table.cell(
+                            rx.text(r["col4_str"],
+                                color=rx.cond(r["col4_pos"], "green", "red"),
+                                size="1")
                         ),
                         rx.table.cell(
                             rx.badge(r["vol_ratio_str"],
@@ -2392,13 +2399,14 @@ def pmom_tab() -> rx.Component:
                     on_click=State.set_pmom_market("SP500")),
                 spacing="1",
             ),
-            # 기간 선택
+            # 정렬 기준 선택
             rx.hstack(
+                rx.text("정렬:", size="1", color="gray"),
                 _period_btn("1W", "1주"),
                 _period_btn("1M", "1개월"),
                 _period_btn("2M", "2개월"),
                 _period_btn("3M", "3개월"),
-                spacing="1",
+                spacing="1", align="center",
             ),
             width="100%", align="center", spacing="3", wrap="wrap",
         ),
