@@ -203,7 +203,7 @@ class State(rx.State):
     pullback_min_mktcap: int = 3_000         # 최소 시가총액 (억원)
 
     # 리포트 탭
-    report_files: List[dict] = []            # [{date_str, filename, size_kb, file_url}]
+    report_files: List[dict] = []            # [{date_str, filename, size_kb, filepath}]
     report_generating: bool = False
     report_status: str = ""
 
@@ -699,15 +699,19 @@ class State(rx.State):
                 if fn.endswith(".html"):
                     fp = _os.path.join(reports_dir, fn)
                     size_kb = round(_os.path.getsize(fp) / 1024, 1)
-                    # file:// URL for browser open
-                    file_url = "file:///" + fp.replace("\\", "/")
                     files.append({
                         "date_str": fn[:-5],
                         "filename": fn,
                         "size_kb": str(size_kb),
-                        "file_url": file_url,
+                        "filepath": fp,
                     })
         self.report_files = files
+
+    def open_report_file(self, filepath: str):
+        """OS 기본 브라우저로 리포트 HTML 파일 열기 (os.startfile)."""
+        import os as _os
+        if filepath and _os.path.exists(filepath):
+            _os.startfile(filepath)
 
     async def generate_daily_report_event(self):
         self.report_generating = True
@@ -5886,12 +5890,13 @@ def report_tab() -> rx.Component:
             rx.table.cell(rx.text(r["date_str"], weight="medium")),
             rx.table.cell(rx.text(r["size_kb"], " KB", color="gray", size="1")),
             rx.table.cell(
-                rx.link(
+                rx.button(
                     "📂 열기",
-                    href=r["file_url"],
-                    is_external=True,
-                    color="blue",
+                    on_click=State.open_report_file(r["filepath"]),
+                    variant="ghost",
                     size="1",
+                    color_scheme="blue",
+                    cursor="pointer",
                 )
             ),
         )
@@ -5941,7 +5946,7 @@ def report_tab() -> rx.Component:
         # 안내
         rx.text(
             "생성된 리포트는 quantReports/ 폴더에 저장됩니다. "
-            "'📂 열기' 버튼으로 브라우저에서 확인하세요.",
+            "'📂 열기' 버튼을 클릭하면 기본 브라우저로 파일이 열립니다.",
             size="1",
             color="gray",
         ),
