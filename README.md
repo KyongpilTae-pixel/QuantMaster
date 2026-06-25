@@ -84,6 +84,7 @@ QuantMaster/
 │   ├── indicators.py    # 기술적 지표 계산 (VWAP · TWAP · MFI · OBV)
 │   ├── reasoning.py     # 매수 근거 · 매도 가이드 텍스트 생성 (KRW/USD 지원)
 │   ├── scan_db.py       # SQLite CRUD (스캔 저장 · 히스토리 · 보유 종목)
+│   ├── scan_results_tracker.py     # 스캔 발굴 종목 성과 추적 (tracked_picks/tracked_prices DB)
 │   ├── report_generator.py     # 일별 HTML 리포트 생성 (시장개요·주도주·섹터·포트폴리오)
 │   ├── weekly_report_generator.py  # 주간 HTML 리포트 생성
 │   ├── sector_scanner.py       # KODEX/SPDR ETF 섹터 모멘텀
@@ -94,7 +95,9 @@ QuantMaster/
 │   ├── fetch_leaders_daily.py  # 당일주도주 자동수집 (Task Scheduler)
 │   ├── fetch_momentum_daily.py # 기간모멘텀 자동수집 16:00 KST
 │   ├── generate_daily_report.py    # 일별 리포트 자동 생성 16:00 KST
-│   └── generate_weekly_report.py   # 주간 리포트 자동 생성 (금 16:30 KST)
+│   ├── generate_weekly_report.py   # 주간 리포트 자동 생성 (금 16:30 KST)
+│   ├── run_auto_scan.py            # 퀀트+눌림목 자동 스캔 08:30/16:10 KST
+│   └── track_scan_performance.py   # 발굴 종목 현재가 업데이트 16:20 KST
 ├── scanner.py           # 3단계 하이브리드 스캔 + 자동 임계값 완화
 ├── backtester.py        # VWAP 돌파 전략 백테스트 (MDD · Sharpe · 승률)
 ├── rxconfig.py          # Reflex 설정 (app_name = "main")
@@ -325,8 +328,15 @@ QuantMaster Pro
     │       └── 종목명 · 시장 · 매수가 · 현재가 · 수량 · 투자금
     │           손익금액 · 손익률(%) · MFI · VWAP괴리율 · 메모 · [분석]
     │
-    └── 리포트 탭
-        ├── 일별 리포트 생성 버튼 (시장지수개요 + 당일주도주 + 섹터모멘텀 + 포트폴리오손익)
-        ├── 주간 리포트 생성 버튼 (주간시장요약 + 기간모멘텀1W + 주도주누적 + 포트폴리오리뷰)
-        └── 생성된 HTML 파일 목록 (날짜 · 크기 · 📂 열기)
+    ├── 리포트 탭
+    │   ├── 일별 리포트 생성 버튼 (시장지수개요 + 당일주도주 + 섹터모멘텀 + 포트폴리오손익)
+    │   ├── 주간 리포트 생성 버튼 (주간시장요약 + 기간모멘텀1W + 주도주누적 + 포트폴리오리뷰)
+    │   └── 생성된 HTML 파일 목록 (날짜 · 크기 · 📂 열기)
+    │
+    └── 성과추적 탭
+        ├── 요약 카드 (추적 종목 수 · 승률 · 평균 수익률 · 최고 수익 종목)
+        ├── 필터 (모드: 전체/퀀트/눌림목/세력 · 시장: 전체/KOSPI/KOSDAQ/SP500)
+        ├── 발굴 종목 테이블 (발굴일 · 모드 · 시장 · 종목명 · 발굴가 · 현재가 · 수익률 · 경과일)
+        ├── 스캔 실행 버튼 (퀀트+눌림목 즉시 실행)
+        └── 가격 업데이트 버튼 (활성 종목 현재가 일괄 조회)
 ```
