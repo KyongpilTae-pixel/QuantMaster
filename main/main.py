@@ -202,6 +202,11 @@ class State(rx.State):
     pullback_max_rsi: List[float] = [45.0]   # RSI14 상한
     pullback_min_mktcap: int = 3_000         # 최소 시가총액 (억원)
 
+    # 리포트 탭
+    report_files: List[dict] = []            # [{date_str, filename, size_kb, file_url}]
+    report_generating: bool = False
+    report_status: str = ""
+
     # 세력 탐지 분석 차트 데이터
     whale_chart_data: List[dict] = []      # date, OBV, Short_Balance
     whale_highlights: List[dict] = []      # [{x1, x2}] 매집 구간 음영
@@ -671,6 +676,58 @@ class State(rx.State):
             self.load_holdings_from_db()
         elif tab == "pmom":
             return State.do_load_pmom
+        elif tab == "report":
+            self.load_report_files()
+
+    def load_report_files(self):
+        """quantReports/ 폴더의 HTML 파일 목록 로드."""
+        import os as _os
+        reports_dir = _os.path.join(_os.path.dirname(_os.path.dirname(__file__)), "quantReports")
+        files: list[dict] = []
+        if _os.path.isdir(reports_dir):
+            for fn in sorted(_os.listdir(reports_dir), reverse=True):
+                if fn.endswith(".html"):
+                    fp = _os.path.join(reports_dir, fn)
+                    size_kb = round(_os.path.getsize(fp) / 1024, 1)
+                    # file:// URL for browser open
+                    file_url = "file:///" + fp.replace("\\", "/")
+                    files.append({
+                        "date_str": fn[:-5],
+                        "filename": fn,
+                        "size_kb": str(size_kb),
+                        "file_url": file_url,
+                    })
+        self.report_files = files
+
+    async def generate_daily_report_event(self):
+        self.report_generating = True
+        self.report_status = "일별 리포트 생성 중... (약 30~60초 소요)"
+        yield
+        import asyncio
+        try:
+            from utils.report_generator import generate_full_daily_report
+            path = await asyncio.to_thread(generate_full_daily_report)
+            self.report_status = f"완료 → {path}"
+        except Exception as e:
+            self.report_status = f"오류: {e}"
+        finally:
+            self.report_generating = False
+        self.load_report_files()
+
+    async def generate_weekly_report_event(self):
+        self.report_generating = True
+        self.report_status = "주간 리포트 생성 중... (약 30~60초 소요)"
+        yield
+        import asyncio
+        try:
+            from utils.weekly_report_generator import generate_full_weekly_report
+            path = await asyncio.to_thread(generate_full_weekly_report)
+            self.report_status = f"완료 → {path}"
+        except Exception as e:
+            self.report_status = f"오류: {e}"
+        finally:
+            self.report_generating = False
+        self.load_report_files()
 
     def toggle_momentum_1m(self):
         self.momentum_show_1m = not self.momentum_show_1m
@@ -5577,6 +5634,102 @@ def app_header() -> rx.Component:
     )
 
 
+def report_tab() -> rx.Component:
+    """리포트 탭 — 일별/주간 HTML 리포트 생성 및 목록."""
+
+    def _file_row(r: dict) -> rx.Component:
+        return rx.table.row(
+            rx.table.cell(rx.text(r["date_str"], weight="medium")),
+            rx.table.cell(rx.text(r["size_kb"], " KB", color="gray", size="1")),
+            rx.table.cell(
+                rx.link(
+                    "📂 열기",
+                    href=r["file_url"],
+                    is_external=True,
+                    color="blue",
+                    size="1",
+                )
+            ),
+        )
+
+    return rx.vstack(
+        # 헤더
+        rx.hstack(
+            rx.heading("리포트", size="4"),
+            rx.spacer(),
+            rx.button(
+                "일별 리포트 생성",
+                on_click=State.generate_daily_report_event,
+                loading=State.report_generating,
+                color_scheme="blue",
+                size="2",
+            ),
+            rx.button(
+                "주간 리포트 생성",
+                on_click=State.generate_weekly_report_event,
+                loading=State.report_generating,
+                color_scheme="green",
+                size="2",
+            ),
+            rx.button(
+                "목록 새로고침",
+                on_click=State.load_report_files,
+                variant="soft",
+                size="2",
+            ),
+            width="100%",
+            align="center",
+        ),
+        # 상태 메시지
+        rx.cond(
+            State.report_status != "",
+            rx.callout(
+                State.report_status,
+                color=rx.cond(
+                    State.report_status.contains("오류"),
+                    "red",
+                    "green",
+                ),
+                size="1",
+                width="100%",
+            ),
+        ),
+        # 안내
+        rx.text(
+            "생성된 리포트는 quantReports/ 폴더에 저장됩니다. "
+            "'📂 열기' 버튼으로 브라우저에서 확인하세요.",
+            size="1",
+            color="gray",
+        ),
+        # 파일 목록 테이블
+        rx.cond(
+            State.report_files.length() == 0,
+            rx.center(
+                rx.text("리포트 없음 — '일별 리포트 생성' 버튼을 눌러 첫 리포트를 만드세요.",
+                        color="gray", size="2"),
+                padding_y="40px",
+            ),
+            rx.table.root(
+                rx.table.header(
+                    rx.table.row(
+                        rx.table.column_header_cell("날짜"),
+                        rx.table.column_header_cell("크기"),
+                        rx.table.column_header_cell("열기"),
+                    )
+                ),
+                rx.table.body(
+                    rx.foreach(State.report_files, _file_row),
+                ),
+                width="100%",
+                size="2",
+            ),
+        ),
+        width="100%",
+        spacing="3",
+        padding_bottom="8px",
+    )
+
+
 def main_content() -> rx.Component:
     return rx.vstack(
         app_header(),
@@ -5600,6 +5753,8 @@ def main_content() -> rx.Component:
                 on_click=State.set_tab("portfolio")),
             rx.tabs.trigger("히스토리", value="history",
                 on_click=State.set_tab("history")),
+            rx.tabs.trigger("리포트", value="report",
+                on_click=State.set_tab("report")),
             overflow_x="auto",
             white_space="nowrap",
             width="100%",
@@ -5639,6 +5794,10 @@ def main_content() -> rx.Component:
         rx.tabs.content(
             rx.box(sector_tab(), padding_top="16px"),
             value="sector",
+        ),
+        rx.tabs.content(
+            rx.box(report_tab(), padding_top="16px"),
+            value="report",
         ),
         value=State.active_tab,
         width="100%",
