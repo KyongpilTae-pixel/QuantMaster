@@ -83,7 +83,18 @@ QuantMaster/
 │   ├── data_loader.py   # 시장 데이터 수집 (NAVER Finance + FinanceDataReader + yfinance)
 │   ├── indicators.py    # 기술적 지표 계산 (VWAP · TWAP · MFI · OBV)
 │   ├── reasoning.py     # 매수 근거 · 매도 가이드 텍스트 생성 (KRW/USD 지원)
-│   └── scan_db.py       # SQLite CRUD (스캔 저장 · 히스토리 · 보유 종목)
+│   ├── scan_db.py       # SQLite CRUD (스캔 저장 · 히스토리 · 보유 종목)
+│   ├── report_generator.py     # 일별 HTML 리포트 생성 (시장개요·주도주·섹터·포트폴리오)
+│   ├── weekly_report_generator.py  # 주간 HTML 리포트 생성
+│   ├── sector_scanner.py       # KODEX/SPDR ETF 섹터 모멘텀
+│   ├── stock_scanner.py        # 기간모멘텀 스캔 (1W/1M/2M/3M 캐시)
+│   ├── pullback_scanner.py     # 눌림목 스캐너 (상승추세+단기급락)
+│   └── defensive_scanner.py   # 하락방어 스캐너 (Beta·RS·Downside Capture)
+├── scripts/
+│   ├── fetch_leaders_daily.py  # 당일주도주 자동수집 (Task Scheduler)
+│   ├── fetch_momentum_daily.py # 기간모멘텀 자동수집 16:00 KST
+│   ├── generate_daily_report.py    # 일별 리포트 자동 생성 16:00 KST
+│   └── generate_weekly_report.py   # 주간 리포트 자동 생성 (금 16:30 KST)
 ├── scanner.py           # 3단계 하이브리드 스캔 + 자동 임계값 완화
 ├── backtester.py        # VWAP 돌파 전략 백테스트 (MDD · Sharpe · 승률)
 ├── rxconfig.py          # Reflex 설정 (app_name = "main")
@@ -304,13 +315,18 @@ QuantMaster Pro
     │       └── 종목명 · 시장 · 현재가 · VWAP · 괴리율 · MFI · PBR
     │           매수가 · 수량 · 메모 · 등록일 · [분석] [삭제]
     │
-    └── 보유종목분석 탭
-        ├── 포트폴리오 요약 카드 4종
-        │   ├── 총 종목 수
-        │   ├── 총 투자금
-        │   ├── 예상 손익 (양수=초록 / 음수=빨강)
-        │   └── 손익률 % (양수=초록 / 음수=빨강)
-        └── 종목별 손익 테이블
-            └── 종목명 · 시장 · 매수가 · 현재가 · 수량 · 투자금
-                손익금액 · 손익률(%) · MFI · VWAP괴리율 · 메모 · [분석]
+    ├── 보유종목분석 탭
+    │   ├── 포트폴리오 요약 카드 4종
+    │   │   ├── 총 종목 수
+    │   │   ├── 총 투자금
+    │   │   ├── 예상 손익 (양수=초록 / 음수=빨강)
+    │   │   └── 손익률 % (양수=초록 / 음수=빨강)
+    │   └── 종목별 손익 테이블
+    │       └── 종목명 · 시장 · 매수가 · 현재가 · 수량 · 투자금
+    │           손익금액 · 손익률(%) · MFI · VWAP괴리율 · 메모 · [분석]
+    │
+    └── 리포트 탭
+        ├── 일별 리포트 생성 버튼 (시장지수개요 + 당일주도주 + 섹터모멘텀 + 포트폴리오손익)
+        ├── 주간 리포트 생성 버튼 (주간시장요약 + 기간모멘텀1W + 주도주누적 + 포트폴리오리뷰)
+        └── 생성된 HTML 파일 목록 (날짜 · 크기 · 📂 열기)
 ```
