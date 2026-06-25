@@ -196,6 +196,12 @@ class State(rx.State):
     defensive_max_beta: List[float] = [0.8]  # slider → List[float]
     defensive_min_mktcap: int = 10_000   # 최소 시가총액 (억원)
 
+    # 눌림목 스캔
+    pullback_results: List[dict] = []
+    pullback_min_dip: List[float] = [-5.0]   # 1W 낙폭 하한 (이 값 이하여야 통과)
+    pullback_max_rsi: List[float] = [45.0]   # RSI14 상한
+    pullback_min_mktcap: int = 3_000         # 최소 시가총액 (억원)
+
     # 세력 탐지 분석 차트 데이터
     whale_chart_data: List[dict] = []      # date, OBV, Short_Balance
     whale_highlights: List[dict] = []      # [{x1, x2}] 매집 구간 음영
@@ -1709,6 +1715,45 @@ class State(rx.State):
             yield
             return
 
+        # ── 눌림목 스캔 ──────────────────────────────────────────────────
+        if self.scan_mode == "pullback":
+            from utils.pullback_scanner import scan_pullback_stocks
+            self.is_scanning = True
+            self.pullback_results = []
+            self.scan_warning = ""
+            mkt_map = {"SP500": "SP500", "NASDAQ": "SP500",
+                       "KR-ETF": "KOSPI", "US-ETF": "SP500"}
+            mkt = mkt_map.get(self.market, self.market)
+            self.status_msg = f"{mkt} 눌림목 종목 탐색 중... (약 1~2분 소요)"
+            yield
+            try:
+                raw = await asyncio.to_thread(
+                    scan_pullback_stocks,
+                    mkt,
+                    self.pullback_min_mktcap,
+                    self.pullback_min_dip[0],
+                    self.pullback_max_rsi[0],
+                    0.0,   # min_trend_3m
+                    30,
+                    150,
+                    90,
+                )
+                self.pullback_results = list(raw)
+                warn = getattr(raw, "warning", "")
+                if warn:
+                    self.scan_warning = warn
+                cnt = len(raw)
+                self.status_msg = (
+                    f"눌림목 종목 {cnt}개 발굴 완료" if cnt
+                    else "조건을 만족하는 종목이 없습니다. 낙폭·RSI 조건을 완화해보세요."
+                )
+            except Exception as e:
+                self.status_msg = f"오류: {e}"
+            finally:
+                self.is_scanning = False
+            yield
+            return
+
         # ── 하락방어 스캔 ────────────────────────────────────────────────
         if self.scan_mode == "defensive":
             from utils.defensive_scanner import scan_defensive_stocks
@@ -1935,6 +1980,7 @@ def sidebar_controls() -> rx.Component:
                 rx.select.item("밸류 돌파", value="quant"),
                 rx.select.item("세력 탐지", value="whale"),
                 rx.select.item("하락방어", value="defensive"),
+                rx.select.item("눌림목", value="pullback"),
                 rx.select.item("모멘텀 스캔", value="stock_momentum"),
             ),
             value=State.scan_mode,
@@ -2061,6 +2107,34 @@ def sidebar_controls() -> rx.Component:
         wrap="wrap",
     )
 
+    # ── 눌림목 전용 옵션 행 ───────────────────────────────────────
+    pullback_opts = rx.hstack(
+        rx.text("1W낙폭≥", size="1", color="gray", white_space="nowrap"),
+        rx.text(State.pullback_min_dip[0], size="1"),
+        rx.text("%", size="1", color="gray"),
+        rx.slider(min=-15, max=-2, step=1, value=State.pullback_min_dip,
+                  on_change=State.set_pullback_min_dip, width="100px"),
+        rx.separator(orientation="vertical", size="1"),
+        rx.text("RSI≤", size="1", color="gray", white_space="nowrap"),
+        rx.text(State.pullback_max_rsi[0], size="1"),
+        rx.slider(min=25, max=60, step=5, value=State.pullback_max_rsi,
+                  on_change=State.set_pullback_max_rsi, width="80px"),
+        rx.separator(orientation="vertical", size="1"),
+        rx.text("시총", size="1", color="gray"),
+        rx.button("3천억+", size="1",
+            variant=rx.cond(State.pullback_min_mktcap == 3_000, "solid", "soft"),
+            on_click=State.set_pullback_min_mktcap(3_000)),
+        rx.button("1조+", size="1",
+            variant=rx.cond(State.pullback_min_mktcap == 10_000, "solid", "soft"),
+            on_click=State.set_pullback_min_mktcap(10_000)),
+        rx.button("전체", size="1",
+            variant=rx.cond(State.pullback_min_mktcap == 0, "solid", "soft"),
+            on_click=State.set_pullback_min_mktcap(0)),
+        spacing="2",
+        align="center",
+        wrap="wrap",
+    )
+
     # ── 종목 모멘텀 전용 옵션 행 ────────────────────────────────
     momentum_scan_opts = rx.hstack(
         rx.text("기간", size="1", color="gray"),
@@ -2131,7 +2205,11 @@ def sidebar_controls() -> rx.Component:
                 rx.cond(
                     State.scan_mode == "stock_momentum",
                     momentum_scan_opts,
-                    defensive_opts,
+                    rx.cond(
+                        State.scan_mode == "pullback",
+                        pullback_opts,
+                        defensive_opts,
+                    ),
                 ),
             ),
         ),
@@ -2193,6 +2271,9 @@ def scanner_tab() -> rx.Component:
     return rx.vstack(
         controls,
         rx.cond(
+            State.scan_mode == "pullback",
+            pullback_scanner_table(),
+            rx.cond(
             State.scan_mode == "defensive",
             defensive_scanner_table(),
             rx.cond(
@@ -2264,6 +2345,7 @@ def scanner_tab() -> rx.Component:
             ),
             ),
         ),
+        ),  # rx.cond(pullback)
         width="100%",
         spacing="4",
     )
@@ -2507,6 +2589,98 @@ def stock_momentum_table() -> rx.Component:
         ),
         width="100%",
         spacing="0",
+    )
+
+
+def pullback_scanner_table() -> rx.Component:
+    """눌림목 스캔 결과 테이블."""
+    return rx.cond(
+        State.pullback_results.length() == 0,
+        rx.center(
+            rx.vstack(
+                rx.text("위 패널에서 눌림목 스캔을 실행하세요.", color="gray"),
+                rx.text("KOSPI · KOSDAQ · SP500 지원 (시총 상위 150종목)", size="1", color="gray"),
+                align="center", spacing="1",
+            ),
+            height="200px",
+        ),
+        rx.table.root(
+            rx.table.header(
+                rx.table.row(
+                    rx.table.column_header_cell("순위"),
+                    rx.table.column_header_cell("종목명"),
+                    rx.table.column_header_cell("1W낙폭"),
+                    rx.table.column_header_cell("1M수익"),
+                    rx.table.column_header_cell("3M수익"),
+                    rx.table.column_header_cell("SMA60괴리"),
+                    rx.table.column_header_cell("고점낙폭"),
+                    rx.table.column_header_cell("RSI14"),
+                    rx.table.column_header_cell("거래량비"),
+                    rx.table.column_header_cell("현재가"),
+                    rx.table.column_header_cell("시총"),
+                    rx.table.column_header_cell(""),
+                )
+            ),
+            rx.table.body(
+                rx.foreach(
+                    State.pullback_results,
+                    lambda r: rx.table.row(
+                        rx.table.cell(r["rank"]),
+                        rx.table.cell(rx.text(r["name"], weight="medium")),
+                        # 1W 낙폭 — 항상 음수, 빨간색
+                        rx.table.cell(
+                            rx.badge(r["ret_1w_str"], color_scheme="red",
+                                     variant="soft", size="1")
+                        ),
+                        # 1M 수익
+                        rx.table.cell(
+                            rx.text(r["ret_1m_str"],
+                                color=rx.cond(r["ret_1m_pos"], "green", "red"),
+                                size="1")
+                        ),
+                        # 3M 수익 (굵게 — 정렬 기준)
+                        rx.table.cell(
+                            rx.text(r["ret_3m_str"],
+                                color=rx.cond(r["ret_3m_pos"], "green", "red"),
+                                weight="bold")
+                        ),
+                        # SMA60 괴리 (양수 = 추세선 위)
+                        rx.table.cell(
+                            rx.text(r["sma60_gap_str"], color="blue", size="1")
+                        ),
+                        # 20일 고점 낙폭
+                        rx.table.cell(
+                            rx.badge(
+                                r["drawdown_str"],
+                                color_scheme=rx.cond(r["drawdown_shallow"], "amber", "red"),
+                                variant="soft", size="1",
+                            )
+                        ),
+                        # RSI14 — 강한 과매도는 강조
+                        rx.table.cell(
+                            rx.badge(
+                                r["rsi_str"],
+                                color_scheme=rx.cond(r["rsi_strong"], "red", "amber"),
+                                variant="soft", size="1",
+                            )
+                        ),
+                        # 거래량비
+                        rx.table.cell(
+                            rx.badge(r["vol_ratio_str"],
+                                color_scheme=rx.cond(r["vol_up"], "green", "gray"),
+                                variant="soft", size="1")
+                        ),
+                        rx.table.cell(r["close_str"]),
+                        rx.table.cell(r["mktcap_str"]),
+                        rx.table.cell(
+                            rx.button("조회", size="1", variant="soft", color_scheme="blue",
+                                on_click=State.goto_lookup_from_leaders(r["code"], r["is_us"]))
+                        ),
+                    ),
+                )
+            ),
+            variant="surface", width="100%",
+        ),
     )
 
 
