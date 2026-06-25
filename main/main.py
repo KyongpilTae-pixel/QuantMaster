@@ -207,6 +207,14 @@ class State(rx.State):
     report_generating: bool = False
     report_status: str = ""
 
+    # 성과 추적 탭
+    tracker_picks: List[dict] = []
+    tracker_summary: dict = {}
+    tracker_filter_mode: str = "all"         # "all" | "quant" | "pullback" | "whale"
+    tracker_filter_market: str = "all"       # "all" | "KOSPI" | "KOSDAQ" | "SP500"
+    tracker_updating: bool = False
+    tracker_status: str = ""
+
     # 세력 탐지 분석 차트 데이터
     whale_chart_data: List[dict] = []      # date, OBV, Short_Balance
     whale_highlights: List[dict] = []      # [{x1, x2}] 매집 구간 음영
@@ -678,6 +686,8 @@ class State(rx.State):
             return State.do_load_pmom
         elif tab == "report":
             self.load_report_files()
+        elif tab == "tracker":
+            self.load_tracker_picks()
 
     def load_report_files(self):
         """quantReports/ 폴더의 HTML 파일 목록 로드."""
@@ -728,6 +738,80 @@ class State(rx.State):
         finally:
             self.report_generating = False
         self.load_report_files()
+
+    def load_tracker_picks(self):
+        """성과 추적 종목 로드 (필터 적용)."""
+        from utils.scan_results_tracker import load_tracked_picks, get_tracker_summary
+        mode   = None if self.tracker_filter_mode   == "all" else self.tracker_filter_mode
+        market = None if self.tracker_filter_market == "all" else self.tracker_filter_market
+        picks  = load_tracked_picks(days=30, scan_mode=mode, market=market)
+        self.tracker_picks   = picks
+        self.tracker_summary = get_tracker_summary(picks)
+
+    def set_tracker_filter_mode(self, v: str):
+        if v == self.tracker_filter_mode:
+            return
+        self.tracker_filter_mode = v
+        self.load_tracker_picks()
+
+    def set_tracker_filter_market(self, v: str):
+        if v == self.tracker_filter_market:
+            return
+        self.tracker_filter_market = v
+        self.load_tracker_picks()
+
+    async def update_tracker_prices(self):
+        """활성 종목 현재가 일괄 업데이트."""
+        self.tracker_updating = True
+        self.tracker_status   = "현재가 업데이트 중..."
+        yield
+        import asyncio
+        try:
+            from utils.scan_results_tracker import update_pick_prices
+            n = await asyncio.to_thread(update_pick_prices)
+            self.tracker_status = f"완료 — {n}건 업데이트"
+        except Exception as e:
+            self.tracker_status = f"오류: {e}"
+        finally:
+            self.tracker_updating = False
+        self.load_tracker_picks()
+
+    async def run_auto_scan_now(self):
+        """퀀트+눌림목 스캔 즉시 실행 → tracked_picks 저장."""
+        self.tracker_updating = True
+        self.tracker_status   = "스캔 실행 중... (3~5분 소요)"
+        yield
+        import asyncio
+        try:
+            from utils.scan_results_tracker import save_scan_picks
+            from utils.pullback_scanner import scan_pullback_stocks
+            from scanner import QuantScanner
+            total = 0
+            for mkt in ("KOSPI", "KOSDAQ", "SP500"):
+                # 퀀트
+                try:
+                    r = await asyncio.to_thread(lambda m=mkt: QuantScanner(market=m).scan())
+                    if r:
+                        total += save_scan_picks("quant", mkt, list(r))
+                except Exception:
+                    pass
+                # 눌림목
+                try:
+                    r2 = await asyncio.to_thread(
+                        scan_pullback_stocks, mkt,
+                        3_000 if mkt != "SP500" else 0,
+                        -5.0, 45.0, 0.0, 30, 150, 90,
+                    )
+                    if r2:
+                        total += save_scan_picks("pullback", mkt, list(r2))
+                except Exception:
+                    pass
+            self.tracker_status = f"스캔 완료 — {total}건 신규 저장"
+        except Exception as e:
+            self.tracker_status = f"오류: {e}"
+        finally:
+            self.tracker_updating = False
+        self.load_tracker_picks()
 
     def toggle_momentum_1m(self):
         self.momentum_show_1m = not self.momentum_show_1m
@@ -5634,6 +5718,166 @@ def app_header() -> rx.Component:
     )
 
 
+def tracker_tab() -> rx.Component:
+    """성과 추적 탭 — 발굴 종목 수익률 추적."""
+
+    def _mode_btn(val: str, label: str) -> rx.Component:
+        return rx.button(
+            label, size="1",
+            variant=rx.cond(State.tracker_filter_mode == val, "solid", "soft"),
+            color_scheme="blue",
+            on_click=State.set_tracker_filter_mode(val),
+        )
+
+    def _mkt_btn(val: str, label: str) -> rx.Component:
+        return rx.button(
+            label, size="1",
+            variant=rx.cond(State.tracker_filter_market == val, "solid", "soft"),
+            color_scheme="green",
+            on_click=State.set_tracker_filter_market(val),
+        )
+
+    def _pick_row(p: dict) -> rx.Component:
+        return rx.table.row(
+            rx.table.cell(rx.text(p["scan_date"], size="1", color="gray")),
+            rx.table.cell(rx.text(p["scan_mode_label"], size="1")),
+            rx.table.cell(rx.text(p["market"], size="1")),
+            rx.table.cell(rx.text(p["name"], weight="medium", size="2")),
+            rx.table.cell(rx.text(p["close_at_str"], size="1")),
+            rx.table.cell(rx.text(p["cur_close_str"], size="1")),
+            rx.table.cell(
+                rx.cond(
+                    p["ret_known"],
+                    rx.text(
+                        p["ret_str"],
+                        color=rx.cond(p["ret_positive"], "green", "red"),
+                        weight="bold", size="2",
+                    ),
+                    rx.text("추적중", color="gray", size="1"),
+                )
+            ),
+            rx.table.cell(rx.text(p["days_elapsed"], "일", size="1", color="gray")),
+        )
+
+    summary = State.tracker_summary
+
+    return rx.vstack(
+        # 헤더
+        rx.hstack(
+            rx.heading("성과 추적", size="4"),
+            rx.spacer(),
+            rx.button(
+                "스캔 실행",
+                on_click=State.run_auto_scan_now,
+                loading=State.tracker_updating,
+                color_scheme="blue", size="2",
+            ),
+            rx.button(
+                "가격 업데이트",
+                on_click=State.update_tracker_prices,
+                loading=State.tracker_updating,
+                color_scheme="green", size="2",
+            ),
+            rx.button(
+                "새로고침",
+                on_click=State.load_tracker_picks,
+                variant="soft", size="2",
+            ),
+            width="100%", align="center",
+        ),
+        # 상태 메시지
+        rx.cond(
+            State.tracker_status != "",
+            rx.callout(
+                State.tracker_status,
+                color=rx.cond(State.tracker_status.contains("오류"), "red", "green"),
+                size="1", width="100%",
+            ),
+        ),
+        # 요약 카드
+        rx.cond(
+            State.tracker_picks.length() > 0,
+            rx.hstack(
+                rx.box(
+                    rx.text("추적 종목", size="1", color="gray"),
+                    rx.text(summary["total"], weight="bold", size="5"),
+                    background="white", border_radius="8px",
+                    padding="12px 16px", box_shadow="0 1px 4px rgba(0,0,0,.08)",
+                ),
+                rx.box(
+                    rx.text("승률", size="1", color="gray"),
+                    rx.text(summary["win_rate_str"], weight="bold", size="5",
+                            color=rx.cond(summary["avg_positive"], "green", "red")),
+                    background="white", border_radius="8px",
+                    padding="12px 16px", box_shadow="0 1px 4px rgba(0,0,0,.08)",
+                ),
+                rx.box(
+                    rx.text("평균 수익률", size="1", color="gray"),
+                    rx.text(summary["avg_ret_str"], weight="bold", size="5",
+                            color=rx.cond(summary["avg_positive"], "green", "red")),
+                    background="white", border_radius="8px",
+                    padding="12px 16px", box_shadow="0 1px 4px rgba(0,0,0,.08)",
+                ),
+                rx.box(
+                    rx.text("최고 수익", size="1", color="gray"),
+                    rx.text(summary["best_str"], weight="bold", size="2", color="green"),
+                    background="white", border_radius="8px",
+                    padding="12px 16px", box_shadow="0 1px 4px rgba(0,0,0,.08)",
+                    flex="1",
+                ),
+                spacing="3", width="100%",
+            ),
+        ),
+        # 필터
+        rx.hstack(
+            rx.text("모드:", size="1", color="gray"),
+            _mode_btn("all",      "전체"),
+            _mode_btn("quant",    "퀀트"),
+            _mode_btn("pullback", "눌림목"),
+            _mode_btn("whale",    "세력"),
+            rx.separator(orientation="vertical"),
+            rx.text("시장:", size="1", color="gray"),
+            _mkt_btn("all",    "전체"),
+            _mkt_btn("KOSPI",  "KOSPI"),
+            _mkt_btn("KOSDAQ", "KOSDAQ"),
+            _mkt_btn("SP500",  "SP500"),
+            flex_wrap="wrap",
+            spacing="2",
+        ),
+        rx.text("최근 30거래일 발굴 종목 · 매일 16:20 자동 가격 업데이트",
+                size="1", color="gray"),
+        # 테이블
+        rx.cond(
+            State.tracker_picks.length() == 0,
+            rx.center(
+                rx.text(
+                    "'스캔 실행' 버튼으로 첫 발굴을 시작하거나 "
+                    "scripts/run_auto_scan.py 를 실행하세요.",
+                    color="gray", size="2",
+                ),
+                padding_y="40px",
+            ),
+            rx.table.root(
+                rx.table.header(
+                    rx.table.row(
+                        rx.table.column_header_cell("발굴일"),
+                        rx.table.column_header_cell("모드"),
+                        rx.table.column_header_cell("시장"),
+                        rx.table.column_header_cell("종목명"),
+                        rx.table.column_header_cell("발굴가"),
+                        rx.table.column_header_cell("현재가"),
+                        rx.table.column_header_cell("수익률"),
+                        rx.table.column_header_cell("경과"),
+                    )
+                ),
+                rx.table.body(rx.foreach(State.tracker_picks, _pick_row)),
+                width="100%", size="2",
+            ),
+        ),
+        width="100%", spacing="3", padding_bottom="8px",
+    )
+
+
 def report_tab() -> rx.Component:
     """리포트 탭 — 일별/주간 HTML 리포트 생성 및 목록."""
 
@@ -5755,6 +5999,8 @@ def main_content() -> rx.Component:
                 on_click=State.set_tab("history")),
             rx.tabs.trigger("리포트", value="report",
                 on_click=State.set_tab("report")),
+            rx.tabs.trigger("성과추적", value="tracker",
+                on_click=State.set_tab("tracker")),
             overflow_x="auto",
             white_space="nowrap",
             width="100%",
@@ -5798,6 +6044,10 @@ def main_content() -> rx.Component:
         rx.tabs.content(
             rx.box(report_tab(), padding_top="16px"),
             value="report",
+        ),
+        rx.tabs.content(
+            rx.box(tracker_tab(), padding_top="16px"),
+            value="tracker",
         ),
         value=State.active_tab,
         width="100%",
