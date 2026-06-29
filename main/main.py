@@ -202,6 +202,12 @@ class State(rx.State):
     pullback_max_rsi: List[float] = [45.0]   # RSI14 상한
     pullback_min_mktcap: int = 3_000         # 최소 시가총액 (억원)
 
+    # 추세추종 스캔
+    trend_results: List[dict] = []
+    trend_filter_mode: str = "relative"      # "relative"|"absolute"|"both"
+    trend_progress: str = ""
+    trend_min_mktcap: int = 3_000
+
     # 리포트 탭
     report_files: List[dict] = []            # [{date_str, filename, size_kb, filepath}]
     report_generating: bool = False
@@ -401,6 +407,14 @@ class State(rx.State):
 
     def set_defensive_min_mktcap(self, value: int):
         self.defensive_min_mktcap = value
+
+    def set_trend_filter_mode(self, value: str):
+        if value == self.trend_filter_mode:
+            return
+        self.trend_filter_mode = value
+
+    def set_trend_min_mktcap(self, value: int):
+        self.trend_min_mktcap = value
 
     def set_holding_buy_price_input(self, value: str):
         self.holding_buy_price_input = value
@@ -1899,6 +1913,56 @@ class State(rx.State):
             yield
             return
 
+        # ── 추세추종 스캔 ────────────────────────────────────────────────
+        if self.scan_mode == "trend":
+            from utils.trend_scanner import scan_trend_following
+            self.is_scanning   = True
+            self.trend_results = []
+            self.trend_progress = ""
+            self.scan_warning  = ""
+            mkt_map = {"KR-ETF": "KOSPI", "US-ETF": "SP500"}
+            mkt = mkt_map.get(self.market, self.market)
+            mode_label = {"relative": "RS90+", "absolute": "절대강도", "both": "RS90+·절대강도"}
+            self.status_msg = (
+                f"{mkt} 추세추종 종목 탐색 중 ({mode_label.get(self.trend_filter_mode, '')}) "
+                f"... (약 2~4분 소요)"
+            )
+            yield
+
+            done_ref = [0]
+            total_ref = [0]
+
+            def _progress(done, total):
+                done_ref[0]  = done
+                total_ref[0] = total
+
+            try:
+                raw = await asyncio.to_thread(
+                    scan_trend_following,
+                    mkt,
+                    self.trend_filter_mode,
+                    float(self.trend_min_mktcap),
+                    30,
+                    150,
+                    _progress,
+                )
+                self.trend_results = list(raw)
+                warn = getattr(raw, "warning", "")
+                if warn:
+                    self.scan_warning = warn
+                cnt = len(raw)
+                self.status_msg = (
+                    f"추세추종 신호 {cnt}개 발굴 완료" if cnt
+                    else "신호 없음 — 필터 조건(RS90/절대강도)을 완화하거나 시장을 바꿔보세요."
+                )
+            except Exception as e:
+                self.status_msg = f"오류: {e}"
+            finally:
+                self.is_scanning   = False
+                self.trend_progress = ""
+            yield
+            return
+
         # ── 하락방어 스캔 ────────────────────────────────────────────────
         if self.scan_mode == "defensive":
             from utils.defensive_scanner import scan_defensive_stocks
@@ -2126,6 +2190,7 @@ def sidebar_controls() -> rx.Component:
                 rx.select.item("세력 탐지", value="whale"),
                 rx.select.item("하락방어", value="defensive"),
                 rx.select.item("눌림목", value="pullback"),
+                rx.select.item("추세추종", value="trend"),
                 rx.select.item("모멘텀 스캔", value="stock_momentum"),
             ),
             value=State.scan_mode,
@@ -2280,6 +2345,34 @@ def sidebar_controls() -> rx.Component:
         wrap="wrap",
     )
 
+    # ── 추세추종 전용 옵션 행 ────────────────────────────────────
+    trend_opts = rx.hstack(
+        rx.text("필터", size="1", color="gray", white_space="nowrap"),
+        rx.button("RS90+", size="1",
+            variant=rx.cond(State.trend_filter_mode == "relative", "solid", "soft"),
+            on_click=State.set_trend_filter_mode("relative")),
+        rx.button("절대강도", size="1",
+            variant=rx.cond(State.trend_filter_mode == "absolute", "solid", "soft"),
+            on_click=State.set_trend_filter_mode("absolute")),
+        rx.button("RS90+·절대강도", size="1",
+            variant=rx.cond(State.trend_filter_mode == "both", "solid", "soft"),
+            on_click=State.set_trend_filter_mode("both")),
+        rx.separator(orientation="vertical", size="1"),
+        rx.text("시총", size="1", color="gray"),
+        rx.button("3천억+", size="1",
+            variant=rx.cond(State.trend_min_mktcap == 3_000, "solid", "soft"),
+            on_click=State.set_trend_min_mktcap(3_000)),
+        rx.button("1조+", size="1",
+            variant=rx.cond(State.trend_min_mktcap == 10_000, "solid", "soft"),
+            on_click=State.set_trend_min_mktcap(10_000)),
+        rx.button("전체", size="1",
+            variant=rx.cond(State.trend_min_mktcap == 0, "solid", "soft"),
+            on_click=State.set_trend_min_mktcap(0)),
+        spacing="2",
+        align="center",
+        wrap="wrap",
+    )
+
     # ── 종목 모멘텀 전용 옵션 행 ────────────────────────────────
     momentum_scan_opts = rx.hstack(
         rx.text("기간", size="1", color="gray"),
@@ -2353,7 +2446,11 @@ def sidebar_controls() -> rx.Component:
                     rx.cond(
                         State.scan_mode == "pullback",
                         pullback_opts,
-                        defensive_opts,
+                        rx.cond(
+                            State.scan_mode == "trend",
+                            trend_opts,
+                            defensive_opts,
+                        ),
                     ),
                 ),
             ),
@@ -2377,9 +2474,16 @@ def sidebar_controls() -> rx.Component:
                         rx.callout.text("💡 하락장에서 시장 대비 낙폭이 작고 반등력이 강한 종목을 Beta·RS·Downside Capture로 선별. KOSPI/KOSDAQ 전용."),
                         color_scheme="green", variant="surface", size="1",
                     ),
-                    rx.callout.root(
-                        rx.callout.text("💡 하루 급등이 아닌 1주~3개월 꾸준한 우상향 종목을 탐색. 삼성전기·LG이노텍 류 소재·부품株 발굴에 적합. 시총 상위 300개 기준."),
-                        color_scheme="violet", variant="surface", size="1",
+                    rx.cond(
+                        State.scan_mode == "trend",
+                        rx.callout.root(
+                            rx.callout.text("💡 RS90+ 강세 종목에서 EMA 눌림목·신고가 돌파·박스권 돌파 신호를 포착. EV(기대값)·반감기 3년 가중으로 현재 잘 작동하는 패턴 순위 정렬. (방법론: 《시장의 마법사》 프롤리히·쿨라매기)"),
+                            color_scheme="indigo", variant="surface", size="1",
+                        ),
+                        rx.callout.root(
+                            rx.callout.text("💡 하루 급등이 아닌 1주~3개월 꾸준한 우상향 종목을 탐색. 삼성전기·LG이노텍 류 소재·부품株 발굴에 적합. 시총 상위 300개 기준."),
+                            color_scheme="violet", variant="surface", size="1",
+                        ),
                     ),
                 ),
             ),
@@ -2418,6 +2522,9 @@ def scanner_tab() -> rx.Component:
         rx.cond(
             State.scan_mode == "pullback",
             pullback_scanner_table(),
+            rx.cond(
+            State.scan_mode == "trend",
+            trend_scanner_table(),
             rx.cond(
             State.scan_mode == "defensive",
             defensive_scanner_table(),
@@ -2490,6 +2597,7 @@ def scanner_tab() -> rx.Component:
             ),
             ),
         ),
+        ),  # rx.cond(trend)
         ),  # rx.cond(pullback)
         width="100%",
         spacing="4",
@@ -2820,6 +2928,80 @@ def pullback_scanner_table() -> rx.Component:
                         rx.table.cell(
                             rx.button("조회", size="1", variant="soft", color_scheme="blue",
                                 on_click=State.goto_lookup_from_leaders(r["code"], r["is_us"]))
+                        ),
+                    ),
+                )
+            ),
+            variant="surface", width="100%",
+        ),
+    )
+
+
+def trend_scanner_table() -> rx.Component:
+    """추세추종 스캔 결과 테이블 — EV 순위."""
+    return rx.cond(
+        State.trend_results.length() == 0,
+        rx.center(
+            rx.vstack(
+                rx.text("위 패널에서 추세추종 스캔을 실행하세요.", color="gray"),
+                rx.text("RS90+ 강세 종목 × EMA눌림목·신고가돌파·박스권돌파 신호 × EV 순위", size="1", color="gray"),
+                align="center", spacing="1",
+            ),
+            height="200px",
+        ),
+        rx.table.root(
+            rx.table.header(
+                rx.table.row(
+                    rx.table.column_header_cell("순위"),
+                    rx.table.column_header_cell("종목명"),
+                    rx.table.column_header_cell("진입 신호"),
+                    rx.table.column_header_cell("RS점수"),
+                    rx.table.column_header_cell("EV"),
+                    rx.table.column_header_cell("승률"),
+                    rx.table.column_header_cell("손익비"),
+                    rx.table.column_header_cell("평균이익"),
+                    rx.table.column_header_cell("평균손실"),
+                    rx.table.column_header_cell("표본"),
+                    rx.table.column_header_cell("현재가"),
+                    rx.table.column_header_cell(""),
+                )
+            ),
+            rx.table.body(
+                rx.foreach(
+                    State.trend_results,
+                    lambda r: rx.table.row(
+                        rx.table.cell(r["rank"]),
+                        rx.table.cell(rx.text(r["name"], weight="medium")),
+                        rx.table.cell(
+                            rx.badge(
+                                r["entry_label"],
+                                color_scheme=rx.cond(r["is_pullback"], "blue", "orange"),
+                                variant="soft", size="1",
+                            )
+                        ),
+                        rx.table.cell(
+                            rx.badge(
+                                r["rs_score_str"],
+                                color_scheme=rx.cond(r["rs_high"], "green", "gray"),
+                                variant="soft", size="1",
+                            )
+                        ),
+                        rx.table.cell(
+                            rx.text(
+                                r["ev_str"],
+                                color=rx.cond(r["ev_high"], "green", "gray"),
+                                weight=rx.cond(r["ev_high"], "bold", "regular"),
+                            )
+                        ),
+                        rx.table.cell(rx.text(r["win_rate_str"], size="1")),
+                        rx.table.cell(rx.text(r["pl_ratio_str"], size="1")),
+                        rx.table.cell(rx.text(r["avg_profit_str"], color="green", size="1")),
+                        rx.table.cell(rx.text(r["avg_loss_str"],   color="red",   size="1")),
+                        rx.table.cell(rx.text(r["sample_n_str"],   color="gray",  size="1")),
+                        rx.table.cell(r["close_str"]),
+                        rx.table.cell(
+                            rx.button("분석", size="1", variant="soft", color_scheme="blue",
+                                on_click=State.goto_analysis(r["code"], r["name"], r["is_us"]))
                         ),
                     ),
                 )
