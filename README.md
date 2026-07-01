@@ -86,7 +86,8 @@ QuantMaster/
 │   ├── scan_db.py       # SQLite CRUD (스캔 저장 · 히스토리 · 보유 종목)
 │   ├── scan_results_tracker.py     # 스캔 발굴 종목 성과 추적 (tracked_picks/tracked_prices DB)
 │   ├── report_generator.py     # 일별 HTML 리포트 생성 (시장개요·주도주·섹터·포트폴리오)
-│   ├── weekly_report_generator.py  # 주간 HTML 리포트 생성
+│   ├── weekly_report_generator.py  # 주간 HTML 리포트 생성 (일반주/ETF 탭 분리)
+│   ├── monthly_report_generator.py # 월간 HTML 리포트 생성 (전달 기준, 매월 1일 발행)
 │   ├── sector_scanner.py       # KODEX/SPDR ETF 섹터 모멘텀
 │   ├── stock_scanner.py        # 기간모멘텀 스캔 (1W/1M/2M/3M 캐시)
 │   ├── pullback_scanner.py     # 눌림목 스캐너 (상승추세+단기급락)
@@ -96,7 +97,8 @@ QuantMaster/
 │   ├── fetch_leaders_daily.py  # 당일주도주 자동수집 (Task Scheduler)
 │   ├── fetch_momentum_daily.py # 기간모멘텀 자동수집 16:00 KST
 │   ├── generate_daily_report.py    # 일별 리포트 자동 생성 16:00 KST
-│   ├── generate_weekly_report.py   # 주간 리포트 자동 생성 (금 16:30 KST)
+│   ├── generate_weekly_report.py   # 주간 리포트 자동 생성 (매주 일요일 16:30 KST)
+│   ├── generate_monthly_report.py  # 월간 리포트 자동 생성 (매월 1일 08:00 KST)
 │   ├── run_auto_scan.py            # 퀀트+눌림목 자동 스캔 08:30/16:10 KST
 │   └── track_scan_performance.py   # 발굴 종목 현재가 업데이트 16:20 KST
 ├── scanner.py           # 3단계 하이브리드 스캔 + 자동 임계값 완화

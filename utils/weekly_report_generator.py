@@ -198,48 +198,81 @@ def _load_leaders_for_week(market: str, n_days: int = 5) -> list[dict]:
     return results
 
 
+def _build_leaders_rows(market: str, entries: list, min_count: int = 2) -> tuple:
+    """leaders 엔트리 → (stock_rows, etf_rows) HTML 리스트"""
+    from collections import Counter
+    counter  = Counter(item["code"] for item in entries)
+    info_map: dict = {}
+    for item in entries:
+        c = item["code"]
+        if c not in info_map:
+            info_map[c] = item
+
+    top = sorted(
+        [(c, cnt) for c, cnt in counter.items() if cnt >= min_count],
+        key=lambda x: -x[1],
+    )[:20]
+
+    stock_rows, etf_rows = [], []
+    for code, cnt in top:
+        info    = info_map.get(code, {})
+        is_etf  = info.get("is_etf", False)
+        badge   = "🔥" if cnt >= 4 else ("⚡" if cnt >= 3 else "")
+        row = (
+            f"<tr>"
+            f"<td>{market}</td>"
+            f"<td><strong>{info.get('name','')}</strong></td>"
+            f"<td>{code}</td>"
+            f"<td>{cnt}일 {badge}</td>"
+            f"<td>{info.get('change_pct_str','')}</td>"
+            f"<td>{info.get('score_a_str','')}</td>"
+            f"</tr>"
+        )
+        (etf_rows if is_etf else stock_rows).append(row)
+
+    return stock_rows, etf_rows
+
+
+_LEADERS_TABLE_HEAD = (
+    '<thead><tr>'
+    '<th>시장</th><th>종목명</th><th>코드</th>'
+    '<th>등장 횟수</th><th>최근 등락률</th><th>A점수</th>'
+    '</tr></thead>'
+)
+
+_TAB_JS = """
+<script>
+function switchLeadersTab(el, tabId) {
+  var sec = el.closest('.leaders-tabs');
+  sec.querySelectorAll('.tab-btn').forEach(function(b){b.classList.remove('active')});
+  sec.querySelectorAll('.tab-pane').forEach(function(p){p.style.display='none'});
+  el.classList.add('active');
+  sec.querySelector('#'+tabId).style.display='';
+}
+</script>
+<style>
+.tab-btn{background:#f0f0f0;border:1px solid #ccc;padding:4px 12px;cursor:pointer;border-radius:4px 4px 0 0;margin-right:4px;font-size:13px}
+.tab-btn.active{background:#fff;border-bottom-color:#fff;font-weight:bold}
+.tab-pane{border:1px solid #ccc;padding:8px;border-radius:0 4px 4px 4px}
+</style>
+"""
+
+
 def generate_weekly_leaders_section(generated_at: str | None = None) -> str:
-    """지난 5거래일에 2회 이상 등장한 주도주 HTML 섹션."""
+    """지난 5거래일에 2회 이상 등장한 주도주 HTML 섹션 (일반주/ETF 탭 분리)."""
     if generated_at is None:
         generated_at = datetime.now().strftime("%H:%M")
 
-    rows_html = []
+    all_stock_rows, all_etf_rows = [], []
     for market in ("KOSPI", "KOSDAQ"):
-        all_entries = _load_leaders_for_week(market, 5)
-        if not all_entries:
+        entries = _load_leaders_for_week(market, 5)
+        if not entries:
             continue
+        s, e = _build_leaders_rows(market, entries, min_count=2)
+        all_stock_rows.extend(s)
+        all_etf_rows.extend(e)
 
-        # 종목별 등장 횟수 집계
-        from collections import Counter, defaultdict
-        counter  = Counter(item["code"] for item in all_entries)
-        info_map: dict[str, dict] = {}
-        for item in all_entries:
-            c = item["code"]
-            if c not in info_map:
-                info_map[c] = item
-        # 2회 이상만, 등장 횟수 내림차순
-        top = sorted(
-            [(c, cnt) for c, cnt in counter.items() if cnt >= 2],
-            key=lambda x: -x[1],
-        )[:15]
-
-        for code, cnt in top:
-            info = info_map.get(code, {})
-            pct_str = info.get("change_pct_str", "")
-            score   = info.get("score_a_str", "")
-            badge   = "🔥" if cnt >= 4 else ("⚡" if cnt >= 3 else "")
-            rows_html.append(
-                f"<tr>"
-                f"<td>{market}</td>"
-                f"<td><strong>{info.get('name','')}</strong></td>"
-                f"<td>{code}</td>"
-                f"<td>{cnt}일 {badge}</td>"
-                f"<td>{pct_str}</td>"
-                f"<td>{score}</td>"
-                f"</tr>"
-            )
-
-    if not rows_html:
+    if not all_stock_rows and not all_etf_rows:
         return (
             f'<!-- SECTION:weekly_leaders -->\n'
             f'<section id="section-weekly_leaders">'
@@ -248,18 +281,27 @@ def generate_weekly_leaders_section(generated_at: str | None = None) -> str:
             f'</section>\n<!-- /SECTION:weekly_leaders -->'
         )
 
+    stock_table = (
+        f'<table>\n{_LEADERS_TABLE_HEAD}\n'
+        f'<tbody>{"".join(all_stock_rows) or "<tr><td colspan=6>해당 없음</td></tr>"}</tbody>\n</table>'
+    )
+    etf_table = (
+        f'<table>\n{_LEADERS_TABLE_HEAD}\n'
+        f'<tbody>{"".join(all_etf_rows) or "<tr><td colspan=6>해당 없음</td></tr>"}</tbody>\n</table>'
+    )
+
     return (
         f'<!-- SECTION:weekly_leaders -->\n'
         f'<section id="section-weekly_leaders">\n'
         f'<h2>주도주 주간 누적 (2회 이상 등장)</h2>\n'
         f'<p class="meta">{generated_at} 기준 · 지난 5거래일</p>\n'
-        f'<table>\n'
-        f'<thead><tr>'
-        f'<th>시장</th><th>종목명</th><th>코드</th>'
-        f'<th>등장 횟수</th><th>최근 등락률</th><th>A점수</th>'
-        f'</tr></thead>\n'
-        f'<tbody>{"".join(rows_html)}</tbody>\n'
-        f'</table>\n'
+        f'{_TAB_JS}\n'
+        f'<div class="leaders-tabs">\n'
+        f'<button class="tab-btn active" onclick="switchLeadersTab(this,\'lw-stock\')">일반주 ({len(all_stock_rows)})</button>'
+        f'<button class="tab-btn" onclick="switchLeadersTab(this,\'lw-etf\')">ETF ({len(all_etf_rows)})</button>\n'
+        f'<div id="lw-stock" class="tab-pane">{stock_table}</div>\n'
+        f'<div id="lw-etf" class="tab-pane" style="display:none">{etf_table}</div>\n'
+        f'</div>\n'
         f'</section>\n'
         f'<!-- /SECTION:weekly_leaders -->'
     )

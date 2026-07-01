@@ -197,47 +197,26 @@ def _load_leaders_for_month(market: str, n_days: int = 20) -> list:
     return results
 
 
+from utils.weekly_report_generator import (
+    _build_leaders_rows, _LEADERS_TABLE_HEAD, _TAB_JS,
+)
+
+
 def generate_monthly_leaders_section(generated_at: str | None = None) -> str:
-    """지난 20거래일에 3회 이상 등장한 주도주 HTML 섹션."""
+    """지난 20거래일에 3회 이상 등장한 주도주 HTML 섹션 (일반주/ETF 탭 분리)."""
     if generated_at is None:
         generated_at = datetime.now().strftime("%H:%M")
 
-    rows_html = []
+    all_stock_rows, all_etf_rows = [], []
     for market in ("KOSPI", "KOSDAQ"):
-        all_entries = _load_leaders_for_month(market, 20)
-        if not all_entries:
+        entries = _load_leaders_for_month(market, 20)
+        if not entries:
             continue
+        s, e = _build_leaders_rows(market, entries, min_count=3)
+        all_stock_rows.extend(s)
+        all_etf_rows.extend(e)
 
-        from collections import Counter
-        counter  = Counter(item["code"] for item in all_entries)
-        info_map: dict = {}
-        for item in all_entries:
-            c = item["code"]
-            if c not in info_map:
-                info_map[c] = item
-
-        top = sorted(
-            [(c, cnt) for c, cnt in counter.items() if cnt >= 3],
-            key=lambda x: -x[1],
-        )[:20]
-
-        for code, cnt in top:
-            info    = info_map.get(code, {})
-            pct_str = info.get("change_pct_str", "")
-            score   = info.get("score_a_str", "")
-            name    = info.get("name", code)
-            rows_html.append(
-                f"<tr>"
-                f"<td>{market}</td>"
-                f"<td><strong>{name}</strong></td>"
-                f"<td>{code}</td>"
-                f"<td><strong>{cnt}</strong></td>"
-                f"<td>{pct_str}</td>"
-                f"<td>{score}</td>"
-                f"</tr>"
-            )
-
-    if not rows_html:
+    if not all_stock_rows and not all_etf_rows:
         return (
             f'<!-- SECTION:monthly_leaders -->\n'
             f'<section id="section-monthly_leaders">'
@@ -246,18 +225,27 @@ def generate_monthly_leaders_section(generated_at: str | None = None) -> str:
             f'</section>\n<!-- /SECTION:monthly_leaders -->'
         )
 
+    stock_table = (
+        f'<table>\n{_LEADERS_TABLE_HEAD}\n'
+        f'<tbody>{"".join(all_stock_rows) or "<tr><td colspan=6>해당 없음</td></tr>"}</tbody>\n</table>'
+    )
+    etf_table = (
+        f'<table>\n{_LEADERS_TABLE_HEAD}\n'
+        f'<tbody>{"".join(all_etf_rows) or "<tr><td colspan=6>해당 없음</td></tr>"}</tbody>\n</table>'
+    )
+
     return (
         f'<!-- SECTION:monthly_leaders -->\n'
         f'<section id="section-monthly_leaders">\n'
         f'<h2>주도주 월간 누적 (3회 이상 등장)</h2>\n'
         f'<p class="meta">{generated_at} 기준 · 지난 20거래일</p>\n'
-        f'<table>\n'
-        f'<thead><tr>'
-        f'<th>시장</th><th>종목명</th><th>코드</th>'
-        f'<th>등장 횟수</th><th>최근 등락률</th><th>A점수</th>'
-        f'</tr></thead>\n'
-        f'<tbody>{"".join(rows_html)}</tbody>\n'
-        f'</table>\n'
+        f'{_TAB_JS}\n'
+        f'<div class="leaders-tabs">\n'
+        f'<button class="tab-btn active" onclick="switchLeadersTab(this,\'lm-stock\')">일반주 ({len(all_stock_rows)})</button>'
+        f'<button class="tab-btn" onclick="switchLeadersTab(this,\'lm-etf\')">ETF ({len(all_etf_rows)})</button>\n'
+        f'<div id="lm-stock" class="tab-pane">{stock_table}</div>\n'
+        f'<div id="lm-etf" class="tab-pane" style="display:none">{etf_table}</div>\n'
+        f'</div>\n'
         f'</section>\n'
         f'<!-- /SECTION:monthly_leaders -->'
     )
