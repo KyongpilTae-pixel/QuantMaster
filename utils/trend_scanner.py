@@ -250,6 +250,7 @@ def _process_one(code, name, is_us, rs_score, df) -> list:
                 "rs_score_str":    f"{rs_score:.0f}",
                 "entry_type":      sig["entry_type"],
                 "entry_label":     sig["entry_label"],
+                "ma_period":       sig["ma_period"],
                 "gap_pct":         sig["gap_pct"],
                 "breakout_pct":    sig["breakout_pct"],
                 **ev_info,
@@ -273,6 +274,53 @@ def _process_one(code, name, is_us, rs_score, df) -> list:
         return results
     except Exception:
         return []
+
+
+# ── 보유기간별 상세 EV 계산 ────────────────────────────────────────
+
+def calc_holding_period_ev(
+    df: pd.DataFrame,
+    entry_type: str,
+    ma_period: int,
+    periods: list = None,
+    halflife_years: float = _HALFLIFE_YEARS,
+) -> list:
+    """보유기간별(2/3/5/10/20/60/126/252일) EV 계산 — 상세 백테스트용"""
+    if periods is None:
+        periods = [2, 3, 5, 10, 20, 60, 126, 252]
+
+    results = []
+    for hold_days in periods:
+        ev_info = _calc_ev(df, entry_type, ma_period, hold_days, halflife_years)
+        ev_val   = ev_info.get("ev")
+        wr_val   = ev_info.get("win_rate") or 0.0
+        ap_val   = ev_info.get("avg_profit") or 0.0
+        al_val   = ev_info.get("avg_loss") or 0.0
+        pl_val   = ev_info.get("pl_ratio")
+        sn_val   = ev_info.get("sample_n") or 0
+
+        results.append({
+            "period":          hold_days,
+            "period_label":    f"{hold_days}일",
+            "ev":              ev_val,
+            "ev_str":          f"{ev_val:.3f}" if ev_val is not None else "-",
+            "win_rate":        wr_val,
+            "win_rate_str":    f"{wr_val:.1f}%" if wr_val else "-",
+            "avg_profit":      ap_val,
+            "avg_profit_str":  f"+{ap_val:.1f}%" if ap_val else "-",
+            "avg_loss":        al_val,
+            "avg_loss_str":    f"-{al_val:.1f}%" if al_val else "-",
+            "pl_ratio":        pl_val,
+            "pl_ratio_str":    f"{pl_val:.2f}" if pl_val is not None else "-",
+            "sample_n":        sn_val,
+            "sample_n_str":    str(sn_val),
+            # Reflex foreach bool flags
+            "ev_high":         (ev_val or 0) >= 1.0,
+            "ev_positive":     (ev_val or 0) > 0,
+            "win_rate_high":   wr_val >= 60.0,
+            "has_data":        ev_val is not None,
+        })
+    return results
 
 
 # ── 메인 스캔 함수 ─────────────────────────────────────────────────

@@ -207,6 +207,12 @@ class State(rx.State):
     trend_filter_mode: str = "relative"      # "relative"|"absolute"|"both"
     trend_progress: str = ""
     trend_min_mktcap: int = 3_000
+    # 추세추종 상세 백테스트
+    trend_detail_code: str = ""
+    trend_detail_name: str = ""
+    trend_detail_entry_label: str = ""
+    trend_detail_rows: List[dict] = []
+    trend_detail_loading: bool = False
 
     # 리포트 탭
     report_files: List[dict] = []            # [{date_str, filename, size_kb, filepath}]
@@ -1687,6 +1693,107 @@ class State(rx.State):
             self.is_loading_chart = False
         yield
 
+    async def goto_analysis(self, code: str, name: str, is_us: bool = False):
+        """추세추종 등 스캐너에서 분석 탭으로 이동 (code+name+is_us 기반)"""
+        self.selected_symbol = code
+        self.selected_name = name
+        self.selected_market = self.market
+        self.selected_currency = "USD" if is_us else "KRW"
+        self.selected_market_cap_str = "-"
+        self.selected_pbr = 0.0
+        self.selected_psr = 0.0
+        self.selected_div_yield = "-"
+        self.selected_mfi = 0.0
+        self.selected_close = 0.0
+        self.selected_vwap_price = 0.0
+        self.selected_vwap_gap = 0.0
+        self.selected_condition = ""
+        self.selected_holding_buy_price = 0.0
+        self.selected_holding_quantity = 0.0
+        self.selected_holding_memo = ""
+        self.selected_is_holding = False
+        self.buy_msg = ""
+        self.sell_msg = ""
+        self.bt_summary = BacktestSummary()
+        self.equity_data = []
+        self.trades_data = []
+        self.bt_price_chart_data = []
+        self.bt_buy_points = []
+        self.bt_sell_points = []
+        self.price_chart_data = []
+        self.psr_chart_data = []
+        self.close_date = ""
+        self.whale_chart_data = []
+        self.whale_highlights = []
+        self.is_loading_chart = True
+        self.active_tab = "analysis"
+        yield
+
+        try:
+            import pandas as pd
+            from utils.data_loader import QuantDataLoader
+            from utils.indicators import TechnicalIndicators
+            vwap = int(self.vwap_period)
+            loader = QuantDataLoader()
+            df = await asyncio.to_thread(loader.get_ohlcv, code, 600)
+            df = TechnicalIndicators.calculate_all(df, [vwap, 20, 60, 120])
+            display_df = df.tail(200)
+            vwap_col = f"VWAP_{vwap}"
+
+            def _v(val):
+                return round(float(val), 0) if not pd.isna(val) else None
+
+            self.price_chart_data = [
+                {
+                    "date": str(d.date()),
+                    "종가": _v(row["Close"]),
+                    "VWAP": _v(row.get(vwap_col)),
+                    "MA20": _v(row.get("TWAP_20")),
+                    "MA60": _v(row.get("TWAP_60")),
+                    "MA120": _v(row.get("TWAP_120")),
+                    "SMA120": _v(row.get("SMA_120")),
+                }
+                for d, row in display_df.iterrows()
+            ]
+            self.close_date = str(display_df.index[-1].date())
+            self.selected_close = float(df["Close"].iloc[-1])
+            psr_data = await asyncio.to_thread(
+                loader.get_quarterly_psr, code, self.market
+            )
+            self.psr_chart_data = psr_data
+        except Exception:
+            pass
+        finally:
+            self.is_loading_chart = False
+        yield
+
+    async def load_trend_detail(self, code: str, entry_type: str, ma_period: int, entry_label: str):
+        """추세추종 종목 보유기간별 EV 상세 백테스트"""
+        self.trend_detail_code = code
+        self.trend_detail_name = entry_label.split(" ")[0] if entry_label else code
+        self.trend_detail_entry_label = entry_label
+        self.trend_detail_rows = []
+        self.trend_detail_loading = True
+        yield
+
+        try:
+            from utils.data_loader import QuantDataLoader
+            from utils.trend_scanner import calc_holding_period_ev
+            loader = QuantDataLoader()
+            df = await asyncio.to_thread(loader.get_ohlcv, code, 1600)
+            rows = await asyncio.to_thread(
+                calc_holding_period_ev, df, entry_type, ma_period,
+            )
+            # 종목명 보정
+            for r in rows:
+                r["code"] = code
+            self.trend_detail_rows = rows
+        except Exception as e:
+            self.status_msg = f"상세 백테스트 오류: {e}"
+        finally:
+            self.trend_detail_loading = False
+        yield
+
     # ------------------------------------------------------------------
     # Async event handlers
     # ------------------------------------------------------------------
@@ -1937,7 +2044,8 @@ class State(rx.State):
                 total_ref[0] = total
 
             try:
-                raw = await asyncio.to_thread(
+                # CLOSE_WAIT 방지: 최대 600초 타임아웃 + 주기적 yield(heartbeat)
+                scan_task = asyncio.create_task(asyncio.to_thread(
                     scan_trend_following,
                     mkt,
                     self.trend_filter_mode,
@@ -1945,7 +2053,18 @@ class State(rx.State):
                     30,
                     150,
                     _progress,
-                )
+                ))
+                while not scan_task.done():
+                    try:
+                        raw = await asyncio.wait_for(asyncio.shield(scan_task), timeout=3.0)
+                        break
+                    except asyncio.TimeoutError:
+                        d, t = done_ref[0], total_ref[0]
+                        if t > 0:
+                            self.trend_progress = f"{d}/{t}개 수집 중..."
+                        yield
+                else:
+                    raw = scan_task.result()
                 self.trend_results = list(raw)
                 warn = getattr(raw, "warning", "")
                 if warn:
@@ -2368,6 +2487,11 @@ def sidebar_controls() -> rx.Component:
         rx.button("전체", size="1",
             variant=rx.cond(State.trend_min_mktcap == 0, "solid", "soft"),
             on_click=State.set_trend_min_mktcap(0)),
+        rx.cond(
+            State.trend_progress != "",
+            rx.text(State.trend_progress, size="1", color="gray"),
+            rx.text(""),
+        ),
         spacing="2",
         align="center",
         wrap="wrap",
@@ -2937,6 +3061,95 @@ def pullback_scanner_table() -> rx.Component:
     )
 
 
+def _trend_detail_panel() -> rx.Component:
+    """보유기간별 EV 상세 패널"""
+    return rx.cond(
+        State.trend_detail_code != "",
+        rx.box(
+            rx.vstack(
+                rx.hstack(
+                    rx.text("보유기간별 EV 분석", weight="bold", size="3"),
+                    rx.text("·", color="gray"),
+                    rx.text(State.trend_detail_code, color="gray", size="2"),
+                    rx.text(State.trend_detail_entry_label, color="blue", size="2"),
+                    rx.spacer(),
+                    rx.cond(
+                        State.trend_detail_loading,
+                        rx.spinner(size="2"),
+                        rx.text(""),
+                    ),
+                    align="center", width="100%",
+                ),
+                rx.cond(
+                    State.trend_detail_loading,
+                    rx.center(rx.text("계산 중...", color="gray"), height="80px"),
+                    rx.cond(
+                        State.trend_detail_rows.length() == 0,
+                        rx.center(rx.text("데이터 없음", color="gray"), height="80px"),
+                        rx.table.root(
+                            rx.table.header(
+                                rx.table.row(
+                                    rx.table.column_header_cell("보유기간"),
+                                    rx.table.column_header_cell("EV"),
+                                    rx.table.column_header_cell("승률"),
+                                    rx.table.column_header_cell("평균이익"),
+                                    rx.table.column_header_cell("평균손실"),
+                                    rx.table.column_header_cell("손익비"),
+                                    rx.table.column_header_cell("표본"),
+                                )
+                            ),
+                            rx.table.body(
+                                rx.foreach(
+                                    State.trend_detail_rows,
+                                    lambda d: rx.table.row(
+                                        rx.table.cell(
+                                            rx.text(d["period_label"], weight="medium")
+                                        ),
+                                        rx.table.cell(
+                                            rx.cond(
+                                                d["has_data"],
+                                                rx.text(
+                                                    d["ev_str"],
+                                                    color=rx.cond(d["ev_high"], "green",
+                                                           rx.cond(d["ev_positive"], "blue", "red")),
+                                                    weight=rx.cond(d["ev_high"], "bold", "regular"),
+                                                ),
+                                                rx.text("-", color="gray"),
+                                            )
+                                        ),
+                                        rx.table.cell(
+                                            rx.cond(
+                                                d["has_data"],
+                                                rx.text(
+                                                    d["win_rate_str"],
+                                                    color=rx.cond(d["win_rate_high"], "green", "gray"),
+                                                    size="1",
+                                                ),
+                                                rx.text("-", color="gray", size="1"),
+                                            )
+                                        ),
+                                        rx.table.cell(rx.text(d["avg_profit_str"], color="green", size="1")),
+                                        rx.table.cell(rx.text(d["avg_loss_str"],   color="red",   size="1")),
+                                        rx.table.cell(rx.text(d["pl_ratio_str"],               size="1")),
+                                        rx.table.cell(rx.text(d["sample_n_str"],   color="gray", size="1")),
+                                    ),
+                                )
+                            ),
+                            variant="surface", width="100%",
+                        ),
+                    ),
+                ),
+                spacing="2", width="100%",
+            ),
+            border="1px solid var(--gray-5)",
+            border_radius="8px",
+            padding="16px",
+            margin_top="12px",
+            background="var(--gray-1)",
+        ),
+    )
+
+
 def trend_scanner_table() -> rx.Component:
     """추세추종 스캔 결과 테이블 — EV 순위."""
     return rx.cond(
@@ -2949,64 +3162,79 @@ def trend_scanner_table() -> rx.Component:
             ),
             height="200px",
         ),
-        rx.table.root(
-            rx.table.header(
-                rx.table.row(
-                    rx.table.column_header_cell("순위"),
-                    rx.table.column_header_cell("종목명"),
-                    rx.table.column_header_cell("진입 신호"),
-                    rx.table.column_header_cell("RS점수"),
-                    rx.table.column_header_cell("EV"),
-                    rx.table.column_header_cell("승률"),
-                    rx.table.column_header_cell("손익비"),
-                    rx.table.column_header_cell("평균이익"),
-                    rx.table.column_header_cell("평균손실"),
-                    rx.table.column_header_cell("표본"),
-                    rx.table.column_header_cell("현재가"),
-                    rx.table.column_header_cell(""),
-                )
+        rx.vstack(
+            rx.table.root(
+                rx.table.header(
+                    rx.table.row(
+                        rx.table.column_header_cell("순위"),
+                        rx.table.column_header_cell("종목명"),
+                        rx.table.column_header_cell("진입 신호"),
+                        rx.table.column_header_cell("RS점수"),
+                        rx.table.column_header_cell("EV(60일)"),
+                        rx.table.column_header_cell("승률"),
+                        rx.table.column_header_cell("손익비"),
+                        rx.table.column_header_cell("평균이익"),
+                        rx.table.column_header_cell("평균손실"),
+                        rx.table.column_header_cell("표본"),
+                        rx.table.column_header_cell("현재가"),
+                        rx.table.column_header_cell(""),
+                    )
+                ),
+                rx.table.body(
+                    rx.foreach(
+                        State.trend_results,
+                        lambda r: rx.table.row(
+                            rx.table.cell(r["rank"]),
+                            rx.table.cell(rx.text(r["name"], weight="medium")),
+                            rx.table.cell(
+                                rx.badge(
+                                    r["entry_label"],
+                                    color_scheme=rx.cond(r["is_pullback"], "blue", "orange"),
+                                    variant="soft", size="1",
+                                )
+                            ),
+                            rx.table.cell(
+                                rx.badge(
+                                    r["rs_score_str"],
+                                    color_scheme=rx.cond(r["rs_high"], "green", "gray"),
+                                    variant="soft", size="1",
+                                )
+                            ),
+                            rx.table.cell(
+                                rx.text(
+                                    r["ev_str"],
+                                    color=rx.cond(r["ev_high"], "green", "gray"),
+                                    weight=rx.cond(r["ev_high"], "bold", "regular"),
+                                )
+                            ),
+                            rx.table.cell(rx.text(r["win_rate_str"], size="1")),
+                            rx.table.cell(rx.text(r["pl_ratio_str"], size="1")),
+                            rx.table.cell(rx.text(r["avg_profit_str"], color="green", size="1")),
+                            rx.table.cell(rx.text(r["avg_loss_str"],   color="red",   size="1")),
+                            rx.table.cell(rx.text(r["sample_n_str"],   color="gray",  size="1")),
+                            rx.table.cell(r["close_str"]),
+                            rx.table.cell(
+                                rx.hstack(
+                                    rx.button(
+                                        "상세", size="1", variant="soft", color_scheme="violet",
+                                        on_click=State.load_trend_detail(
+                                            r["code"], r["entry_type"], r["ma_period"], r["entry_label"]
+                                        )
+                                    ),
+                                    rx.button(
+                                        "분석", size="1", variant="soft", color_scheme="blue",
+                                        on_click=State.goto_analysis(r["code"], r["name"], r["is_us"])
+                                    ),
+                                    spacing="1",
+                                )
+                            ),
+                        ),
+                    )
+                ),
+                variant="surface", width="100%",
             ),
-            rx.table.body(
-                rx.foreach(
-                    State.trend_results,
-                    lambda r: rx.table.row(
-                        rx.table.cell(r["rank"]),
-                        rx.table.cell(rx.text(r["name"], weight="medium")),
-                        rx.table.cell(
-                            rx.badge(
-                                r["entry_label"],
-                                color_scheme=rx.cond(r["is_pullback"], "blue", "orange"),
-                                variant="soft", size="1",
-                            )
-                        ),
-                        rx.table.cell(
-                            rx.badge(
-                                r["rs_score_str"],
-                                color_scheme=rx.cond(r["rs_high"], "green", "gray"),
-                                variant="soft", size="1",
-                            )
-                        ),
-                        rx.table.cell(
-                            rx.text(
-                                r["ev_str"],
-                                color=rx.cond(r["ev_high"], "green", "gray"),
-                                weight=rx.cond(r["ev_high"], "bold", "regular"),
-                            )
-                        ),
-                        rx.table.cell(rx.text(r["win_rate_str"], size="1")),
-                        rx.table.cell(rx.text(r["pl_ratio_str"], size="1")),
-                        rx.table.cell(rx.text(r["avg_profit_str"], color="green", size="1")),
-                        rx.table.cell(rx.text(r["avg_loss_str"],   color="red",   size="1")),
-                        rx.table.cell(rx.text(r["sample_n_str"],   color="gray",  size="1")),
-                        rx.table.cell(r["close_str"]),
-                        rx.table.cell(
-                            rx.button("분석", size="1", variant="soft", color_scheme="blue",
-                                on_click=State.goto_analysis(r["code"], r["name"], r["is_us"]))
-                        ),
-                    ),
-                )
-            ),
-            variant="surface", width="100%",
+            _trend_detail_panel(),
+            spacing="0", width="100%",
         ),
     )
 
