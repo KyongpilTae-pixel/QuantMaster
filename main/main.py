@@ -213,6 +213,14 @@ class State(rx.State):
     trend_detail_entry_label: str = ""
     trend_detail_rows: List[dict] = []
     trend_detail_loading: bool = False
+    # 추세추종 계절성 분석
+    season_code: str = ""
+    season_entry_type: str = ""
+    season_ma_period: int = 20
+    season_entry_label: str = ""
+    season_hold_days: int = 20
+    season_rows: List[dict] = []
+    season_loading: bool = False
 
     # 리포트 탭
     report_files: List[dict] = []            # [{date_str, filename, size_kb, filepath}]
@@ -326,6 +334,11 @@ class State(rx.State):
     leaders_cache_time: str = ""       # 캐시 저장 시각 표시용
     leaders_data_date: str = ""        # 데이터 기준일 (YYYY-MM-DD (요))
     leaders_data_is_prev: bool = False # 오늘 날짜와 다른 전일 데이터이면 True
+    # Best Pick (일반주 score_a 최고)
+    leaders_best_name: str = ""
+    leaders_best_code: str = ""
+    leaders_best_reason: str = ""
+    leaders_best_is_us: bool = False
 
     # 섹터 모멘텀
     sector_data: List[dict] = []
@@ -926,6 +939,42 @@ class State(rx.State):
     def set_stock_momentum_mktcap(self, v: int):
         self.stock_momentum_mktcap = v
 
+    def _compute_best_pick(self):
+        """일반주 중 score_a 최고 종목을 leaders_best_* 에 저장."""
+        stocks = [x for x in self.leaders_data_raw if not x.get("is_etf", False)]
+        if not stocks:
+            self.leaders_best_name = ""
+            self.leaders_best_code = ""
+            self.leaders_best_reason = ""
+            self.leaders_best_is_us = False
+            return
+        best = max(stocks, key=lambda x: x.get("score_a", 0))
+        self.leaders_best_name    = best.get("name", "")
+        self.leaders_best_code    = best.get("code", "")
+        self.leaders_best_is_us   = best.get("is_us", False)
+
+        parts = []
+        change_str = best.get("change_pct_str", "")
+        vol_rank   = best.get("vol_rank_str", "")
+        rise_rank  = best.get("rise_rank_str", "")
+        streak     = best.get("consecutive_days", 1)
+        near_high  = best.get("is_near_high", False)
+        score_a    = best.get("score_a_str", "")
+
+        if change_str and change_str not in ("", "-"):
+            parts.append(f"당일 {change_str}")
+        if vol_rank and vol_rank not in ("", "-"):
+            parts.append(f"거래량 {vol_rank}위")
+        if rise_rank and rise_rank not in ("", "-"):
+            parts.append(f"상승률 {rise_rank}위")
+        if streak >= 2:
+            parts.append(f"{streak}일 연속 상승")
+        if near_high:
+            parts.append("52주 신고가 근접")
+        if score_a:
+            parts.append(f"A점수 {score_a}")
+        self.leaders_best_reason = " · ".join(parts) if parts else "데이터 집계 중"
+
     def _apply_filter_and_sort(self):
         """leaders_data_raw에 타입 필터 + 정렬을 적용해 leaders_data 갱신."""
         key_map = {
@@ -952,6 +1001,7 @@ class State(rx.State):
             {**item, "rank": i + 1}
             for i, item in enumerate(sorted(filtered, key=key_fn, reverse=True))
         ]
+        self._compute_best_pick()
 
     def set_leaders_sort(self, v: str):
         if not self.leaders_data_raw:
@@ -1792,6 +1842,58 @@ class State(rx.State):
             self.status_msg = f"상세 백테스트 오류: {e}"
         finally:
             self.trend_detail_loading = False
+        yield
+
+    async def load_seasonality(self, code: str, entry_type: str, ma_period: int, entry_label: str):
+        """추세추종 종목 12개월 계절성 EV 분석"""
+        self.season_code        = code
+        self.season_entry_type  = entry_type
+        self.season_ma_period   = ma_period
+        self.season_entry_label = entry_label
+        self.season_rows        = []
+        self.season_loading     = True
+        yield
+
+        try:
+            from utils.data_loader  import QuantDataLoader
+            from utils.seasonality  import calc_monthly_seasonality
+            loader = QuantDataLoader()
+            df     = await asyncio.to_thread(loader.get_ohlcv, code, 1600)
+            rows   = await asyncio.to_thread(
+                calc_monthly_seasonality, df, entry_type, ma_period, self.season_hold_days
+            )
+            self.season_rows = rows
+        except Exception as e:
+            self.status_msg = f"계절성 분석 오류: {e}"
+        finally:
+            self.season_loading = False
+        yield
+
+    async def set_season_hold_days(self, days: int):
+        """계절성 분석 보유기간 변경 후 재계산"""
+        if days == self.season_hold_days:
+            return
+        self.season_hold_days = days
+        if not self.season_code:
+            return
+        self.season_rows    = []
+        self.season_loading = True
+        yield
+
+        try:
+            from utils.data_loader  import QuantDataLoader
+            from utils.seasonality  import calc_monthly_seasonality
+            loader = QuantDataLoader()
+            df     = await asyncio.to_thread(loader.get_ohlcv, self.season_code, 1600)
+            rows   = await asyncio.to_thread(
+                calc_monthly_seasonality,
+                df, self.season_entry_type, self.season_ma_period, self.season_hold_days,
+            )
+            self.season_rows = rows
+        except Exception as e:
+            self.status_msg = f"계절성 분석 오류: {e}"
+        finally:
+            self.season_loading = False
         yield
 
     # ------------------------------------------------------------------
@@ -3150,6 +3252,119 @@ def _trend_detail_panel() -> rx.Component:
     )
 
 
+def _season_panel() -> rx.Component:
+    """12개월 계절성 EV 패널"""
+    return rx.cond(
+        State.season_code != "",
+        rx.box(
+            rx.vstack(
+                rx.hstack(
+                    rx.text("계절성 전략 분석", weight="bold", size="3"),
+                    rx.text("·", color="gray"),
+                    rx.text(State.season_code, color="gray", size="2"),
+                    rx.text(State.season_entry_label, color="violet", size="2"),
+                    rx.spacer(),
+                    rx.hstack(
+                        rx.text("보유기간:", size="1", color="gray"),
+                        rx.button(
+                            "5일",  size="1",
+                            variant=rx.cond(State.season_hold_days == 5,  "solid", "soft"),
+                            on_click=State.set_season_hold_days(5),
+                        ),
+                        rx.button(
+                            "10일", size="1",
+                            variant=rx.cond(State.season_hold_days == 10, "solid", "soft"),
+                            on_click=State.set_season_hold_days(10),
+                        ),
+                        rx.button(
+                            "20일", size="1",
+                            variant=rx.cond(State.season_hold_days == 20, "solid", "soft"),
+                            on_click=State.set_season_hold_days(20),
+                        ),
+                        rx.button(
+                            "60일", size="1",
+                            variant=rx.cond(State.season_hold_days == 60, "solid", "soft"),
+                            on_click=State.set_season_hold_days(60),
+                        ),
+                        spacing="1",
+                    ),
+                    rx.cond(
+                        State.season_loading,
+                        rx.spinner(size="2"),
+                        rx.text(""),
+                    ),
+                    align="center", width="100%",
+                ),
+                rx.cond(
+                    State.season_loading,
+                    rx.center(rx.text("계산 중...", color="gray"), height="80px"),
+                    rx.cond(
+                        State.season_rows.length() == 0,
+                        rx.center(rx.text("데이터 없음", color="gray"), height="80px"),
+                        rx.table.root(
+                            rx.table.header(
+                                rx.table.row(
+                                    rx.table.column_header_cell("월"),
+                                    rx.table.column_header_cell("EV"),
+                                    rx.table.column_header_cell("승률"),
+                                    rx.table.column_header_cell("평균이익"),
+                                    rx.table.column_header_cell("평균손실"),
+                                    rx.table.column_header_cell("손익비"),
+                                    rx.table.column_header_cell("표본"),
+                                )
+                            ),
+                            rx.table.body(
+                                rx.foreach(
+                                    State.season_rows,
+                                    lambda d: rx.table.row(
+                                        rx.table.cell(rx.text(d["month_kr"], weight="medium")),
+                                        rx.table.cell(
+                                            rx.cond(
+                                                d["has_data"],
+                                                rx.text(
+                                                    d["ev_str"],
+                                                    color=rx.cond(
+                                                        d["ev_high"], "green",
+                                                        rx.cond(d["ev_positive"], "blue", "red"),
+                                                    ),
+                                                    weight=rx.cond(d["ev_high"], "bold", "regular"),
+                                                ),
+                                                rx.text("-", color="gray"),
+                                            )
+                                        ),
+                                        rx.table.cell(
+                                            rx.cond(
+                                                d["has_data"],
+                                                rx.text(
+                                                    d["win_rate_str"],
+                                                    color=rx.cond(d["win_rate_high"], "green", "gray"),
+                                                    size="1",
+                                                ),
+                                                rx.text("-", color="gray", size="1"),
+                                            )
+                                        ),
+                                        rx.table.cell(rx.text(d["avg_profit_str"], color="green", size="1")),
+                                        rx.table.cell(rx.text(d["avg_loss_str"],   color="red",   size="1")),
+                                        rx.table.cell(rx.text(d["pl_ratio_str"],               size="1")),
+                                        rx.table.cell(rx.text(d["sample_n_str"],   color="gray", size="1")),
+                                    ),
+                                )
+                            ),
+                            variant="surface", width="100%",
+                        ),
+                    ),
+                ),
+                spacing="2", width="100%",
+            ),
+            border="1px solid var(--violet-5)",
+            border_radius="8px",
+            padding="16px",
+            margin_top="12px",
+            background="var(--violet-1)",
+        ),
+    )
+
+
 def trend_scanner_table() -> rx.Component:
     """추세추종 스캔 결과 테이블 — EV 순위."""
     return rx.cond(
@@ -3222,6 +3437,12 @@ def trend_scanner_table() -> rx.Component:
                                         )
                                     ),
                                     rx.button(
+                                        "계절성", size="1", variant="soft", color_scheme="indigo",
+                                        on_click=State.load_seasonality(
+                                            r["code"], r["entry_type"], r["ma_period"], r["entry_label"]
+                                        )
+                                    ),
+                                    rx.button(
                                         "분석", size="1", variant="soft", color_scheme="blue",
                                         on_click=State.goto_analysis(r["code"], r["name"], r["is_us"])
                                     ),
@@ -3234,6 +3455,7 @@ def trend_scanner_table() -> rx.Component:
                 variant="surface", width="100%",
             ),
             _trend_detail_panel(),
+            _season_panel(),
             spacing="0", width="100%",
         ),
     )
@@ -5343,6 +5565,45 @@ def leaders_tab() -> rx.Component:
             ),
             # ── 데이터 뷰 (모바일 카드 + 데스크탑 테이블) ────────
             rx.vstack(
+                # ── Best Pick 카드 ──
+                rx.cond(
+                    State.leaders_best_name != "",
+                    rx.box(
+                        rx.hstack(
+                            rx.vstack(
+                                rx.hstack(
+                                    rx.icon("star", size=14, color="var(--amber-11)"),
+                                    rx.text("오늘의 Best Pick (일반주)", size="1", color="var(--amber-11)", weight="bold"),
+                                    spacing="1", align="center",
+                                ),
+                                rx.hstack(
+                                    rx.text(State.leaders_best_name, weight="bold", size="3"),
+                                    rx.text(State.leaders_best_code, size="1", color="gray"),
+                                    spacing="2", align="center",
+                                ),
+                                rx.text(State.leaders_best_reason, size="1", color="var(--gray-11)"),
+                                spacing="1",
+                            ),
+                            rx.spacer(),
+                            rx.button(
+                                "분석",
+                                size="1",
+                                color_scheme="amber",
+                                variant="soft",
+                                on_click=State.goto_lookup_from_leaders(
+                                    State.leaders_best_code, State.leaders_best_is_us
+                                ),
+                            ),
+                            align="center", width="100%",
+                        ),
+                        background="var(--amber-2)",
+                        border="1px solid var(--amber-5)",
+                        border_radius="8px",
+                        padding="12px 16px",
+                        margin_bottom="8px",
+                        width="100%",
+                    ),
+                ),
                 # 모바일 카드
                 rx.box(
                     rx.foreach(
