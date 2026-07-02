@@ -334,11 +334,8 @@ class State(rx.State):
     leaders_cache_time: str = ""       # 캐시 저장 시각 표시용
     leaders_data_date: str = ""        # 데이터 기준일 (YYYY-MM-DD (요))
     leaders_data_is_prev: bool = False # 오늘 날짜와 다른 전일 데이터이면 True
-    # Best Pick (일반주 score_a 최고)
-    leaders_best_name: str = ""
-    leaders_best_code: str = ""
-    leaders_best_reason: str = ""
-    leaders_best_is_us: bool = False
+    # Best Pick (일반주 score_a 최고) — List[dict] 패턴 (len 0 or 1)
+    leaders_best_pick: List[dict] = []
 
     # 섹터 모멘텀
     sector_data: List[dict] = []
@@ -940,40 +937,48 @@ class State(rx.State):
         self.stock_momentum_mktcap = v
 
     def _compute_best_pick(self):
-        """일반주 중 score_a 최고 종목을 leaders_best_* 에 저장."""
-        stocks = [x for x in self.leaders_data_raw if not x.get("is_etf", False)]
-        if not stocks:
-            self.leaders_best_name = ""
-            self.leaders_best_code = ""
-            self.leaders_best_reason = ""
-            self.leaders_best_is_us = False
-            return
-        best = max(stocks, key=lambda x: x.get("score_a", 0))
-        self.leaders_best_name    = best.get("name", "")
-        self.leaders_best_code    = best.get("code", "")
-        self.leaders_best_is_us   = best.get("is_us", False)
+        """일반주 중 score_a 최고 종목을 leaders_best_pick (len 0 or 1) 에 저장."""
+        try:
+            stocks = [x for x in self.leaders_data_raw if not x.get("is_etf", False)]
+            if not stocks:
+                self.leaders_best_pick = []
+                return
+            best = max(stocks, key=lambda x: x.get("score_a", 0))
+            name = best.get("name", "")
+            code = best.get("code", "")
+            if not name and not code:
+                self.leaders_best_pick = []
+                return
 
-        parts = []
-        change_str = best.get("change_pct_str", "")
-        vol_rank   = best.get("vol_rank_str", "")
-        rise_rank  = best.get("rise_rank_str", "")
-        streak     = best.get("consecutive_days", 1)
-        near_high  = best.get("is_near_high", False)
-        score_a    = best.get("score_a_str", "")
+            parts = []
+            change_str = best.get("change_pct_str", "")
+            vol_rank   = best.get("vol_rank_str", "")
+            rise_rank  = best.get("rise_rank_str", "")
+            streak     = int(best.get("consecutive_days", 1))
+            near_high  = bool(best.get("is_near_high", False))
+            score_a    = best.get("score_a_str", "")
 
-        if change_str and change_str not in ("", "-"):
-            parts.append(f"당일 {change_str}")
-        if vol_rank and vol_rank not in ("", "-"):
-            parts.append(f"거래량 {vol_rank}위")
-        if rise_rank and rise_rank not in ("", "-"):
-            parts.append(f"상승률 {rise_rank}위")
-        if streak >= 2:
-            parts.append(f"{streak}일 연속 상승")
-        if near_high:
-            parts.append("52주 신고가 근접")
-        if score_a:
-            parts.append(f"A점수 {score_a}")
-        self.leaders_best_reason = " · ".join(parts) if parts else "데이터 집계 중"
+            if change_str and change_str not in ("", "-"):
+                parts.append(f"당일 {change_str}")
+            if vol_rank and vol_rank not in ("", "-"):
+                parts.append(f"거래량 {vol_rank}위")
+            if rise_rank and rise_rank not in ("", "-"):
+                parts.append(f"상승률 {rise_rank}위")
+            if streak >= 2:
+                parts.append(f"{streak}일 연속 상승")
+            if near_high:
+                parts.append("52주 신고가 근접")
+            if score_a:
+                parts.append(f"A점수 {score_a}")
+
+            self.leaders_best_pick = [{
+                "name":   name,
+                "code":   code,
+                "reason": " · ".join(parts) if parts else "A점수 1위 일반주",
+                "is_us":  bool(best.get("is_us", False)),
+            }]
+        except Exception:
+            self.leaders_best_pick = []
 
     def _apply_filter_and_sort(self):
         """leaders_data_raw에 타입 필터 + 정렬을 적용해 leaders_data 갱신."""
@@ -1043,6 +1048,7 @@ class State(rx.State):
         self.leaders_data_date = ""
         self.leaders_data_is_prev = False
         self.leaders_multi_results = []
+        self.leaders_best_pick = []
         _dbg(f"do_fetch_leaders YIELDING  period={self.leaders_period}  market={self.leaders_market}")
         yield
         _dbg("do_fetch_leaders RESUMED after yield - starting async fetch")
@@ -5567,34 +5573,38 @@ def leaders_tab() -> rx.Component:
             rx.vstack(
                 # ── Best Pick 카드 ──
                 rx.cond(
-                    State.leaders_best_name != "",
+                    State.leaders_best_pick.length() > 0,
                     rx.box(
-                        rx.hstack(
-                            rx.vstack(
-                                rx.hstack(
-                                    rx.icon("star", size=14, color="var(--amber-11)"),
-                                    rx.text("오늘의 Best Pick (일반주)", size="1", color="var(--amber-11)", weight="bold"),
-                                    spacing="1", align="center",
+                        rx.foreach(
+                            State.leaders_best_pick,
+                            lambda p: rx.hstack(
+                                rx.vstack(
+                                    rx.hstack(
+                                        rx.icon("star", size=14, color="var(--amber-11)"),
+                                        rx.text(
+                                            "오늘의 Best Pick (일반주)",
+                                            size="1", color="var(--amber-11)", weight="bold",
+                                        ),
+                                        spacing="1", align="center",
+                                    ),
+                                    rx.hstack(
+                                        rx.text(p["name"], weight="bold", size="3"),
+                                        rx.text(p["code"], size="1", color="gray"),
+                                        spacing="2", align="center",
+                                    ),
+                                    rx.text(p["reason"], size="1", color="var(--gray-11)"),
+                                    spacing="1",
                                 ),
-                                rx.hstack(
-                                    rx.text(State.leaders_best_name, weight="bold", size="3"),
-                                    rx.text(State.leaders_best_code, size="1", color="gray"),
-                                    spacing="2", align="center",
+                                rx.spacer(),
+                                rx.button(
+                                    "분석",
+                                    size="1",
+                                    color_scheme="amber",
+                                    variant="soft",
+                                    on_click=State.goto_lookup_from_leaders(p["code"], p["is_us"]),
                                 ),
-                                rx.text(State.leaders_best_reason, size="1", color="var(--gray-11)"),
-                                spacing="1",
+                                align="center", width="100%",
                             ),
-                            rx.spacer(),
-                            rx.button(
-                                "분석",
-                                size="1",
-                                color_scheme="amber",
-                                variant="soft",
-                                on_click=State.goto_lookup_from_leaders(
-                                    State.leaders_best_code, State.leaders_best_is_us
-                                ),
-                            ),
-                            align="center", width="100%",
                         ),
                         background="var(--amber-2)",
                         border="1px solid var(--amber-5)",
@@ -5603,6 +5613,7 @@ def leaders_tab() -> rx.Component:
                         margin_bottom="8px",
                         width="100%",
                     ),
+                    rx.fragment(),
                 ),
                 # 모바일 카드
                 rx.box(
