@@ -111,11 +111,6 @@ def fetch_sector_momentum(region: str = "KR") -> list[dict]:
             row[f"ret_{key}_has_data"] = ret is not None
         rows.append(row)
 
-    # 1M 기준 내림차순 정렬
-    rows.sort(
-        key=lambda x: x["ret_1m"] if x["ret_1m_has_data"] else -999,
-        reverse=True,
-    )
     for i, row in enumerate(rows):
         row["rank"] = i + 1
 

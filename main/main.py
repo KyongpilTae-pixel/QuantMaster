@@ -342,6 +342,7 @@ class State(rx.State):
     sector_loading: bool = False
     sector_error: str = ""
     sector_region: str = "KR"
+    sector_sort_period: str = "1m"   # "5d"|"1m"|"3m"|"6m"|"12m"
 
     # 종목 모멘텀 스캔 (scanner 탭)
     stock_momentum_results: List[dict] = []
@@ -675,6 +676,24 @@ class State(rx.State):
     def set_sector_region(self, v: str):
         self.sector_region = v
 
+    def _apply_sector_sort(self):
+        """sector_sort_period 기준으로 sector_data 재정렬 + rank 갱신."""
+        key     = f"ret_{self.sector_sort_period}"
+        has_key = f"ret_{self.sector_sort_period}_has_data"
+        sorted_rows = sorted(
+            self.sector_data,
+            key=lambda x: x.get(key, 0) if x.get(has_key, False) else -999.0,
+            reverse=True,
+        )
+        self.sector_data = [{**row, "rank": i + 1} for i, row in enumerate(sorted_rows)]
+
+    def set_sector_sort_period(self, v: str):
+        if v == self.sector_sort_period:
+            return
+        self.sector_sort_period = v
+        if self.sector_data:
+            self._apply_sector_sort()
+
     async def fetch_sector_momentum(self):
         if self.sector_loading:
             return
@@ -689,6 +708,7 @@ class State(rx.State):
                 fetch_sector_momentum, self.sector_region
             )
             self.sector_data = data
+            self._apply_sector_sort()
         except Exception as e:
             self.sector_error = str(e)
         finally:
@@ -5299,6 +5319,28 @@ def _ret_badge(ret_str, ret_positive, has_data) -> rx.Component:
     )
 
 
+def _sector_col_header(label: str, period_key: str) -> rx.Component:
+    """정렬 기준 컬럼은 파란색 + 화살표 표시."""
+    return rx.table.column_header_cell(
+        rx.hstack(
+            rx.text(
+                label,
+                color=rx.cond(State.sector_sort_period == period_key, "var(--blue-11)", "inherit"),
+                weight=rx.cond(State.sector_sort_period == period_key, "bold", "regular"),
+                size="2",
+            ),
+            rx.cond(
+                State.sector_sort_period == period_key,
+                rx.text("▼", size="1", color="var(--blue-11)"),
+                rx.fragment(),
+            ),
+            spacing="1", align="center",
+        ),
+        cursor="pointer",
+        on_click=State.set_sector_sort_period(period_key),
+    )
+
+
 def sector_tab() -> rx.Component:
     return rx.vstack(
         # ── 컨트롤 바 ──────────────────────────────────────────────
@@ -5322,6 +5364,26 @@ def sector_tab() -> rx.Component:
             ),
             width="100%", align="center", spacing="3",
         ),
+        # ── 기간 선택 (정렬 기준) ────────────────────────────────
+        rx.hstack(
+            rx.text("정렬 기준:", size="2", color="gray", weight="medium"),
+            rx.button("5일",   size="1", color_scheme="blue",
+                variant=rx.cond(State.sector_sort_period == "5d",  "solid", "soft"),
+                on_click=State.set_sector_sort_period("5d")),
+            rx.button("1개월", size="1", color_scheme="blue",
+                variant=rx.cond(State.sector_sort_period == "1m",  "solid", "soft"),
+                on_click=State.set_sector_sort_period("1m")),
+            rx.button("3개월", size="1", color_scheme="blue",
+                variant=rx.cond(State.sector_sort_period == "3m",  "solid", "soft"),
+                on_click=State.set_sector_sort_period("3m")),
+            rx.button("6개월", size="1", color_scheme="blue",
+                variant=rx.cond(State.sector_sort_period == "6m",  "solid", "soft"),
+                on_click=State.set_sector_sort_period("6m")),
+            rx.button("12개월", size="1", color_scheme="blue",
+                variant=rx.cond(State.sector_sort_period == "12m", "solid", "soft"),
+                on_click=State.set_sector_sort_period("12m")),
+            spacing="1", align="center",
+        ),
         # ── 에러 ──────────────────────────────────────────────────
         rx.cond(
             State.sector_error != "",
@@ -5337,11 +5399,11 @@ def sector_tab() -> rx.Component:
                 rx.table.header(
                     rx.table.row(
                         rx.table.column_header_cell("자산"),
-                        rx.table.column_header_cell("5일"),
-                        rx.table.column_header_cell("1개월"),
-                        rx.table.column_header_cell("3개월"),
-                        rx.table.column_header_cell("6개월"),
-                        rx.table.column_header_cell("12개월"),
+                        _sector_col_header("5일",   "5d"),
+                        _sector_col_header("1개월",  "1m"),
+                        _sector_col_header("3개월",  "3m"),
+                        _sector_col_header("6개월",  "6m"),
+                        _sector_col_header("12개월", "12m"),
                     )
                 ),
                 rx.table.body(
