@@ -678,20 +678,25 @@ class State(rx.State):
 
     def _apply_sector_sort(self):
         """sector_sort_period 기준으로 sector_data 재정렬 + rank 갱신."""
-        key     = f"ret_{self.sector_sort_period}"
-        has_key = f"ret_{self.sector_sort_period}_has_data"
-        sorted_rows = sorted(
-            self.sector_data,
-            key=lambda x: x.get(key, 0) if x.get(has_key, False) else -999.0,
-            reverse=True,
-        )
-        self.sector_data = [{**row, "rank": i + 1} for i, row in enumerate(sorted_rows)]
+        try:
+            sort_key = f"ret_{self.sector_sort_period}"
+            has_key  = f"ret_{self.sector_sort_period}_has_data"
+            # Reflex proxy dict → plain Python dict 변환 후 정렬
+            plain_rows = [dict(row) for row in self.sector_data]
+            sorted_rows = sorted(
+                plain_rows,
+                key=lambda x: (x.get(sort_key) or 0.0) if x.get(has_key, False) else -999.0,
+                reverse=True,
+            )
+            self.sector_data = [{**row, "rank": i + 1} for i, row in enumerate(sorted_rows)]
+        except Exception as e:
+            self.sector_error = f"정렬 오류: {e}"
 
     def set_sector_sort_period(self, v: str):
         if v == self.sector_sort_period:
             return
         self.sector_sort_period = v
-        if self.sector_data:
+        if len(self.sector_data) > 0:
             self._apply_sector_sort()
 
     async def fetch_sector_momentum(self):
