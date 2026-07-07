@@ -676,6 +676,15 @@ class State(rx.State):
     def set_sector_region(self, v: str):
         self.sector_region = v
 
+    def set_pullback_min_dip(self, v: list):
+        self.pullback_min_dip = v
+
+    def set_pullback_max_rsi(self, v: list):
+        self.pullback_max_rsi = v
+
+    def set_pullback_min_mktcap(self, v: int):
+        self.pullback_min_mktcap = v
+
     def _apply_sector_sort(self):
         """sector_sort_period 기준으로 sector_data 재정렬 + rank 갱신."""
         try:
