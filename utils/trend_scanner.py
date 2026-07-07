@@ -339,7 +339,7 @@ def scan_trend_following(
     filter_mode='absolute'  → EMA10>EMA20 + 200일선 6개월 필터
     filter_mode='both'      → RS90+ AND 절대강도 둘 다
     """
-    from scanner import ScanResults
+    from utils.stock_scanner import ScanResults
 
     is_us = market in ("SP500", "NASDAQ")
 
