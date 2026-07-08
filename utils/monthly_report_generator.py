@@ -18,6 +18,7 @@ _REPORTS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "quantRe
 _CACHE_DIR   = os.path.join(os.path.dirname(os.path.dirname(__file__)), "cache")
 
 from utils.report_generator import _CSS, _fetch_index, _fetch_current_price, _INDEX_CODES
+from utils.market_regime import generate_regime_section
 
 
 # ---------------------------------------------------------------------------
@@ -448,6 +449,7 @@ def generate_full_monthly_report() -> str:
 
     sections = [
         generate_monthly_market_section(generated_at),
+        generate_regime_section(generated_at),
         generate_monthly_sector_section(generated_at),
         generate_monthly_momentum_section(generated_at),
         generate_monthly_leaders_section(generated_at),

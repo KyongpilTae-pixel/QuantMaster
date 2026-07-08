@@ -18,6 +18,7 @@ _CACHE_DIR   = os.path.join(os.path.dirname(os.path.dirname(__file__)), "cache")
 
 # CSS 공유 (report_generator와 동일)
 from utils.report_generator import _CSS, _fetch_index, _fetch_current_price, _INDEX_CODES
+from utils.market_regime import generate_regime_section
 
 
 # ---------------------------------------------------------------------------
@@ -446,6 +447,7 @@ def generate_full_weekly_report() -> str:
 
     sections = [
         generate_weekly_market_section(generated_at),
+        generate_regime_section(generated_at),
         generate_weekly_momentum_section(generated_at),
         generate_weekly_leaders_section(generated_at),
         generate_weekly_portfolio_section(generated_at),
