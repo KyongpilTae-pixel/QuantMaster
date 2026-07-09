@@ -192,12 +192,19 @@ def regime_badge_html(regime: str, color: str) -> str:
     )
 
 
-def generate_regime_section(generated_at: str | None = None) -> str:
-    """주요 지수 장세 판단 HTML 섹션."""
+def generate_regime_section(
+    generated_at: str | None = None,
+    regimes: "dict | None" = None,
+) -> str:
+    """주요 지수 장세 판단 HTML 섹션.
+
+    regimes를 외부에서 전달하면 재조회 없이 사용 (weekly report 공유용).
+    """
     if generated_at is None:
         generated_at = datetime.now().strftime("%H:%M")
 
-    regimes = fetch_all_regimes()
+    if regimes is None:
+        regimes = fetch_all_regimes()
 
     rows = ""
     for _, label in INDEX_CODES:
