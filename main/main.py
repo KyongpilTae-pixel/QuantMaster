@@ -777,35 +777,43 @@ class State(rx.State):
         if filepath and _os.path.exists(filepath):
             _os.startfile(filepath)
 
+    @rx.event(background=True)
     async def generate_daily_report_event(self):
-        self.report_generating = True
-        self.report_status = "일별 리포트 생성 중... (약 30~60초 소요)"
-        yield
         import asyncio
+        async with self:
+            self.report_generating = True
+            self.report_status = "일별 리포트 생성 중... (약 30~60초 소요)"
         try:
             from utils.report_generator import generate_full_daily_report
             path = await asyncio.to_thread(generate_full_daily_report)
-            self.report_status = f"완료 → {path}"
+            async with self:
+                self.report_status = f"완료 → {path}"
         except Exception as e:
-            self.report_status = f"오류: {e}"
+            async with self:
+                self.report_status = f"오류: {e}"
         finally:
-            self.report_generating = False
-        self.load_report_files()
+            async with self:
+                self.report_generating = False
+                self.load_report_files()
 
+    @rx.event(background=True)
     async def generate_weekly_report_event(self):
-        self.report_generating = True
-        self.report_status = "주간 리포트 생성 중... (약 30~60초 소요)"
-        yield
         import asyncio
+        async with self:
+            self.report_generating = True
+            self.report_status = "주간 리포트 생성 중... (약 30~60초 소요)"
         try:
             from utils.weekly_report_generator import generate_full_weekly_report
             path = await asyncio.to_thread(generate_full_weekly_report)
-            self.report_status = f"완료 → {path}"
+            async with self:
+                self.report_status = f"완료 → {path}"
         except Exception as e:
-            self.report_status = f"오류: {e}"
+            async with self:
+                self.report_status = f"오류: {e}"
         finally:
-            self.report_generating = False
-        self.load_report_files()
+            async with self:
+                self.report_generating = False
+                self.load_report_files()
 
     def load_tracker_picks(self):
         """성과 추적 종목 로드 (필터 적용)."""
@@ -1172,43 +1180,67 @@ class State(rx.State):
         _dbg(f"do_fetch_leaders 1D fetch START  market={self.leaders_market}")
 
         try:
-            data = await asyncio.to_thread(
-                fetch_leaders_combined, self.leaders_market
-            )
+            # ① 주도주 fetch (10~20초) — 3초마다 yield로 WebSocket 유지
+            _t1 = asyncio.create_task(asyncio.to_thread(fetch_leaders_combined, self.leaders_market))
+            while not _t1.done():
+                try:
+                    data = await asyncio.wait_for(asyncio.shield(_t1), timeout=3.0)
+                    break
+                except asyncio.TimeoutError:
+                    yield
+            else:
+                data = _t1.result()
             _dbg(f"do_fetch_leaders fetch_leaders_combined DONE  items={len(data)}")
-            # KR: 연속 등장 횟수 계산
+
+            # ② 연속 등장 계산 (KR 전용, 5~10초)
             if self.leaders_market in ("KOSPI", "KOSDAQ"):
                 from utils.data_loader import compute_consecutive_days
-                data = await asyncio.to_thread(
-                    compute_consecutive_days, self.leaders_market, data
-                )
+                _t2 = asyncio.create_task(asyncio.to_thread(compute_consecutive_days, self.leaders_market, data))
+                while not _t2.done():
+                    try:
+                        data = await asyncio.wait_for(asyncio.shield(_t2), timeout=3.0)
+                        break
+                    except asyncio.TimeoutError:
+                        yield
+                else:
+                    data = _t2.result()
                 _dbg(f"do_fetch_leaders compute_consecutive_days DONE  items={len(data)}")
             else:
-                # US: consecutive_days 필드 기본값
                 data = [{**item, "consecutive_days": 1, "has_streak": False, "streak_hot": False} for item in data]
 
             self.leaders_data_raw = data
             self._apply_filter_and_sort()
             _dbg(f"do_fetch_leaders _apply_filter_and_sort DONE  leaders_data={len(self.leaders_data)}")
-            # 데이터 기준일 추출 및 전일 여부 판단
             today_prefix = _dt.today().strftime("%Y-%m-%d")
             date_str = data[0].get("data_date", "") if data else ""
             self.leaders_data_date = date_str
             self.leaders_data_is_prev = bool(date_str) and not date_str.startswith(today_prefix)
             _dbg(f"do_fetch_leaders date={date_str!r}  is_prev={self.leaders_data_is_prev}")
-            # KR: 당일 데이터일 때만 캐시 저장 + 일별 리포트 갱신
+
+            # ③ KR 당일 데이터: 캐시 저장 + 일별 리포트 갱신 (백그라운드성, 실패 무시)
             if self.leaders_market in ("KOSPI", "KOSDAQ") and not self.leaders_data_is_prev:
                 _dbg("do_fetch_leaders saving cache...")
                 from utils.data_loader import save_leaders_cache
-                await asyncio.to_thread(save_leaders_cache, self.leaders_market, data)
+                _t3 = asyncio.create_task(asyncio.to_thread(save_leaders_cache, self.leaders_market, data))
+                while not _t3.done():
+                    try:
+                        await asyncio.wait_for(asyncio.shield(_t3), timeout=3.0)
+                        break
+                    except asyncio.TimeoutError:
+                        yield
                 _dbg("do_fetch_leaders cache saved. appending daily report...")
                 try:
                     from utils.report_generator import append_to_daily_report
-                    await asyncio.to_thread(append_to_daily_report, self.leaders_market, data)
+                    _t4 = asyncio.create_task(asyncio.to_thread(append_to_daily_report, self.leaders_market, data))
+                    while not _t4.done():
+                        try:
+                            await asyncio.wait_for(asyncio.shield(_t4), timeout=3.0)
+                            break
+                        except asyncio.TimeoutError:
+                            yield
                     _dbg("do_fetch_leaders daily report done")
                 except Exception as rep_e:
                     _dbg(f"do_fetch_leaders daily report ERROR (ignored)  {rep_e}")
-                    pass  # 리포트 실패는 UI에 영향 주지 않음
         except Exception as e:
             _dbg(f"do_fetch_leaders EXCEPTION  {e}")
             self.leaders_error = str(e)
@@ -1217,11 +1249,12 @@ class State(rx.State):
             self.leaders_loading = False
         _dbg("do_fetch_leaders FUNCTION END")
 
+    @rx.event(background=True)
     async def do_prefetch_momentum_bg(self):
         """서버 시작 시 KOSPI/KOSDAQ 기간 모멘텀 캐시를 백그라운드로 미리 수집한다.
 
-        오늘 캐시가 없는 시장만 스캔하며, 완료된 시장부터 즉시 로드 가능해진다.
-        다중 사용자 환경에서도 파일 캐시를 공유하므로 1회 수집으로 전체 수혜.
+        @rx.background: State 락을 점유하지 않고 실행 → WebSocket 유지.
+        상태 갱신은 async with self: 블록에서만 순간적으로 락 획득.
         """
         import asyncio as _aio
         from utils.stock_scanner import (
@@ -1233,26 +1266,28 @@ class State(rx.State):
         markets = ["KOSPI", "KOSDAQ"]
         need = [m for m in markets if not load_momentum_cache_all(m)]
         if not need:
-            self._refresh_momentum_cache_status()
+            async with self:
+                self._refresh_momentum_cache_status()
             return
 
         total = len(need)
         for idx, market in enumerate(need, 1):
-            self.leaders_prefetch_status = f"기간 데이터 캐싱 중... {market} ({idx}/{total})"
-            yield
+            async with self:
+                self.leaders_prefetch_status = f"기간 데이터 캐싱 중... {market} ({idx}/{total})"
             try:
                 data_all = await _aio.to_thread(
                     scan_stock_momentum_all_periods, market, 1_000, 30, 150, 90
                 )
                 if data_all:
                     await _aio.to_thread(save_momentum_cache_all, market, data_all)
-                    self._refresh_momentum_cache_status()
+                    async with self:
+                        self._refresh_momentum_cache_status()
                     _dbg(f"do_prefetch_momentum_bg DONE  {market}")
             except Exception as e:
                 _dbg(f"do_prefetch_momentum_bg ERROR  {market}  {e}")
-            yield
 
-        self.leaders_prefetch_status = ""
+        async with self:
+            self.leaders_prefetch_status = ""
 
     # ------------------------------------------------------------------
     # 기간 모멘텀 탭 (pmom)
@@ -2135,17 +2170,25 @@ class State(rx.State):
             self.status_msg = f"{mkt} 눌림목 종목 탐색 중... (약 1~2분 소요)"
             yield
             try:
-                raw = await asyncio.to_thread(
+                _task = asyncio.create_task(asyncio.to_thread(
                     scan_pullback_stocks,
                     mkt,
                     self.pullback_min_mktcap,
                     self.pullback_min_dip[0],
                     self.pullback_max_rsi[0],
-                    0.0,   # min_trend_3m
+                    0.0,
                     30,
                     150,
                     90,
-                )
+                ))
+                while not _task.done():
+                    try:
+                        raw = await asyncio.wait_for(asyncio.shield(_task), timeout=3.0)
+                        break
+                    except asyncio.TimeoutError:
+                        yield
+                else:
+                    raw = _task.result()
                 self.pullback_results = list(raw)
                 warn = getattr(raw, "warning", "")
                 if warn:
@@ -2233,14 +2276,22 @@ class State(rx.State):
             self.status_msg = f"{mkt} 하락방어 종목 분석 중... (약 1~2분 소요)"
             yield
             try:
-                raw = await asyncio.to_thread(
+                _task = asyncio.create_task(asyncio.to_thread(
                     scan_defensive_stocks,
                     mkt,
                     self.defensive_period,
                     self.defensive_max_beta[0],
                     self.defensive_min_mktcap,
                     30,
-                )
+                ))
+                while not _task.done():
+                    try:
+                        raw = await asyncio.wait_for(asyncio.shield(_task), timeout=3.0)
+                        break
+                    except asyncio.TimeoutError:
+                        yield
+                else:
+                    raw = _task.result()
                 self.defensive_results = raw
                 cnt = len(raw)
                 self.status_msg = (
@@ -2272,13 +2323,21 @@ class State(rx.State):
             self.status_msg = f"{mkt} {period_lbl} 모멘텀 스캔 중... (약 1~2분 소요)"
             yield
             try:
-                raw = await asyncio.to_thread(
+                _task = asyncio.create_task(asyncio.to_thread(
                     scan_stock_momentum,
                     mkt,
                     self.stock_momentum_period,
                     self.stock_momentum_mktcap,
                     30,
-                )
+                ))
+                while not _task.done():
+                    try:
+                        raw = await asyncio.wait_for(asyncio.shield(_task), timeout=3.0)
+                        break
+                    except asyncio.TimeoutError:
+                        yield
+                else:
+                    raw = _task.result()
                 self.stock_momentum_results = list(raw)
                 self.scan_warning = getattr(raw, "warning", "")
                 cnt = len(raw)
@@ -2302,14 +2361,22 @@ class State(rx.State):
         try:
             scanner = QuantScanner()
             vwap = int(self.vwap_period)
-            results = await asyncio.to_thread(
+            _task = asyncio.create_task(asyncio.to_thread(
                 scanner.run_advanced_scan,
                 self.pbr_limit[0],
                 vwap,
                 10,
                 self.market,
                 self.min_cap_label,
-            )
+            ))
+            while not _task.done():
+                try:
+                    results = await asyncio.wait_for(asyncio.shield(_task), timeout=3.0)
+                    break
+                except asyncio.TimeoutError:
+                    yield
+            else:
+                results = _task.result()
 
             self.scan_results = [
                 ScanResult(
@@ -2365,12 +2432,20 @@ class State(rx.State):
 
         try:
             bt = Backtester()
-            result = await asyncio.to_thread(
+            _task = asyncio.create_task(asyncio.to_thread(
                 bt.run,
                 target_symbol,
                 target_name,
                 int(self.vwap_period),
-            )
+            ))
+            while not _task.done():
+                try:
+                    result = await asyncio.wait_for(asyncio.shield(_task), timeout=3.0)
+                    break
+                except asyncio.TimeoutError:
+                    yield
+            else:
+                result = _task.result()
 
             if result:
                 self.bt_summary = BacktestSummary(
