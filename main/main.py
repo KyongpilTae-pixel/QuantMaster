@@ -1207,7 +1207,7 @@ class State(rx.State):
             _t1 = asyncio.create_task(asyncio.to_thread(fetch_leaders_combined, self.leaders_market))
             while not _t1.done():
                 try:
-                    data = await asyncio.wait_for(asyncio.shield(_t1), timeout=3.0)
+                    data = await asyncio.wait_for(asyncio.shield(_t1), timeout=0.5)
                     break
                 except asyncio.TimeoutError:
                     yield
@@ -1221,7 +1221,7 @@ class State(rx.State):
                 _t2 = asyncio.create_task(asyncio.to_thread(compute_consecutive_days, self.leaders_market, data))
                 while not _t2.done():
                     try:
-                        data = await asyncio.wait_for(asyncio.shield(_t2), timeout=3.0)
+                        data = await asyncio.wait_for(asyncio.shield(_t2), timeout=0.5)
                         break
                     except asyncio.TimeoutError:
                         yield
@@ -1247,7 +1247,7 @@ class State(rx.State):
                 _t3 = asyncio.create_task(asyncio.to_thread(save_leaders_cache, self.leaders_market, data))
                 while not _t3.done():
                     try:
-                        await asyncio.wait_for(asyncio.shield(_t3), timeout=3.0)
+                        await asyncio.wait_for(asyncio.shield(_t3), timeout=0.5)
                         break
                     except asyncio.TimeoutError:
                         yield
@@ -1257,7 +1257,7 @@ class State(rx.State):
                     _t4 = asyncio.create_task(asyncio.to_thread(append_to_daily_report, self.leaders_market, data))
                     while not _t4.done():
                         try:
-                            await asyncio.wait_for(asyncio.shield(_t4), timeout=3.0)
+                            await asyncio.wait_for(asyncio.shield(_t4), timeout=0.5)
                             break
                         except asyncio.TimeoutError:
                             yield
@@ -1389,17 +1389,28 @@ class State(rx.State):
                 )
             )
             while not task.done():
-                with _lock:
-                    curr, tot = _prog["current"], _prog["total"]
-                if tot > 0:
-                    self.pmom_scan_progress = f"{curr}/{tot}개 종목 처리 중..."
-                yield
-                await _aio.sleep(1)
+                try:
+                    data_all_inner = await _aio.wait_for(_aio.shield(task), timeout=0.5)
+                    break
+                except _aio.TimeoutError:
+                    with _lock:
+                        curr, tot = _prog["current"], _prog["total"]
+                    if tot > 0:
+                        self.pmom_scan_progress = f"{curr}/{tot}개 종목 처리 중..."
+                    yield
+            else:
+                data_all_inner = task.result()
 
-            data_all = task.result()
+            data_all = data_all_inner
             self.pmom_scan_progress = ""
             if data_all:
-                await _aio.to_thread(save_momentum_cache_all, self.pmom_market, data_all)
+                _save_task = _aio.create_task(_aio.to_thread(save_momentum_cache_all, self.pmom_market, data_all))
+                while not _save_task.done():
+                    try:
+                        await _aio.wait_for(_aio.shield(_save_task), timeout=0.5)
+                        break
+                    except _aio.TimeoutError:
+                        yield
                 self._refresh_momentum_cache_status()
                 sorted_rows, labels = apply_sort_and_cols(list(data_all), self.pmom_period, top_n=30)
                 self.pmom_results = sorted_rows
@@ -2053,12 +2064,25 @@ class State(rx.State):
 
             try:
                 # 1. 공통 초기화 (종목 목록 + 지수 데이터)
-                ctx = await asyncio.to_thread(
+                self.status_msg = "시장 데이터 로드 중..."
+                yield
+                _prep_task = asyncio.create_task(asyncio.to_thread(
                     scanner.prepare,
                     self.market,
                     self.use_alpha,
                     self.use_short_filter,
-                )
+                ))
+                while not _prep_task.done():
+                    try:
+                        ctx = await asyncio.wait_for(asyncio.shield(_prep_task), timeout=0.5)
+                        break
+                    except asyncio.TimeoutError:
+                        if self.whale_stop_requested:
+                            self.status_msg = "탐색이 중단되었습니다."
+                            return
+                        yield
+                else:
+                    ctx = _prep_task.result()
                 if not ctx:
                     self.status_msg = "시장 데이터 로드 실패"
                     return
@@ -2108,7 +2132,7 @@ class State(rx.State):
                     self.status_msg = self.whale_progress
                     yield
 
-                    new = await asyncio.to_thread(
+                    _batch_task = asyncio.create_task(asyncio.to_thread(
                         scanner._scan_batch,
                         remaining,
                         ctx,
@@ -2119,7 +2143,22 @@ class State(rx.State):
                         step_label,
                         step_timeout,
                         th_ratio,
-                    )
+                    ))
+                    while not _batch_task.done():
+                        try:
+                            new = await asyncio.wait_for(asyncio.shield(_batch_task), timeout=0.5)
+                            break
+                        except asyncio.TimeoutError:
+                            if self.whale_stop_requested:
+                                self.status_msg = (
+                                    f"탐색이 중단되었습니다. 현재까지 {len(found)}개 종목을 탐지했습니다."
+                                )
+                                self.whale_stop_requested = False
+                                yield
+                                return
+                            yield
+                    else:
+                        new = _batch_task.result()
                     new_found = False
                     for r in new:
                         if r["Symbol"] not in found:
@@ -2207,7 +2246,7 @@ class State(rx.State):
                 ))
                 while not _task.done():
                     try:
-                        raw = await asyncio.wait_for(asyncio.shield(_task), timeout=3.0)
+                        raw = await asyncio.wait_for(asyncio.shield(_task), timeout=0.5)
                         break
                     except asyncio.TimeoutError:
                         if self.scan_stop_requested:
@@ -2271,7 +2310,7 @@ class State(rx.State):
                 ))
                 while not scan_task.done():
                     try:
-                        raw = await asyncio.wait_for(asyncio.shield(scan_task), timeout=3.0)
+                        raw = await asyncio.wait_for(asyncio.shield(scan_task), timeout=0.5)
                         break
                     except asyncio.TimeoutError:
                         d, t = done_ref[0], total_ref[0]
@@ -2322,7 +2361,7 @@ class State(rx.State):
                 ))
                 while not _task.done():
                     try:
-                        raw = await asyncio.wait_for(asyncio.shield(_task), timeout=3.0)
+                        raw = await asyncio.wait_for(asyncio.shield(_task), timeout=0.5)
                         break
                     except asyncio.TimeoutError:
                         if self.scan_stop_requested:
@@ -2374,7 +2413,7 @@ class State(rx.State):
                 ))
                 while not _task.done():
                     try:
-                        raw = await asyncio.wait_for(asyncio.shield(_task), timeout=3.0)
+                        raw = await asyncio.wait_for(asyncio.shield(_task), timeout=0.5)
                         break
                     except asyncio.TimeoutError:
                         if self.scan_stop_requested:
@@ -2419,7 +2458,7 @@ class State(rx.State):
             ))
             while not _task.done():
                 try:
-                    results = await asyncio.wait_for(asyncio.shield(_task), timeout=3.0)
+                    results = await asyncio.wait_for(asyncio.shield(_task), timeout=0.5)
                     break
                 except asyncio.TimeoutError:
                     if self.scan_stop_requested:
@@ -2493,7 +2532,7 @@ class State(rx.State):
             ))
             while not _task.done():
                 try:
-                    result = await asyncio.wait_for(asyncio.shield(_task), timeout=3.0)
+                    result = await asyncio.wait_for(asyncio.shield(_task), timeout=0.5)
                     break
                 except asyncio.TimeoutError:
                     yield
