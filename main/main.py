@@ -189,6 +189,7 @@ class State(rx.State):
     whale_max_minutes: int = 5        # 최대 탐색 시간 (분)
     whale_progress: str = ""          # 실시간 진행률 텍스트
     whale_stop_requested: bool = False  # 사용자 중단 요청 플래그
+    scan_stop_requested: bool = False   # 비-whale 스캔 중단 요청 플래그
 
     # 하락장 방어 스캔
     defensive_results: List[dict] = []
@@ -374,6 +375,20 @@ class State(rx.State):
     status_msg: str = ""
     scan_warning: str = ""   # 스캔 중 데이터 수신 문제 발생 시 경고 메시지
     active_tab: str = "momentum"
+
+    # ------------------------------------------------------------------
+    # Computed vars
+    # ------------------------------------------------------------------
+
+    @rx.var
+    def has_active_tasks(self) -> bool:
+        return (
+            self.is_scanning
+            or self.is_backtesting
+            or self.leaders_loading
+            or self.report_generating
+            or bool(self.leaders_prefetch_status)
+        )
 
     # ------------------------------------------------------------------
     # Setters (explicit — required in Reflex 0.8+)
@@ -733,6 +748,14 @@ class State(rx.State):
         self.whale_stop_requested = True
         self.whale_progress = "종목 분석을 마무리하는 중입니다. 잠시만 기다려 주세요..."
         self.status_msg = "탐색 중단 요청됨"
+        yield
+
+    async def stop_general_scan(self):
+        """퀀트/눌림목/추세추종/하락방어/모멘텀 스캔 중단 요청."""
+        if not self.is_scanning:
+            return
+        self.scan_stop_requested = True
+        self.status_msg = "스캔 중단 요청됨..."
         yield
 
     def set_tab(self, tab: str):
@@ -2162,6 +2185,7 @@ class State(rx.State):
         if self.scan_mode == "pullback":
             from utils.pullback_scanner import scan_pullback_stocks
             self.is_scanning = True
+            self.scan_stop_requested = False
             self.pullback_results = []
             self.scan_warning = ""
             mkt_map = {"SP500": "SP500", "NASDAQ": "SP500",
@@ -2186,6 +2210,11 @@ class State(rx.State):
                         raw = await asyncio.wait_for(asyncio.shield(_task), timeout=3.0)
                         break
                     except asyncio.TimeoutError:
+                        if self.scan_stop_requested:
+                            self.status_msg = "스캔이 중단되었습니다."
+                            self.scan_stop_requested = False
+                            yield
+                            return
                         yield
                 else:
                     raw = _task.result()
@@ -2209,6 +2238,7 @@ class State(rx.State):
         if self.scan_mode == "trend":
             from utils.trend_scanner import scan_trend_following
             self.is_scanning   = True
+            self.scan_stop_requested = False
             self.trend_results = []
             self.trend_progress = ""
             self.scan_warning  = ""
@@ -2247,6 +2277,11 @@ class State(rx.State):
                         d, t = done_ref[0], total_ref[0]
                         if t > 0:
                             self.trend_progress = f"{d}/{t}개 수집 중..."
+                        if self.scan_stop_requested:
+                            self.status_msg = "스캔이 중단되었습니다."
+                            self.scan_stop_requested = False
+                            yield
+                            return
                         yield
                 else:
                     raw = scan_task.result()
@@ -2271,6 +2306,7 @@ class State(rx.State):
         if self.scan_mode == "defensive":
             from utils.defensive_scanner import scan_defensive_stocks
             self.is_scanning = True
+            self.scan_stop_requested = False
             self.defensive_results = []
             mkt = self.market if self.market in ("KOSPI", "KOSDAQ") else "KOSPI"
             self.status_msg = f"{mkt} 하락방어 종목 분석 중... (약 1~2분 소요)"
@@ -2289,6 +2325,11 @@ class State(rx.State):
                         raw = await asyncio.wait_for(asyncio.shield(_task), timeout=3.0)
                         break
                     except asyncio.TimeoutError:
+                        if self.scan_stop_requested:
+                            self.status_msg = "스캔이 중단되었습니다."
+                            self.scan_stop_requested = False
+                            yield
+                            return
                         yield
                 else:
                     raw = _task.result()
@@ -2308,6 +2349,7 @@ class State(rx.State):
         if self.scan_mode == "stock_momentum":
             from utils.stock_scanner import scan_stock_momentum
             self.is_scanning = True
+            self.scan_stop_requested = False
             self.stock_momentum_results = []
             self.scan_warning = ""
             mkt_map = {
@@ -2335,6 +2377,11 @@ class State(rx.State):
                         raw = await asyncio.wait_for(asyncio.shield(_task), timeout=3.0)
                         break
                     except asyncio.TimeoutError:
+                        if self.scan_stop_requested:
+                            self.status_msg = "스캔이 중단되었습니다."
+                            self.scan_stop_requested = False
+                            yield
+                            return
                         yield
                 else:
                     raw = _task.result()
@@ -2354,6 +2401,7 @@ class State(rx.State):
 
         # ── 퀀트 스캔 ────────────────────────────────────────────────────
         self.is_scanning = True
+        self.scan_stop_requested = False
         self.status_msg = "시장 데이터 수집 중..."
         self.scan_results = []
         yield
@@ -2374,6 +2422,11 @@ class State(rx.State):
                     results = await asyncio.wait_for(asyncio.shield(_task), timeout=3.0)
                     break
                 except asyncio.TimeoutError:
+                    if self.scan_stop_requested:
+                        self.status_msg = "스캔이 중단되었습니다."
+                        self.scan_stop_requested = False
+                        yield
+                        return
                     yield
             else:
                 results = _task.result()
@@ -6812,6 +6865,128 @@ def report_tab() -> rx.Component:
     )
 
 
+def monitor_tab() -> rx.Component:
+    """작업현황 탭 — 실행 중인 백그라운드 작업 목록 + 중단 버튼."""
+
+    def _stop_badge(label: str) -> rx.Component:
+        return rx.badge(label, color_scheme="orange", size="1")
+
+    def _task_card(title, detail, stop_btn=None) -> rx.Component:
+        return rx.card(
+            rx.hstack(
+                rx.spinner(size="3"),
+                rx.vstack(
+                    rx.hstack(
+                        rx.badge("실행 중", color_scheme="blue", size="1"),
+                        rx.text(title, size="3", weight="bold"),
+                        spacing="2",
+                        align="center",
+                    ),
+                    rx.text(detail, size="2", color="gray"),
+                    spacing="1",
+                    align="start",
+                    flex="1",
+                ),
+                rx.spacer(),
+                stop_btn if stop_btn is not None else rx.box(),
+                align="center",
+                width="100%",
+                spacing="3",
+            ),
+            width="100%",
+            variant="surface",
+        )
+
+    scan_name = rx.cond(State.scan_mode == "whale", "세력 탐지",
+                rx.cond(State.scan_mode == "pullback", "눌림목 스캔",
+                rx.cond(State.scan_mode == "trend", "추세추종 스캔",
+                rx.cond(State.scan_mode == "defensive", "하락방어 스캔",
+                rx.cond(State.scan_mode == "stock_momentum", "기간모멘텀 스캔",
+                "퀀트 스캔")))))
+
+    scan_progress = rx.cond(
+        State.scan_mode == "whale",
+        rx.cond(State.whale_progress != "", State.whale_progress, State.status_msg),
+        rx.cond(State.trend_progress != "", State.trend_progress, State.status_msg),
+    )
+
+    scan_stop_btn = rx.cond(
+        State.scan_mode == "whale",
+        rx.button(
+            rx.cond(State.whale_stop_requested, "중단 중...", "중단"),
+            on_click=State.stop_whale_scan,
+            disabled=State.whale_stop_requested,
+            color_scheme="red",
+            size="1",
+        ),
+        rx.button(
+            rx.cond(State.scan_stop_requested, "중단 중...", "중단"),
+            on_click=State.stop_general_scan,
+            disabled=State.scan_stop_requested,
+            color_scheme="red",
+            size="1",
+        ),
+    )
+
+    return rx.vstack(
+        rx.hstack(
+            rx.heading("작업 현황", size="5"),
+            rx.text("· 실행 중인 백그라운드 작업을 확인하고 중단할 수 있습니다.",
+                    size="2", color="gray"),
+            spacing="3",
+            align="center",
+        ),
+        rx.divider(),
+        rx.cond(
+            State.has_active_tasks,
+            rx.vstack(
+                rx.cond(
+                    State.is_scanning,
+                    _task_card(scan_name, scan_progress, scan_stop_btn),
+                ),
+                rx.cond(
+                    State.is_backtesting,
+                    _task_card("백테스트", State.status_msg),
+                ),
+                rx.cond(
+                    State.leaders_loading,
+                    _task_card(
+                        "주도주 데이터 로드",
+                        rx.cond(State.leaders_scan_progress != "",
+                                State.leaders_scan_progress, "데이터 불러오는 중..."),
+                    ),
+                ),
+                rx.cond(
+                    State.report_generating,
+                    _task_card("리포트 생성", State.report_status),
+                ),
+                rx.cond(
+                    State.leaders_prefetch_status != "",
+                    _task_card("캐시 업데이트 (백그라운드)", State.leaders_prefetch_status),
+                ),
+                width="100%",
+                spacing="3",
+            ),
+            rx.center(
+                rx.vstack(
+                    rx.icon("circle-check", size=48, color="green"),
+                    rx.text("현재 실행 중인 작업이 없습니다.",
+                            size="3", color="gray", weight="medium"),
+                    rx.text("스캔·백테스트·리포트 생성이 시작되면 여기에 표시됩니다.",
+                            size="2", color="gray"),
+                    spacing="2",
+                    align="center",
+                ),
+                padding_y="64px",
+                width="100%",
+            ),
+        ),
+        width="100%",
+        spacing="4",
+        padding_bottom="16px",
+    )
+
+
 def main_content() -> rx.Component:
     return rx.vstack(
         app_header(),
@@ -6839,6 +7014,8 @@ def main_content() -> rx.Component:
                 on_click=State.set_tab("report")),
             rx.tabs.trigger("성과추적", value="tracker",
                 on_click=State.set_tab("tracker")),
+            rx.tabs.trigger("작업현황", value="monitor",
+                on_click=State.set_tab("monitor")),
             overflow_x="auto",
             white_space="nowrap",
             width="100%",
@@ -6886,6 +7063,10 @@ def main_content() -> rx.Component:
         rx.tabs.content(
             rx.box(tracker_tab(), padding_top="16px"),
             value="tracker",
+        ),
+        rx.tabs.content(
+            rx.box(monitor_tab(), padding_top="16px"),
+            value="monitor",
         ),
         value=State.active_tab,
         width="100%",
