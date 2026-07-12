@@ -569,7 +569,15 @@ class State(rx.State):
             from utils.indicators import TechnicalIndicators
             vwap = int(self.vwap_period)
             loader = QuantDataLoader()
-            df = await asyncio.to_thread(loader.get_ohlcv, holding.symbol, 600)
+            _t1 = asyncio.create_task(asyncio.to_thread(loader.get_ohlcv, holding.symbol, 600))
+            while not _t1.done():
+                try:
+                    df = await asyncio.wait_for(asyncio.shield(_t1), timeout=0.5)
+                    break
+                except asyncio.TimeoutError:
+                    yield
+            else:
+                df = _t1.result()
             df = TechnicalIndicators.calculate_all(df, [vwap, 20, 60, 120])
             display_df = df.tail(200)
             vwap_col = f"VWAP_{vwap}"
@@ -590,9 +598,17 @@ class State(rx.State):
                 for d, row in display_df.iterrows()
             ]
             self.close_date = str(display_df.index[-1].date())
-            psr_data = await asyncio.to_thread(
+            _t2 = asyncio.create_task(asyncio.to_thread(
                 loader.get_quarterly_psr, holding.symbol, holding.market
-            )
+            ))
+            while not _t2.done():
+                try:
+                    psr_data = await asyncio.wait_for(asyncio.shield(_t2), timeout=0.5)
+                    break
+                except asyncio.TimeoutError:
+                    yield
+            else:
+                psr_data = _t2.result()
             self.psr_chart_data = psr_data
         except Exception:
             pass
@@ -733,9 +749,17 @@ class State(rx.State):
         import asyncio
         from utils.sector_scanner import fetch_sector_momentum
         try:
-            data = await asyncio.to_thread(
+            _t = asyncio.create_task(asyncio.to_thread(
                 fetch_sector_momentum, self.sector_region
-            )
+            ))
+            while not _t.done():
+                try:
+                    data = await asyncio.wait_for(asyncio.shield(_t), timeout=0.5)
+                    break
+                except asyncio.TimeoutError:
+                    yield
+            else:
+                data = _t.result()
             self.sector_data = data
             self._apply_sector_sort()
         except Exception as e:
@@ -867,7 +891,15 @@ class State(rx.State):
         import asyncio
         try:
             from utils.scan_results_tracker import update_pick_prices
-            n = await asyncio.to_thread(update_pick_prices)
+            _t = asyncio.create_task(asyncio.to_thread(update_pick_prices))
+            while not _t.done():
+                try:
+                    n = await asyncio.wait_for(asyncio.shield(_t), timeout=0.5)
+                    break
+                except asyncio.TimeoutError:
+                    yield
+            else:
+                n = _t.result()
             self.tracker_status = f"완료 — {n}건 업데이트"
         except Exception as e:
             self.tracker_status = f"오류: {e}"
@@ -889,18 +921,34 @@ class State(rx.State):
             for mkt in ("KOSPI", "KOSDAQ", "SP500"):
                 # 퀀트
                 try:
-                    r = await asyncio.to_thread(lambda m=mkt: QuantScanner(market=m).scan())
+                    _tq = asyncio.create_task(asyncio.to_thread(lambda m=mkt: QuantScanner(market=m).scan()))
+                    while not _tq.done():
+                        try:
+                            r = await asyncio.wait_for(asyncio.shield(_tq), timeout=0.5)
+                            break
+                        except asyncio.TimeoutError:
+                            yield
+                    else:
+                        r = _tq.result()
                     if r:
                         total += save_scan_picks("quant", mkt, list(r))
                 except Exception:
                     pass
                 # 눌림목
                 try:
-                    r2 = await asyncio.to_thread(
+                    _tp = asyncio.create_task(asyncio.to_thread(
                         scan_pullback_stocks, mkt,
                         3_000 if mkt != "SP500" else 0,
                         -5.0, 45.0, 0.0, 30, 150, 90,
-                    )
+                    ))
+                    while not _tp.done():
+                        try:
+                            r2 = await asyncio.wait_for(asyncio.shield(_tp), timeout=0.5)
+                            break
+                        except asyncio.TimeoutError:
+                            yield
+                    else:
+                        r2 = _tp.result()
                     if r2:
                         total += save_scan_picks("pullback", mkt, list(r2))
                 except Exception:
@@ -938,7 +986,15 @@ class State(rx.State):
         self.momentum_recommendation = ""
         yield
         try:
-            r = await asyncio.to_thread(fetch_momentum_data)
+            _t = asyncio.create_task(asyncio.to_thread(fetch_momentum_data))
+            while not _t.done():
+                try:
+                    r = await asyncio.wait_for(asyncio.shield(_t), timeout=0.5)
+                    break
+                except asyncio.TimeoutError:
+                    yield
+            else:
+                r = _t.result()
             self.momentum_rows = r["rows"]
             # 단순 모멘텀
             self.momentum_recommendation = r["momentum_rec_name"]
@@ -969,7 +1025,15 @@ class State(rx.State):
         self.momentum_bt_summary = []
         yield
         try:
-            r = await asyncio.to_thread(run_backtest, self.momentum_bt_years)
+            _t = asyncio.create_task(asyncio.to_thread(run_backtest, self.momentum_bt_years))
+            while not _t.done():
+                try:
+                    r = await asyncio.wait_for(asyncio.shield(_t), timeout=0.5)
+                    break
+                except asyncio.TimeoutError:
+                    yield
+            else:
+                r = _t.result()
             self.momentum_bt_chart = r["chart_data"]
             self.momentum_bt_summary = r["summary"]
             self.momentum_bt_error = r.get("error", "")
@@ -1168,18 +1232,29 @@ class State(rx.State):
                     )
                 )
                 while not scan_task.done():
-                    with _lock:
-                        curr, tot = _prog["current"], _prog["total"]
-                    if tot > 0:
-                        self.leaders_scan_progress = f"{curr}/{tot}개 종목 처리 중..."
-                    yield
-                    await asyncio.sleep(1)
+                    try:
+                        data_all_inner = await asyncio.wait_for(asyncio.shield(scan_task), timeout=0.5)
+                        break
+                    except asyncio.TimeoutError:
+                        with _lock:
+                            curr, tot = _prog["current"], _prog["total"]
+                        if tot > 0:
+                            self.leaders_scan_progress = f"{curr}/{tot}개 종목 처리 중..."
+                        yield
+                else:
+                    data_all_inner = scan_task.result()
 
-                data_all = scan_task.result()   # ScanResults (flat list)
+                data_all = data_all_inner
                 self.leaders_scan_progress = ""
 
                 if data_all:
-                    await asyncio.to_thread(save_momentum_cache_all, mkt, data_all)
+                    _st = asyncio.create_task(asyncio.to_thread(save_momentum_cache_all, mkt, data_all))
+                    while not _st.done():
+                        try:
+                            await asyncio.wait_for(asyncio.shield(_st), timeout=0.5)
+                            break
+                        except asyncio.TimeoutError:
+                            yield
                     self._refresh_momentum_cache_status()
                     sorted_rows, _ = apply_sort_and_cols(list(data_all), period, top_n=30)
                     self.leaders_multi_results = sorted_rows
@@ -1437,9 +1512,17 @@ class State(rx.State):
         try:
             from utils.stock_scanner import refresh_stock_momentum
             existing = [dict(r) for r in self.leaders_multi_results]
-            data = await asyncio.to_thread(
+            _t = asyncio.create_task(asyncio.to_thread(
                 refresh_stock_momentum, existing, self.leaders_period
-            )
+            ))
+            while not _t.done():
+                try:
+                    data = await asyncio.wait_for(asyncio.shield(_t), timeout=0.5)
+                    break
+                except asyncio.TimeoutError:
+                    yield
+            else:
+                data = _t.result()
             self.leaders_multi_results = list(data)
             warn = getattr(data, "warning", "")
             if warn:
@@ -1462,7 +1545,15 @@ class State(rx.State):
         from utils.data_loader import compute_score_b
 
         try:
-            updated = await asyncio.to_thread(compute_score_b, raw_snapshot)
+            _t = asyncio.create_task(asyncio.to_thread(compute_score_b, raw_snapshot))
+            while not _t.done():
+                try:
+                    updated = await asyncio.wait_for(asyncio.shield(_t), timeout=0.5)
+                    break
+                except asyncio.TimeoutError:
+                    yield
+            else:
+                updated = _t.result()
             self.leaders_data_raw = updated
             self._apply_filter_and_sort()
             self.leaders_score_b_done = True
@@ -1484,7 +1575,15 @@ class State(rx.State):
         import asyncio
         from utils.data_loader import fetch_stock_info
 
-        result = await asyncio.to_thread(fetch_stock_info, code, self.lookup_market)
+        _t = asyncio.create_task(asyncio.to_thread(fetch_stock_info, code, self.lookup_market))
+        while not _t.done():
+            try:
+                result = await asyncio.wait_for(asyncio.shield(_t), timeout=0.5)
+                break
+            except asyncio.TimeoutError:
+                yield
+        else:
+            result = _t.result()
         self.lookup_loading = False
         if result["error"]:
             self.lookup_error = result["error"]
@@ -1540,7 +1639,15 @@ class State(rx.State):
         import asyncio
         from utils.data_loader import fetch_stock_info
 
-        result = await asyncio.to_thread(fetch_stock_info, q, self.lookup_market)
+        _t = asyncio.create_task(asyncio.to_thread(fetch_stock_info, q, self.lookup_market))
+        while not _t.done():
+            try:
+                result = await asyncio.wait_for(asyncio.shield(_t), timeout=0.5)
+                break
+            except asyncio.TimeoutError:
+                yield
+        else:
+            result = _t.result()
 
         self.lookup_loading = False
         if result["error"]:
@@ -1702,7 +1809,15 @@ class State(rx.State):
 
                 vwap = int(self.vwap_period)
                 loader = QuantDataLoader()
-                df = await asyncio.to_thread(loader.get_ohlcv, w_target.symbol, 600)
+                _t1 = asyncio.create_task(asyncio.to_thread(loader.get_ohlcv, w_target.symbol, 600))
+                while not _t1.done():
+                    try:
+                        df = await asyncio.wait_for(asyncio.shield(_t1), timeout=0.5)
+                        break
+                    except asyncio.TimeoutError:
+                        yield
+                else:
+                    df = _t1.result()
                 if df.empty:
                     self.status_msg = f"{w_target.name} 가격 데이터 없음"
                     return
@@ -1738,11 +1853,20 @@ class State(rx.State):
                 end_dt = display_df.index[-1]
                 start_dt = end_dt - timedelta(days=250)
                 try:
-                    idx_df = fdr.DataReader(
-                        _INDEX_FDR.get(w_target.market, "KS11"),
+                    _idx_code = _INDEX_FDR.get(w_target.market, "KS11")
+                    _t_idx = asyncio.create_task(asyncio.to_thread(
+                        fdr.DataReader, _idx_code,
                         start_dt.strftime("%Y-%m-%d"),
                         end_dt.strftime("%Y-%m-%d"),
-                    )
+                    ))
+                    while not _t_idx.done():
+                        try:
+                            idx_df = await asyncio.wait_for(asyncio.shield(_t_idx), timeout=0.5)
+                            break
+                        except asyncio.TimeoutError:
+                            yield
+                    else:
+                        idx_df = _t_idx.result()
                 except Exception:
                     idx_df = pd.DataFrame()
 
@@ -1819,7 +1943,15 @@ class State(rx.State):
             from utils.indicators import TechnicalIndicators
             vwap = int(self.vwap_period)
             loader = QuantDataLoader()
-            df = await asyncio.to_thread(loader.get_ohlcv, target.symbol, 600)
+            _t1 = asyncio.create_task(asyncio.to_thread(loader.get_ohlcv, target.symbol, 600))
+            while not _t1.done():
+                try:
+                    df = await asyncio.wait_for(asyncio.shield(_t1), timeout=0.5)
+                    break
+                except asyncio.TimeoutError:
+                    yield
+            else:
+                df = _t1.result()
             df = TechnicalIndicators.calculate_all(df, [vwap, 20, 60, 120])
             display_df = df.tail(200)
             vwap_col = f"VWAP_{vwap}"
@@ -1841,9 +1973,17 @@ class State(rx.State):
             ]
             self.close_date = str(display_df.index[-1].date())
             # 분기별 PSR
-            psr_data = await asyncio.to_thread(
+            _t2 = asyncio.create_task(asyncio.to_thread(
                 loader.get_quarterly_psr, target.symbol, target.market_raw
-            )
+            ))
+            while not _t2.done():
+                try:
+                    psr_data = await asyncio.wait_for(asyncio.shield(_t2), timeout=0.5)
+                    break
+                except asyncio.TimeoutError:
+                    yield
+            else:
+                psr_data = _t2.result()
             self.psr_chart_data = psr_data
 
         except Exception:
@@ -1894,7 +2034,15 @@ class State(rx.State):
             from utils.indicators import TechnicalIndicators
             vwap = int(self.vwap_period)
             loader = QuantDataLoader()
-            df = await asyncio.to_thread(loader.get_ohlcv, code, 600)
+            _t1 = asyncio.create_task(asyncio.to_thread(loader.get_ohlcv, code, 600))
+            while not _t1.done():
+                try:
+                    df = await asyncio.wait_for(asyncio.shield(_t1), timeout=0.5)
+                    break
+                except asyncio.TimeoutError:
+                    yield
+            else:
+                df = _t1.result()
             df = TechnicalIndicators.calculate_all(df, [vwap, 20, 60, 120])
             display_df = df.tail(200)
             vwap_col = f"VWAP_{vwap}"
@@ -1916,9 +2064,17 @@ class State(rx.State):
             ]
             self.close_date = str(display_df.index[-1].date())
             self.selected_close = float(df["Close"].iloc[-1])
-            psr_data = await asyncio.to_thread(
+            _t2 = asyncio.create_task(asyncio.to_thread(
                 loader.get_quarterly_psr, code, self.market
-            )
+            ))
+            while not _t2.done():
+                try:
+                    psr_data = await asyncio.wait_for(asyncio.shield(_t2), timeout=0.5)
+                    break
+                except asyncio.TimeoutError:
+                    yield
+            else:
+                psr_data = _t2.result()
             self.psr_chart_data = psr_data
         except Exception:
             pass
@@ -1939,11 +2095,26 @@ class State(rx.State):
             from utils.data_loader import QuantDataLoader
             from utils.trend_scanner import calc_holding_period_ev
             loader = QuantDataLoader()
-            df = await asyncio.to_thread(loader.get_ohlcv, code, 1600)
-            rows = await asyncio.to_thread(
+            _t1 = asyncio.create_task(asyncio.to_thread(loader.get_ohlcv, code, 1600))
+            while not _t1.done():
+                try:
+                    df = await asyncio.wait_for(asyncio.shield(_t1), timeout=0.5)
+                    break
+                except asyncio.TimeoutError:
+                    yield
+            else:
+                df = _t1.result()
+            _t2 = asyncio.create_task(asyncio.to_thread(
                 calc_holding_period_ev, df, entry_type, ma_period,
-            )
-            # 종목명 보정
+            ))
+            while not _t2.done():
+                try:
+                    rows = await asyncio.wait_for(asyncio.shield(_t2), timeout=0.5)
+                    break
+                except asyncio.TimeoutError:
+                    yield
+            else:
+                rows = _t2.result()
             for r in rows:
                 r["code"] = code
             self.trend_detail_rows = rows
@@ -1967,10 +2138,26 @@ class State(rx.State):
             from utils.data_loader  import QuantDataLoader
             from utils.seasonality  import calc_monthly_seasonality
             loader = QuantDataLoader()
-            df     = await asyncio.to_thread(loader.get_ohlcv, code, 1600)
-            rows   = await asyncio.to_thread(
+            _t1 = asyncio.create_task(asyncio.to_thread(loader.get_ohlcv, code, 1600))
+            while not _t1.done():
+                try:
+                    df = await asyncio.wait_for(asyncio.shield(_t1), timeout=0.5)
+                    break
+                except asyncio.TimeoutError:
+                    yield
+            else:
+                df = _t1.result()
+            _t2 = asyncio.create_task(asyncio.to_thread(
                 calc_monthly_seasonality, df, entry_type, ma_period, self.season_hold_days
-            )
+            ))
+            while not _t2.done():
+                try:
+                    rows = await asyncio.wait_for(asyncio.shield(_t2), timeout=0.5)
+                    break
+                except asyncio.TimeoutError:
+                    yield
+            else:
+                rows = _t2.result()
             self.season_rows = rows
         except Exception as e:
             self.status_msg = f"계절성 분석 오류: {e}"
@@ -1993,11 +2180,27 @@ class State(rx.State):
             from utils.data_loader  import QuantDataLoader
             from utils.seasonality  import calc_monthly_seasonality
             loader = QuantDataLoader()
-            df     = await asyncio.to_thread(loader.get_ohlcv, self.season_code, 1600)
-            rows   = await asyncio.to_thread(
+            _t1 = asyncio.create_task(asyncio.to_thread(loader.get_ohlcv, self.season_code, 1600))
+            while not _t1.done():
+                try:
+                    df = await asyncio.wait_for(asyncio.shield(_t1), timeout=0.5)
+                    break
+                except asyncio.TimeoutError:
+                    yield
+            else:
+                df = _t1.result()
+            _t2 = asyncio.create_task(asyncio.to_thread(
                 calc_monthly_seasonality,
                 df, self.season_entry_type, self.season_ma_period, self.season_hold_days,
-            )
+            ))
+            while not _t2.done():
+                try:
+                    rows = await asyncio.wait_for(asyncio.shield(_t2), timeout=0.5)
+                    break
+                except asyncio.TimeoutError:
+                    yield
+            else:
+                rows = _t2.result()
             self.season_rows = rows
         except Exception as e:
             self.status_msg = f"계절성 분석 오류: {e}"
