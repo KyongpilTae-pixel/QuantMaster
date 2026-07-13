@@ -432,12 +432,12 @@ def _prev_month_label() -> str:
     today = datetime.today()
     first_of_month = today.replace(day=1)
     last_month = first_of_month - timedelta(days=1)
-    return last_month.strftime("%Y-%m")
+    return last_month.strftime("%Y-M%m")
 
 
-def _monthly_report_path() -> str:
+def _monthly_report_path(date_str: str) -> str:
     os.makedirs(_REPORTS_DIR, exist_ok=True)
-    return os.path.join(_REPORTS_DIR, f"{_prev_month_label()}.html")
+    return os.path.join(_REPORTS_DIR, f"{_prev_month_label()}-{date_str}.html")
 
 
 def generate_full_monthly_report() -> str:
@@ -445,8 +445,9 @@ def generate_full_monthly_report() -> str:
     반환: 저장된 파일 경로.
     """
     month_str    = _prev_month_label()
-    generated_at = datetime.now().strftime("%Y-%m-%d %H:%M")
-    path         = _monthly_report_path()
+    now          = datetime.now()
+    generated_at = now.strftime("%Y-%m-%d %H:%M")
+    path         = _monthly_report_path(now.strftime("%Y%m%d"))
 
     regimes = fetch_all_regimes()
     sections = [

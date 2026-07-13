@@ -441,9 +441,9 @@ def _week_label() -> str:
     return f"{year}-W{week:02d}"
 
 
-def _weekly_report_path() -> str:
+def _weekly_report_path(date_str: str) -> str:
     os.makedirs(_REPORTS_DIR, exist_ok=True)
-    return os.path.join(_REPORTS_DIR, f"{_week_label()}.html")
+    return os.path.join(_REPORTS_DIR, f"{_week_label()}-{date_str}.html")
 
 
 def generate_full_weekly_report() -> str:
@@ -451,8 +451,9 @@ def generate_full_weekly_report() -> str:
     반환: 저장된 파일 경로.
     """
     week_str     = _week_label()
-    generated_at = datetime.now().strftime("%Y-%m-%d %H:%M")
-    path         = _weekly_report_path()
+    now          = datetime.now()
+    generated_at = now.strftime("%Y-%m-%d %H:%M")
+    path         = _weekly_report_path(now.strftime("%Y%m%d"))
 
     # 장세 판단 1회 조회 → 섹션 두 곳에서 재사용
     regimes = fetch_all_regimes()
