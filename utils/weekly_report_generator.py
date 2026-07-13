@@ -464,7 +464,8 @@ def generate_full_weekly_report() -> str:
         f"<title>Weekly Report — {week_str}</title>\n"
         f"<style>{_CSS}</style>\n"
         f"</head>\n<body>\n"
-        f"<h1>Weekly Report — {week_str}</h1>\n\n"
+        f"<h1>Weekly Report — {week_str}</h1>\n"
+        f"<p style='color:#888;font-size:0.85em;margin:0 0 24px;'>발행일: {generated_at}</p>\n\n"
         + "\n\n".join(sections)
         + "\n</body>\n</html>\n"
     )
