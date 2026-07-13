@@ -56,11 +56,11 @@ def generate_monthly_market_section(generated_at: str | None = None) -> str:
     if generated_at is None:
         generated_at = datetime.now().strftime("%H:%M")
 
-    with ThreadPoolExecutor(max_workers=4) as ex:
-        results = dict(ex.map(_fetch_monthly_index, _INDEX_CODES))
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        results = dict(ex.map(_fetch_monthly_index, _WEEKLY_INDEX_CODES))
 
     rows_html = []
-    for _, label, ccy in _INDEX_CODES:
+    for _, label, ccy in _WEEKLY_INDEX_CODES:
         d = results.get(label)
         if d:
             m_cls = "up" if d["monthly_pct"] >= 0 else "dn"
@@ -200,7 +200,7 @@ def _load_leaders_for_month(market: str, n_days: int = 20) -> list:
 
 
 from utils.weekly_report_generator import (
-    _build_leaders_rows, _LEADERS_TABLE_HEAD, _TAB_JS,
+    _build_leaders_rows, _LEADERS_TABLE_HEAD, _TAB_JS, _WEEKLY_INDEX_CODES,
 )
 
 
@@ -465,7 +465,8 @@ def generate_full_monthly_report() -> str:
         f"<title>Monthly Report — {month_str}</title>\n"
         f"<style>{_CSS}</style>\n"
         f"</head>\n<body>\n"
-        f"<h1>Monthly Report — {month_str}</h1>\n\n"
+        f"<h1>Monthly Report — {month_str}</h1>\n"
+        f"<p style='color:#888;font-size:0.85em;margin:0 0 24px;'>발행일: {generated_at}</p>\n\n"
         + "\n\n".join(sections)
         + "\n\n"
         + f'<footer><p class="meta">QuantMaster Pro — {generated_at} 자동 생성</p></footer>\n'

@@ -21,6 +21,14 @@ from utils.report_generator import _CSS, _fetch_index, _fetch_current_price, _IN
 from utils.market_regime import generate_regime_section, fetch_all_regimes
 from utils.regime_picks import generate_regime_picks_section
 
+# 주간 리포트 전용 — 시장모멘텀 탭과 동일한 자산 추가 (중국/일본/채권/금)
+_WEEKLY_INDEX_CODES = _INDEX_CODES + [
+    ("SSEC", "중국 (상하이)", "CNY"),
+    ("N225", "일본 (닛케이)", "JPY"),
+    ("TLT",  "채권 (TLT)",   "USD"),
+    ("GLD",  "금 (GLD)",     "USD"),
+]
+
 
 # ---------------------------------------------------------------------------
 # 주간 시장 요약 섹션
@@ -52,11 +60,11 @@ def generate_weekly_market_section(generated_at: str | None = None) -> str:
     if generated_at is None:
         generated_at = datetime.now().strftime("%H:%M")
 
-    with ThreadPoolExecutor(max_workers=4) as ex:
-        results = dict(ex.map(_fetch_weekly_index, _INDEX_CODES))
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        results = dict(ex.map(_fetch_weekly_index, _WEEKLY_INDEX_CODES))
 
     rows_html = []
-    for _, label, ccy in _INDEX_CODES:
+    for _, label, ccy in _WEEKLY_INDEX_CODES:
         d = results.get(label)
         if d:
             weekly_cls = "up" if d["weekly_pct"] >= 0 else "dn"
