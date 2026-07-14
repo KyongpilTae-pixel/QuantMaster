@@ -208,6 +208,12 @@ class State(rx.State):
     mr_rsi_max: List[float] = [30.0]         # RSI14 상한 (과매도 임계값)
     mr_min_mktcap: int = 3_000               # 최소 시가총액 (억원)
 
+    # Piotroski F-Score (다중 팩터 Phase 1)
+    f_score_loading: bool = False
+    f_score_score: int = -1                  # -1 = 미로드, 0-9 = 점수
+    f_score_error: str = ""
+    f_score_criteria: List[dict] = []        # [{name, group, passed, na, value}]
+
     # 추세추종 스캔
     trend_results: List[dict] = []
     trend_filter_mode: str = "relative"      # "relative"|"absolute"|"both"
@@ -1805,6 +1811,10 @@ class State(rx.State):
             self.whale_chart_data = []
             self.whale_highlights = []
             self.is_loading_chart = True
+            self.f_score_loading = True
+            self.f_score_score = -1
+            self.f_score_error = ""
+            self.f_score_criteria = []
             self.active_tab = "analysis"
             yield
 
@@ -1898,10 +1908,27 @@ class State(rx.State):
                     }
                     for d, row in whale_full.iterrows()
                 ]
+                # F-Score (whale 모드)
+                from utils.factor_loader import load_f_score
+                _t_fs = asyncio.create_task(asyncio.to_thread(
+                    load_f_score, w_target.symbol, w_target.market
+                ))
+                while not _t_fs.done():
+                    try:
+                        fs = await asyncio.wait_for(asyncio.shield(_t_fs), timeout=0.5)
+                        break
+                    except asyncio.TimeoutError:
+                        yield
+                else:
+                    fs = _t_fs.result()
+                self.f_score_score    = fs["score"]
+                self.f_score_error    = fs["error"] or ""
+                self.f_score_criteria = fs["criteria"]
             except Exception as e:
                 self.status_msg = f"차트 로드 오류: {e}"
             finally:
                 self.is_loading_chart = False
+                self.f_score_loading  = False
             yield
             return
 
@@ -1945,6 +1972,10 @@ class State(rx.State):
         self.whale_chart_data = []
         self.whale_highlights = []
         self.is_loading_chart = True
+        self.f_score_loading = True
+        self.f_score_score = -1
+        self.f_score_error = ""
+        self.f_score_criteria = []
         self.active_tab = "analysis"
         yield
 
@@ -1996,11 +2027,28 @@ class State(rx.State):
             else:
                 psr_data = _t2.result()
             self.psr_chart_data = psr_data
+            # F-Score
+            from utils.factor_loader import load_f_score
+            _t3 = asyncio.create_task(asyncio.to_thread(
+                load_f_score, target.symbol, target.market_raw
+            ))
+            while not _t3.done():
+                try:
+                    fs = await asyncio.wait_for(asyncio.shield(_t3), timeout=0.5)
+                    break
+                except asyncio.TimeoutError:
+                    yield
+            else:
+                fs = _t3.result()
+            self.f_score_score    = fs["score"]
+            self.f_score_error    = fs["error"] or ""
+            self.f_score_criteria = fs["criteria"]
 
         except Exception:
             pass
         finally:
             self.is_loading_chart = False
+            self.f_score_loading  = False
         yield
 
     async def goto_analysis(self, code: str, name: str, is_us: bool = False):
@@ -2036,6 +2084,10 @@ class State(rx.State):
         self.whale_chart_data = []
         self.whale_highlights = []
         self.is_loading_chart = True
+        self.f_score_loading = True
+        self.f_score_score = -1
+        self.f_score_error = ""
+        self.f_score_criteria = []
         self.active_tab = "analysis"
         yield
 
@@ -2087,10 +2139,27 @@ class State(rx.State):
             else:
                 psr_data = _t2.result()
             self.psr_chart_data = psr_data
+            # F-Score
+            from utils.factor_loader import load_f_score
+            _t3 = asyncio.create_task(asyncio.to_thread(
+                load_f_score, code, self.market
+            ))
+            while not _t3.done():
+                try:
+                    fs = await asyncio.wait_for(asyncio.shield(_t3), timeout=0.5)
+                    break
+                except asyncio.TimeoutError:
+                    yield
+            else:
+                fs = _t3.result()
+            self.f_score_score    = fs["score"]
+            self.f_score_error    = fs["error"] or ""
+            self.f_score_criteria = fs["criteria"]
         except Exception:
             pass
         finally:
             self.is_loading_chart = False
+            self.f_score_loading  = False
         yield
 
     async def load_trend_detail(self, code: str, entry_type: str, ma_period: int, entry_label: str):
@@ -4633,6 +4702,94 @@ def buy_plan_panel() -> rx.Component:
     )
 
 
+def _fscore_row(c: dict) -> rx.Component:
+    """F-Score 기준 한 행 렌더링."""
+    return rx.hstack(
+        rx.cond(
+            c["na"],
+            rx.badge("—", color_scheme="gray", variant="soft", size="1"),
+            rx.cond(
+                c["passed"],
+                rx.badge("✓", color_scheme="green", variant="solid", size="1"),
+                rx.badge("✗", color_scheme="red",   variant="solid", size="1"),
+            ),
+        ),
+        rx.text(c["name"], size="1", flex="1"),
+        rx.text(c["value"], size="1", color="gray", font_family="monospace"),
+        align_items="center",
+        spacing="2",
+        width="100%",
+        padding_y="3px",
+    )
+
+
+def f_score_panel() -> rx.Component:
+    """Piotroski F-Score 패널 (분석 탭에서 표시)."""
+    score_color = rx.cond(
+        State.f_score_score >= 7, "green",
+        rx.cond(State.f_score_score >= 5, "amber", "red"),
+    )
+    return rx.box(
+        rx.cond(
+            State.f_score_loading,
+            rx.hstack(
+                rx.spinner(size="2"),
+                rx.text("F-Score 계산 중...", size="2", color="gray"),
+                spacing="2", align_items="center",
+            ),
+            rx.cond(
+                State.f_score_error != "",
+                rx.hstack(
+                    rx.badge("F-Score", color_scheme="gray", variant="soft"),
+                    rx.text(State.f_score_error, size="1", color="gray"),
+                    spacing="2", align_items="center",
+                ),
+                rx.vstack(
+                    # 헤더: 점수 배지 + 설명
+                    rx.hstack(
+                        rx.badge(
+                            "Piotroski F-Score",
+                            color_scheme="purple",
+                            variant="soft",
+                        ),
+                        rx.badge(
+                            State.f_score_score.to_string() + " / 9",
+                            color_scheme=score_color,
+                            variant="solid",
+                            size="2",
+                        ),
+                        rx.cond(
+                            State.f_score_score >= 7,
+                            rx.text("재무 우량 (High)", size="1", color="green"),
+                            rx.cond(
+                                State.f_score_score >= 5,
+                                rx.text("보통 (Mid)", size="1", color="orange"),
+                                rx.text("재무 취약 (Low)", size="1", color="red"),
+                            ),
+                        ),
+                        spacing="2",
+                        align_items="center",
+                    ),
+                    # 9개 기준 목록 — 3열 그리드
+                    rx.grid(
+                        rx.foreach(State.f_score_criteria, _fscore_row),
+                        columns="1",
+                        spacing="0",
+                        width="100%",
+                    ),
+                    spacing="3",
+                    width="100%",
+                ),
+            ),
+        ),
+        padding="16px",
+        border_radius="8px",
+        background="var(--purple-2)",
+        border="1px solid var(--purple-5)",
+        width="100%",
+    )
+
+
 def psr_chart() -> rx.Component:
     """분기별 PSR 추이 바 차트."""
     return rx.cond(
@@ -5031,6 +5188,11 @@ def analysis_tab() -> rx.Component:
                 rx.cond(
                     State.scan_mode == "whale",
                     whale_chart_panel(),
+                ),
+                # Piotroski F-Score (공통 — 로딩 중이거나 점수 있을 때 표시)
+                rx.cond(
+                    State.f_score_loading | (State.f_score_score >= 0),
+                    f_score_panel(),
                 ),
                 # 분기별 PSR 추이 (퀀트 모드만)
                 rx.cond(
