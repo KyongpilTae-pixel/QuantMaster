@@ -81,18 +81,20 @@ QuantMaster/
 ├── utils/
 │   ├── __init__.py
 │   ├── data_loader.py   # 시장 데이터 수집 (NAVER Finance + FinanceDataReader + yfinance)
-│   ├── indicators.py    # 기술적 지표 계산 (VWAP · TWAP · MFI · OBV)
+│   ├── indicators.py    # 기술적 지표 계산 (VWAP · TWAP · MFI · OBV · RSI · BB)
 │   ├── reasoning.py     # 매수 근거 · 매도 가이드 텍스트 생성 (KRW/USD 지원)
 │   ├── scan_db.py       # SQLite CRUD (스캔 저장 · 히스토리 · 보유 종목)
 │   ├── scan_results_tracker.py     # 스캔 발굴 종목 성과 추적 (tracked_picks/tracked_prices DB)
 │   ├── report_generator.py     # 일별 HTML 리포트 생성 (시장개요·주도주·섹터·포트폴리오)
-│   ├── weekly_report_generator.py  # 주간 HTML 리포트 생성 (일반주/ETF 탭 분리)
+│   ├── weekly_report_generator.py  # 주간 HTML 리포트 생성 (KOSPI/KOSDAQ/S&P500/NASDAQ/중국/일본/채권/금)
 │   ├── monthly_report_generator.py # 월간 HTML 리포트 생성 (전달 기준, 매월 1일 발행)
 │   ├── sector_scanner.py       # KODEX/SPDR ETF 섹터 모멘텀
 │   ├── stock_scanner.py        # 기간모멘텀 스캔 (1W/1M/2M/3M 캐시)
 │   ├── pullback_scanner.py     # 눌림목 스캐너 (상승추세+단기급락)
 │   ├── defensive_scanner.py   # 하락방어 스캐너 (Beta·RS·Downside Capture)
-│   └── trend_scanner.py       # 추세추종 스캐너 (RS90+·EV백테스트·반감기3년)
+│   ├── trend_scanner.py       # 추세추종 스캐너 (RS90+·EV백테스트·반감기3년)
+│   ├── mean_reversion_scanner.py   # 역발상 과매도 스캐너 (RSI14 + 볼린저밴드 하단 이탈)
+│   └── factor_loader.py       # 다중 팩터 로더 (Piotroski F-Score 9점)
 ├── scripts/
 │   ├── fetch_leaders_daily.py  # 당일주도주 자동수집 (Task Scheduler)
 │   ├── fetch_momentum_daily.py # 기간모멘텀 자동수집 16:00 KST
@@ -249,7 +251,8 @@ QuantMaster Pro
 │   │   ├── 밸류 돌파      (저PBR + GPA + VWAP 돌파 + MFI/OBV)
 │   │   ├── 세력 탐지      (OBV 스파이크 + 돌파 + 알파 + 숏커버)
 │   │   ├── 하락방어       (Beta + RS + Downside Capture, KR 전용)
-│   │   └── 모멘텀 스캔    (기간별 수익률 상위 종목 — 삼성전기/LG이노텍 류)
+│   │   ├── 모멘텀 스캔    (기간별 수익률 상위 종목 — 삼성전기/LG이노텍 류)
+│   │   └── 역발상 과매도  (RSI14 < 임계값 AND 종가 < 볼린저밴드 하단, 공포 구간 역매수)
 │   ├── 시장 선택 (KOSPI / KOSDAQ / KR-ETF / S&P500 / NASDAQ / US-ETF)
 │   ├── [퀀트 스캔 옵션]   PBR 슬라이더 · 시총 · VWAP 기간
 │   ├── [세력 탐지 옵션]   알파 필터 · 공매도 필터 · 최대탐색시간
@@ -282,8 +285,10 @@ QuantMaster Pro
     │   │   └── 종목명 · 시그널일 · 점수 · 시그널 타입 · 현재가 · 거래량비율 · [분석]
     │   ├── [하락방어 모드] 결과 테이블
     │   │   └── 종목명 · 시가총액 · Beta · RS · 하락포착률 · 하락일상승% · [분석]
-    │   └── [모멘텀 스캔 모드] 결과 테이블
-    │       └── 순위 · 종목명 · 수익률 · 1주수익률 · 거래량비 · 현재가 · 시가총액 · [조회]
+    │   ├── [모멘텀 스캔 모드] 결과 테이블
+    │   │   └── 순위 · 종목명 · 수익률 · 1주수익률 · 거래량비 · 현재가 · 시가총액 · [조회]
+    │   └── [역발상 과매도 모드] 결과 테이블 (RSI14 < 임계값 AND 종가 < BB하단)
+    │       └── 순위 · 종목명 · RSI14 · BB괴리 · 1W · 1M · 거래량비 · 점수 · 현재가 · 시총 · [조회]
     │
     ├── 분석 탭 (종목 선택 후)
     │   ├── 종목명 + 종가 기준일 + 보유 추가 버튼 + PDF 저장
@@ -297,6 +302,9 @@ QuantMaster Pro
     │   │   └── 세력 매집 탐지 요약
     │   ├── 가격 차트 (공통) ─ 종가 + VWAP + TWAP20/60/120 + SMA120
     │   ├── [세력 탐지 모드] OBV 차트 + 공매도 잔고 추이
+    │   ├── Piotroski F-Score 패널 (공통) — 9점 재무 건전성
+    │   │   ├── 점수 배지 (녹색≥7 / 황색≥5 / 적색<5)
+    │   │   └── 9개 기준 체크리스트 (수익성·레버리지·효율성 그룹)
     │   ├── [퀀트 모드] 분기별 PSR 추이 (바 차트)
     │   ├── [퀀트 모드] 적용된 스캔 조건 패널
     │   ├── [퀀트 모드] 실제 측정값 패널
@@ -333,7 +341,9 @@ QuantMaster Pro
     │
     ├── 리포트 탭
     │   ├── 일별 리포트 생성 버튼 (시장지수개요 + 당일주도주 + 섹터모멘텀 + 포트폴리오손익)
-    │   ├── 주간 리포트 생성 버튼 (주간시장요약 + 기간모멘텀1W + 주도주누적 + 포트폴리오리뷰)
+    │   ├── 주간 리포트 생성 버튼 — 파일명: YYYY-WXX-YYYYMMDD.html
+    │   │   └── 시장요약 8개 지수: KOSPI/KOSDAQ/S&P500/NASDAQ/상하이/닛케이/채권(TLT)/금(GLD)
+    │   ├── 월간 리포트 생성 버튼 — 파일명: YYYY-MXX-YYYYMMDD.html
     │   └── 생성된 HTML 파일 목록 (날짜 · 크기 · 📂 열기)
     │
     ├── 성과추적 탭
