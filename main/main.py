@@ -203,6 +203,11 @@ class State(rx.State):
     pullback_max_rsi: List[float] = [45.0]   # RSI14 상한
     pullback_min_mktcap: int = 3_000         # 최소 시가총액 (억원)
 
+    # 역발상 과매도 스캔
+    mean_reversion_results: List[dict] = []
+    mr_rsi_max: List[float] = [30.0]         # RSI14 상한 (과매도 임계값)
+    mr_min_mktcap: int = 3_000               # 최소 시가총액 (억원)
+
     # 추세추종 스캔
     trend_results: List[dict] = []
     trend_filter_mode: str = "relative"      # "relative"|"absolute"|"both"
@@ -715,6 +720,12 @@ class State(rx.State):
 
     def set_pullback_min_mktcap(self, v: int):
         self.pullback_min_mktcap = v
+
+    def set_mr_rsi_max(self, v: list):
+        self.mr_rsi_max = v
+
+    def set_mr_min_mktcap(self, v: int):
+        self.mr_min_mktcap = v
 
     def _apply_sector_sort(self):
         """sector_sort_period 기준으로 sector_data 재정렬 + rank 갱신."""
@@ -2641,6 +2652,57 @@ class State(rx.State):
             yield
             return
 
+        # ── 역발상 과매도 스캔 ──────────────────────────────────────────
+        if self.scan_mode == "mean_reversion":
+            from utils.mean_reversion_scanner import scan_mean_reversion
+            self.is_scanning = True
+            self.scan_stop_requested = False
+            self.mean_reversion_results = []
+            self.scan_warning = ""
+            mkt_map = {"KR-ETF": "KOSPI", "US-ETF": "SP500",
+                       "NASDAQ": "SP500"}
+            mkt = mkt_map.get(self.market, self.market)
+            if mkt not in ("KOSPI", "KOSDAQ", "SP500"):
+                mkt = "KOSPI"
+            self.status_msg = f"{mkt} 역발상 과매도 종목 탐색 중... (약 1~2분 소요)"
+            yield
+            try:
+                _task = asyncio.create_task(asyncio.to_thread(
+                    scan_mean_reversion,
+                    mkt,
+                    self.mr_min_mktcap,
+                    self.mr_rsi_max[0],
+                    30,
+                    150,
+                    90,
+                ))
+                while not _task.done():
+                    try:
+                        raw = await asyncio.wait_for(asyncio.shield(_task), timeout=0.5)
+                        break
+                    except asyncio.TimeoutError:
+                        if self.scan_stop_requested:
+                            self.status_msg = "스캔이 중단되었습니다."
+                            self.scan_stop_requested = False
+                            yield
+                            return
+                        yield
+                else:
+                    raw = _task.result()
+                self.mean_reversion_results = list(raw)
+                self.scan_warning = getattr(raw, "warning", "")
+                cnt = len(raw)
+                self.status_msg = (
+                    f"역발상 후보 {cnt}개 종목 발굴 완료" if cnt
+                    else "RSI+BB 조건을 만족하는 종목이 없습니다. RSI 임계값을 높여보세요."
+                )
+            except Exception as e:
+                self.status_msg = f"오류: {e}"
+            finally:
+                self.is_scanning = False
+            yield
+            return
+
         # ── 퀀트 스캔 ────────────────────────────────────────────────────
         self.is_scanning = True
         self.scan_stop_requested = False
@@ -2823,6 +2885,7 @@ def sidebar_controls() -> rx.Component:
                 rx.select.item("눌림목", value="pullback"),
                 rx.select.item("추세추종", value="trend"),
                 rx.select.item("모멘텀 스캔", value="stock_momentum"),
+                rx.select.item("역발상 과매도", value="mean_reversion"),
             ),
             value=State.scan_mode,
             on_change=State.set_scan_mode,
@@ -2976,6 +3039,28 @@ def sidebar_controls() -> rx.Component:
         wrap="wrap",
     )
 
+    # ── 역발상 과매도 전용 옵션 행 ──────────────────────────────
+    mr_opts = rx.hstack(
+        rx.text("RSI≤", size="1", color="gray", white_space="nowrap"),
+        rx.text(State.mr_rsi_max[0], size="1"),
+        rx.slider(min=15, max=40, step=5, value=State.mr_rsi_max,
+                  on_change=State.set_mr_rsi_max, width="100px"),
+        rx.separator(orientation="vertical", size="1"),
+        rx.text("시총", size="1", color="gray"),
+        rx.button("3천억+", size="1",
+            variant=rx.cond(State.mr_min_mktcap == 3_000,  "solid", "soft"),
+            on_click=State.set_mr_min_mktcap(3_000)),
+        rx.button("1조+",   size="1",
+            variant=rx.cond(State.mr_min_mktcap == 10_000, "solid", "soft"),
+            on_click=State.set_mr_min_mktcap(10_000)),
+        rx.button("전체",   size="1",
+            variant=rx.cond(State.mr_min_mktcap == 0,      "solid", "soft"),
+            on_click=State.set_mr_min_mktcap(0)),
+        spacing="2",
+        align="center",
+        wrap="wrap",
+    )
+
     # ── 추세추종 전용 옵션 행 ────────────────────────────────────
     trend_opts = rx.hstack(
         rx.text("필터", size="1", color="gray", white_space="nowrap"),
@@ -3085,7 +3170,11 @@ def sidebar_controls() -> rx.Component:
                         rx.cond(
                             State.scan_mode == "trend",
                             trend_opts,
-                            defensive_opts,
+                            rx.cond(
+                                State.scan_mode == "mean_reversion",
+                                mr_opts,
+                                defensive_opts,
+                            ),
                         ),
                     ),
                 ),
@@ -3116,9 +3205,16 @@ def sidebar_controls() -> rx.Component:
                             rx.callout.text("💡 RS90+ 강세 종목에서 EMA 눌림목·신고가 돌파·박스권 돌파 신호를 포착. EV(기대값)·반감기 3년 가중으로 현재 잘 작동하는 패턴 순위 정렬. (방법론: 《시장의 마법사》 프롤리히·쿨라매기)"),
                             color_scheme="indigo", variant="surface", size="1",
                         ),
-                        rx.callout.root(
-                            rx.callout.text("💡 하루 급등이 아닌 1주~3개월 꾸준한 우상향 종목을 탐색. 삼성전기·LG이노텍 류 소재·부품株 발굴에 적합. 시총 상위 300개 기준."),
-                            color_scheme="violet", variant="surface", size="1",
+                        rx.cond(
+                            State.scan_mode == "mean_reversion",
+                            rx.callout.root(
+                                rx.callout.text("💡 RSI14 < 임계값 AND 볼린저밴드 하단 이탈을 동시에 만족하는 극단적 과매도 종목 탐색. 공포 구간 역발상 매수 후보 발굴. 점수 높을수록 과매도 강도 강함."),
+                                color_scheme="red", variant="surface", size="1",
+                            ),
+                            rx.callout.root(
+                                rx.callout.text("💡 하루 급등이 아닌 1주~3개월 꾸준한 우상향 종목을 탐색. 삼성전기·LG이노텍 류 소재·부품株 발굴에 적합. 시총 상위 300개 기준."),
+                                color_scheme="violet", variant="surface", size="1",
+                            ),
                         ),
                     ),
                 ),
@@ -3171,11 +3267,14 @@ def scanner_tab() -> rx.Component:
                     State.scan_mode == "stock_momentum",
                     stock_momentum_table(),
                     rx.cond(
-                        State.scan_results.length() == 0,
-                    rx.center(
-                        rx.text("스캔 실행 버튼을 눌러 결과를 조회하세요.", color="gray"),
-                        height="200px",
-                    ),
+                        State.scan_mode == "mean_reversion",
+                        mean_reversion_table(),
+                        rx.cond(
+                            State.scan_results.length() == 0,
+                        rx.center(
+                            rx.text("스캔 실행 버튼을 눌러 결과를 조회하세요.", color="gray"),
+                            height="200px",
+                        ),
                 rx.table.root(
             rx.table.header(
                 rx.table.row(
@@ -3231,6 +3330,7 @@ def scanner_tab() -> rx.Component:
                 ),
                 ),
             ),
+            ),  # rx.cond(mean_reversion)
             ),
         ),
         ),  # rx.cond(trend)
@@ -3569,6 +3669,102 @@ def pullback_scanner_table() -> rx.Component:
                 )
             ),
             variant="surface", width="100%",
+        ),
+    )
+
+
+def mean_reversion_table() -> rx.Component:
+    """역발상 과매도 스캔 결과 테이블."""
+    return rx.cond(
+        State.mean_reversion_results.length() == 0,
+        rx.center(
+            rx.vstack(
+                rx.text("위 패널에서 역발상 과매도 스캔을 실행하세요.", color="gray"),
+                rx.text("RSI14 + 볼린저밴드 하단 이탈 동시 조건 · KOSPI/KOSDAQ/SP500 지원", size="1", color="gray"),
+                align="center", spacing="1",
+            ),
+            height="200px",
+        ),
+        rx.vstack(
+            rx.cond(
+                State.scan_warning != "",
+                rx.callout.root(
+                    rx.callout.text(State.scan_warning),
+                    color_scheme="amber", variant="surface", size="1",
+                ),
+            ),
+            rx.table.root(
+                rx.table.header(
+                    rx.table.row(
+                        rx.table.column_header_cell("순위"),
+                        rx.table.column_header_cell("종목명"),
+                        rx.table.column_header_cell("RSI14"),
+                        rx.table.column_header_cell("BB괴리"),
+                        rx.table.column_header_cell("1W"),
+                        rx.table.column_header_cell("1M"),
+                        rx.table.column_header_cell("거래량비"),
+                        rx.table.column_header_cell("점수"),
+                        rx.table.column_header_cell("현재가"),
+                        rx.table.column_header_cell("시총"),
+                        rx.table.column_header_cell(""),
+                    )
+                ),
+                rx.table.body(
+                    rx.foreach(
+                        State.mean_reversion_results,
+                        lambda r: rx.table.row(
+                            rx.table.cell(r["rank"]),
+                            rx.table.cell(rx.text(r["name"], weight="medium")),
+                            # RSI14 — 20 미만은 공포 수준 강조
+                            rx.table.cell(
+                                rx.badge(
+                                    r["rsi_str"],
+                                    color_scheme=rx.cond(r["rsi_extreme"], "red", "amber"),
+                                    variant="solid", size="1",
+                                )
+                            ),
+                            # BB 괴리율 (BB하단 대비 얼마나 아래인지, 음수)
+                            rx.table.cell(
+                                rx.badge(r["bb_gap_str"], color_scheme="red", variant="soft", size="1")
+                            ),
+                            # 1W 낙폭
+                            rx.table.cell(
+                                rx.text(r["ret_1w_str"],
+                                    color=rx.cond(r["ret_1w_neg"], "red", "green"),
+                                    size="1")
+                            ),
+                            # 1M 수익
+                            rx.table.cell(
+                                rx.text(r["ret_1m_str"],
+                                    color=rx.cond(r["ret_1m_pos"], "green", "red"),
+                                    size="1")
+                            ),
+                            # 거래량비 — 패닉 셀링 여부
+                            rx.table.cell(
+                                rx.badge(r["vol_ratio_str"],
+                                    color_scheme=rx.cond(r["vol_up"], "orange", "gray"),
+                                    variant="soft", size="1")
+                            ),
+                            # 과매도 점수 (높을수록 역발상 기회)
+                            rx.table.cell(
+                                rx.badge(
+                                    r["score_str"],
+                                    color_scheme=rx.cond(r["score_high"], "red", "amber"),
+                                    variant="solid", size="1",
+                                )
+                            ),
+                            rx.table.cell(r["close_str"]),
+                            rx.table.cell(r["mktcap_str"]),
+                            rx.table.cell(
+                                rx.button("조회", size="1", variant="soft", color_scheme="blue",
+                                    on_click=State.goto_lookup_from_leaders(r["code"], r["is_us"]))
+                            ),
+                        ),
+                    )
+                ),
+                variant="surface", width="100%",
+            ),
+            width="100%", spacing="2",
         ),
     )
 
@@ -7144,7 +7340,8 @@ def monitor_tab() -> rx.Component:
                 rx.cond(State.scan_mode == "trend", "추세추종 스캔",
                 rx.cond(State.scan_mode == "defensive", "하락방어 스캔",
                 rx.cond(State.scan_mode == "stock_momentum", "기간모멘텀 스캔",
-                "퀀트 스캔")))))
+                rx.cond(State.scan_mode == "mean_reversion", "역발상 과매도 스캔",
+                "퀀트 스캔"))))))
 
     scan_progress = rx.cond(
         State.scan_mode == "whale",

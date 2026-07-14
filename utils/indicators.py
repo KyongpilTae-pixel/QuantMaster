@@ -34,6 +34,28 @@ class TechnicalIndicators:
         return df
 
 
+    @staticmethod
+    def calc_rsi(closes: pd.Series, period: int = 14) -> pd.Series:
+        """RSI(period) 시리즈 반환. 순수 상승 → 100, 순수 하락 → 0."""
+        delta = closes.diff()
+        gain  = delta.clip(lower=0).rolling(period).mean()
+        loss  = (-delta.clip(upper=0)).rolling(period).mean()
+        with np.errstate(divide="ignore", invalid="ignore"):
+            rs = np.where(loss == 0, np.inf, gain.values / loss.values)
+        return pd.Series(100 - (100 / (1 + rs)), index=closes.index)
+
+    @staticmethod
+    def calc_bb(
+        closes: pd.Series,
+        period: int = 20,
+        std_mult: float = 2.0,
+    ) -> tuple[pd.Series, pd.Series, pd.Series]:
+        """Bollinger Bands (upper, mid, lower) 반환."""
+        mid   = closes.rolling(period).mean()
+        std   = closes.rolling(period).std(ddof=1)
+        return mid + std_mult * std, mid, mid - std_mult * std
+
+
 def compute_vwap(df: pd.DataFrame, period: int = 20) -> float | None:
     """DataFrame의 마지막 행 VWAP(period) 값을 반환. 데이터 부족 시 None."""
     if len(df) < period:
