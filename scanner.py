@@ -106,6 +106,13 @@ class QuantScanner:
                     mfi_ok = curr["MFI"] > mfi_min
                     obv_ok = curr["OBV"] > curr["OBV_Sig"]
 
+                    # 52주 신고가 여부 (252거래일 최고가 돌파 또는 95% 이상)
+                    high_252 = df["Close"].rolling(252, min_periods=60).max().iloc[-1]
+                    new_high_52w = bool(
+                        not math.isnan(high_252)
+                        and curr["Close"] >= high_252 * 0.995
+                    )
+
                     if vwap_ok and mfi_ok and (obv_ok or not require_obv):
                         seen_symbols.add(row["Symbol"])
                         cap_val = row.get("MarketCap", float("nan"))
@@ -136,6 +143,7 @@ class QuantScanner:
                                     1,
                                 ),
                                 "MarketCap_Str": cap_str,
+                                "New52WHigh": new_high_52w,
                                 # 적용된 임계값 정보
                                 "Applied_PBR": effective_pbr if not is_etf else float("nan"),
                                 "Applied_GPA": gpa_min if not is_etf else float("nan"),

@@ -31,6 +31,23 @@ class TechnicalIndicators:
         df["OBV"] = (np.sign(df["Close"].diff()) * df["Volume"]).fillna(0).cumsum()
         df["OBV_Sig"] = df["OBV"].rolling(window=20).mean()
 
+        # RSI14
+        df["RSI14"] = TechnicalIndicators.calc_rsi(df["Close"], 14)
+
+        # Bollinger Bands (20일, 2σ) — 가격 차트 오버레이용
+        bb_u, _bb_m, bb_l = TechnicalIndicators.calc_bb(df["Close"], 20, 2.0)
+        df["BB_upper"] = bb_u
+        df["BB_lower"] = bb_l
+
+        # ATR14 (Average True Range) — 손절 계산용
+        prev_close = df["Close"].shift(1)
+        tr = pd.concat([
+            df["High"] - df["Low"],
+            (df["High"] - prev_close).abs(),
+            (df["Low"]  - prev_close).abs(),
+        ], axis=1).max(axis=1)
+        df["ATR14"] = tr.rolling(window=14).mean()
+
         return df
 
 

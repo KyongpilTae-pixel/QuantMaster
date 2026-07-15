@@ -44,6 +44,7 @@ class ScanResult(BaseModel):
     psr: float = 0.0
     mfi: float = 0.0
     obv_ok: bool = True
+    new_52w_high: bool = False
     vwap_price: float = 0.0
     close: float = 0.0
     vwap_gap: float = 0.0
@@ -74,6 +75,7 @@ class BacktestSummary(BaseModel):
     avg_return: float = 0.0
     sharpe: float = 0.0
     trade_count: int = 0
+    cost_per_trade_pct: float = 0.0
 
 
 class SavedRun(BaseModel):
@@ -173,6 +175,17 @@ class State(rx.State):
     plan_avg_price: float = 0.0
     plan_stop_loss: float = 0.0
     plan_stop_loss_pct: float = 0.0
+    plan_stop_loss_method: str = ""
+    selected_atr14: float = 0.0
+    plan_kelly_fraction: float = 0.0
+    plan_kelly_budget: float = 0.0
+
+    # VKOSPI 공포지수
+    vkospi_value: float = 0.0
+    vkospi_change: float = 0.0
+    vkospi_level: str = ""
+    vkospi_date: str = ""
+    vkospi_loaded: bool = False
 
     # 히스토리 (저장된 스캔)
     saved_runs: List[SavedRun] = []
@@ -610,10 +623,15 @@ class State(rx.State):
                     "MA60": _v(row["TWAP_60"]),
                     "MA120": _v(row["TWAP_120"]),
                     "SMA120": _v(row["SMA_120"]),
+                    "BB_upper": _v(row.get("BB_upper")),
+                    "BB_lower": _v(row.get("BB_lower")),
+                    "RSI14": (round(float(row["RSI14"]), 1) if pd.notna(row.get("RSI14")) else None),
                 }
                 for d, row in display_df.iterrows()
             ]
             self.close_date = str(display_df.index[-1].date())
+            _atr = display_df["ATR14"].dropna()
+            self.selected_atr14 = float(_atr.iloc[-1]) if len(_atr) > 0 else 0.0
             _t2 = asyncio.create_task(asyncio.to_thread(
                 loader.get_quarterly_psr, holding.symbol, holding.market
             ))
@@ -1759,6 +1777,23 @@ class State(rx.State):
         """whale_results에서 종목 검색."""
         return next((r for r in self.whale_results if r.name == name), None)
 
+    async def load_vkospi(self):
+        """VKOSPI(한국 공포지수) 비동기 로드."""
+        import asyncio
+        from utils.data_loader import QuantDataLoader
+        data = await asyncio.to_thread(QuantDataLoader().get_vkospi)
+        if data["value"] is not None:
+            self.vkospi_value = float(data["value"])
+            self.vkospi_change = float(data["change"]) if data["change"] is not None else 0.0
+            self.vkospi_level = str(data["level"])
+            self.vkospi_date = str(data["date"])
+        else:
+            self.vkospi_value = 0.0
+            self.vkospi_change = 0.0
+            self.vkospi_level = "-"
+            self.vkospi_date = "-"
+        self.vkospi_loaded = True
+
     def calc_buy_plan(self):
         """예산 입력 후 분할 매수 플랜 계산."""
         target = self._find_result(self.selected_name)
@@ -1772,12 +1807,19 @@ class State(rx.State):
                 vwap_price=target.vwap_price,
                 mfi=target.mfi,
                 total_budget=budget,
+                atr14=self.selected_atr14 if self.selected_atr14 > 0 else None,
+                win_rate=self.bt_summary.win_rate if self.bt_summary.trade_count > 0 else 55.0,
+                avg_win_pct=max(self.bt_summary.avg_return, 0.1) if self.bt_summary.trade_count > 0 else 8.0,
+                avg_loss_pct=abs(self.bt_summary.mdd) / max(self.bt_summary.trade_count, 1) if self.bt_summary.trade_count > 0 else 4.0,
             )
             self.buy_plan_steps = [BuyPlanStep(**s) for s in result["steps"]]
             self.plan_type = result["plan_type"]
             self.plan_avg_price = result["avg_price"]
             self.plan_stop_loss = result["stop_loss"]
             self.plan_stop_loss_pct = result["stop_loss_pct"]
+            self.plan_stop_loss_method = result.get("stop_loss_method", "")
+            self.plan_kelly_fraction = result.get("kelly_fraction", 0.0)
+            self.plan_kelly_budget = result.get("kelly_budget", 0.0)
         except Exception as e:
             self.plan_type = f"계산 오류: {e}"
 
@@ -1869,10 +1911,15 @@ class State(rx.State):
                         "MA60": _v(row.get("TWAP_60")),
                         "MA120": _v(row.get("TWAP_120")),
                         "SMA120": _v(row.get("SMA_120")),
+                        "BB_upper": _v(row.get("BB_upper")),
+                        "BB_lower": _v(row.get("BB_lower")),
+                        "RSI14": (round(float(row["RSI14"]), 1) if pd.notna(row.get("RSI14")) else None),
                     }
                     for d, row in display_df.iterrows()
                 ]
                 self.close_date = str(display_df.index[-1].date())
+                _atr = display_df["ATR14"].dropna()
+                self.selected_atr14 = float(_atr.iloc[-1]) if len(_atr) > 0 else 0.0
 
                 # 세력 탐지 보조 차트
                 is_us = w_target.market in {"SP500", "NASDAQ"}
@@ -2032,10 +2079,15 @@ class State(rx.State):
                     "MA60": _v(row["TWAP_60"]),
                     "MA120": _v(row["TWAP_120"]),
                     "SMA120": _v(row["SMA_120"]),
+                    "BB_upper": _v(row.get("BB_upper")),
+                    "BB_lower": _v(row.get("BB_lower")),
+                    "RSI14": (round(float(row["RSI14"]), 1) if pd.notna(row.get("RSI14")) else None),
                 }
                 for d, row in display_df.iterrows()
             ]
             self.close_date = str(display_df.index[-1].date())
+            _atr = display_df["ATR14"].dropna()
+            self.selected_atr14 = float(_atr.iloc[-1]) if len(_atr) > 0 else 0.0
             # 분기별 PSR
             _t2 = asyncio.create_task(asyncio.to_thread(
                 loader.get_quarterly_psr, target.symbol, target.market_raw
@@ -2157,11 +2209,16 @@ class State(rx.State):
                     "MA60": _v(row.get("TWAP_60")),
                     "MA120": _v(row.get("TWAP_120")),
                     "SMA120": _v(row.get("SMA_120")),
+                    "BB_upper": _v(row.get("BB_upper")),
+                    "BB_lower": _v(row.get("BB_lower")),
+                    "RSI14": (round(float(row["RSI14"]), 1) if pd.notna(row.get("RSI14")) else None),
                 }
                 for d, row in display_df.iterrows()
             ]
             self.close_date = str(display_df.index[-1].date())
             self.selected_close = float(df["Close"].iloc[-1])
+            _atr = display_df["ATR14"].dropna()
+            self.selected_atr14 = float(_atr.iloc[-1]) if len(_atr) > 0 else 0.0
             _t2 = asyncio.create_task(asyncio.to_thread(
                 loader.get_quarterly_psr, code, self.market
             ))
@@ -2909,6 +2966,7 @@ class State(rx.State):
                     psr=float(row["PSR"]) if not math.isnan(float(row.get("PSR", float("nan")))) else 0.0,
                     mfi=float(row["MFI"]),
                     obv_ok=bool(row["OBV_OK"]),
+                    new_52w_high=bool(row.get("New52WHigh", False)),
                     vwap_price=float(row["VWAP_Price"]),
                     close=float(row["Close"]),
                     vwap_gap=float(row["VWAP_Gap"]),
@@ -2977,6 +3035,7 @@ class State(rx.State):
                     avg_return=round(result["Avg_Return"], 2),
                     sharpe=round(result["Sharpe"], 2),
                     trade_count=int(result["Trades"]),
+                    cost_per_trade_pct=round(result.get("Cost_Per_Trade_Pct", 0.0), 3),
                 )
                 eq = result["Equity_Curve"]
                 self.equity_data = [
@@ -3485,6 +3544,7 @@ def scanner_tab() -> rx.Component:
                     rx.table.column_header_cell("현재가"),
                     rx.table.column_header_cell("VWAP"),
                     rx.table.column_header_cell("괴리율(%)"),
+                    rx.table.column_header_cell("52W"),
                     rx.table.column_header_cell("조건"),
                     rx.table.column_header_cell(""),
                 )
@@ -3503,6 +3563,13 @@ def scanner_tab() -> rx.Component:
                         rx.table.cell(r.close),
                         rx.table.cell(r.vwap_price),
                         rx.table.cell(r.vwap_gap),
+                        rx.table.cell(
+                            rx.cond(
+                                r.new_52w_high,
+                                rx.badge("52W↑", color_scheme="green", size="1"),
+                                rx.text(""),
+                            )
+                        ),
                         rx.table.cell(
                             rx.badge(
                                 r.condition,
@@ -4581,7 +4648,7 @@ def actual_values_panel(r: ScanResult) -> rx.Component:
 
 
 def price_chart() -> rx.Component:
-    """종가 + VWAP 라인 차트."""
+    """종가 + VWAP + BB 라인 차트 + RSI14 서브차트."""
     return rx.cond(
         State.is_loading_chart,
         rx.box(
@@ -4596,6 +4663,7 @@ def price_chart() -> rx.Component:
             State.price_chart_data.length() > 0,
             rx.box(
                 rx.vstack(
+                    # ── 가격 차트 헤더 ──
                     rx.hstack(
                         rx.text("가격 차트", weight="bold", size="2"),
                         rx.badge("종가", color_scheme="blue"),
@@ -4604,9 +4672,12 @@ def price_chart() -> rx.Component:
                         rx.badge("TWAP60", color_scheme="red"),
                         rx.badge("TWAP120", color_scheme="purple"),
                         rx.badge("SMA120", color_scheme="orange"),
+                        rx.badge("BB(20,2σ)", color_scheme="cyan"),
                         spacing="2",
                         align_items="center",
+                        flex_wrap="wrap",
                     ),
+                    # ── 가격 + BB 차트 ──
                     rx.recharts.composed_chart(
                         rx.recharts.line(
                             data_key="종가",
@@ -4658,6 +4729,24 @@ def price_chart() -> rx.Component:
                             stroke_width=1,
                             stroke_dasharray="4 2",
                         ),
+                        rx.recharts.line(
+                            data_key="BB_upper",
+                            stroke="#06b6d4",
+                            dot=False,
+                            type_="monotone",
+                            name="BB상단",
+                            stroke_width=1,
+                            stroke_dasharray="3 3",
+                        ),
+                        rx.recharts.line(
+                            data_key="BB_lower",
+                            stroke="#06b6d4",
+                            dot=False,
+                            type_="monotone",
+                            name="BB하단",
+                            stroke_width=1,
+                            stroke_dasharray="3 3",
+                        ),
                         rx.foreach(
                             State.whale_highlights,
                             lambda h: rx.recharts.reference_area(
@@ -4676,6 +4765,43 @@ def price_chart() -> rx.Component:
                         data=State.price_chart_data,
                         width="100%",
                         height=320,
+                    ),
+                    # ── RSI14 서브차트 ──
+                    rx.hstack(
+                        rx.text("RSI14", weight="bold", size="2"),
+                        rx.badge("과열 ≥70", color_scheme="red", variant="soft"),
+                        rx.badge("과매도 ≤30", color_scheme="green", variant="soft"),
+                        spacing="2",
+                        align_items="center",
+                    ),
+                    rx.recharts.composed_chart(
+                        rx.recharts.line(
+                            data_key="RSI14",
+                            stroke="#6366f1",
+                            dot=False,
+                            type_="monotone",
+                            name="RSI14",
+                            stroke_width=1.5,
+                        ),
+                        rx.recharts.reference_line(
+                            y=70,
+                            stroke="#ef4444",
+                            stroke_dasharray="4 2",
+                            label="70",
+                        ),
+                        rx.recharts.reference_line(
+                            y=30,
+                            stroke="#22c55e",
+                            stroke_dasharray="4 2",
+                            label="30",
+                        ),
+                        rx.recharts.x_axis(data_key="date", tick={"fontSize": 9}),
+                        rx.recharts.y_axis(domain=[0, 100], tick={"fontSize": 9}),
+                        rx.recharts.cartesian_grid(stroke_dasharray="3 3"),
+                        rx.recharts.tooltip(),
+                        data=State.price_chart_data,
+                        width="100%",
+                        height=130,
                     ),
                     width="100%",
                     spacing="3",
@@ -4882,7 +5008,12 @@ def buy_plan_panel() -> rx.Component:
                             border="1px solid var(--blue-4)",
                         ),
                         rx.box(
-                            rx.text("손절 가격 (VWAP -4%)", size="1", color="gray"),
+                            rx.hstack(
+                                rx.text("손절 가격", size="1", color="gray"),
+                                rx.badge(State.plan_stop_loss_method, color_scheme="orange", size="1"),
+                                spacing="1",
+                                align_items="center",
+                            ),
                             rx.hstack(
                                 rx.text(State.plan_stop_loss, weight="bold", size="4", color="red"),
                                 rx.badge(rx.text(State.plan_stop_loss_pct, "%"), color_scheme="red"),
@@ -4897,6 +5028,41 @@ def buy_plan_panel() -> rx.Component:
                         columns="2",
                         spacing="3",
                         width="100%",
+                    ),
+                    # 켈리 권장 투자 비율
+                    rx.cond(
+                        State.plan_kelly_fraction > 0,
+                        rx.box(
+                            rx.hstack(
+                                rx.badge("Kelly", color_scheme="violet", size="1"),
+                                rx.text("켈리 권장 투자 비율", size="1", color="gray"),
+                                spacing="2",
+                                align_items="center",
+                            ),
+                            rx.hstack(
+                                rx.text(
+                                    rx.text.span(
+                                        State.plan_kelly_fraction * 100,
+                                    ),
+                                    rx.text.span("% → "),
+                                    rx.text.span(State.plan_kelly_budget),
+                                    rx.text.span("원"),
+                                    weight="bold",
+                                    size="3",
+                                    color="purple",
+                                ),
+                                spacing="1",
+                            ),
+                            rx.text(
+                                "백테스트 기반 Half-Kelly (최대 25% 한도). 예산 대비 위험 조정 투자금 제안.",
+                                size="1", color="gray",
+                            ),
+                            padding="12px",
+                            border_radius="6px",
+                            background="var(--violet-2)",
+                            border="1px solid var(--violet-4)",
+                            width="100%",
+                        ),
                     ),
                     width="100%",
                     spacing="3",
@@ -5371,6 +5537,63 @@ def analysis_tab() -> rx.Component:
                     class_name="no-print",
                     display=rx.cond(State.show_add_holding_form, "block", "none"),
                 ),
+                # VKOSPI 공포지수 배너 (한국 종목 분석 시 표시)
+                rx.cond(
+                    (State.selected_market == "KOSPI") | (State.selected_market == "KOSDAQ"),
+                    rx.box(
+                        rx.hstack(
+                            rx.vstack(
+                                rx.hstack(
+                                    rx.badge("VKOSPI", color_scheme="purple", size="1"),
+                                    rx.text("한국 공포지수", size="2", weight="bold"),
+                                    spacing="2",
+                                    align_items="center",
+                                ),
+                                rx.text(State.vkospi_date, size="1", color="gray"),
+                                spacing="1",
+                            ),
+                            rx.spacer(),
+                            rx.cond(
+                                State.vkospi_loaded,
+                                rx.hstack(
+                                    rx.heading(
+                                        State.vkospi_value,
+                                        size="5",
+                                        color=rx.cond(
+                                            State.vkospi_level == "공포", "red",
+                                            rx.cond(State.vkospi_level == "주의", "orange", "green"),
+                                        ),
+                                    ),
+                                    rx.badge(
+                                        State.vkospi_level,
+                                        color_scheme=rx.cond(
+                                            State.vkospi_level == "공포", "red",
+                                            rx.cond(State.vkospi_level == "주의", "orange", "green"),
+                                        ),
+                                        size="2",
+                                    ),
+                                    spacing="2",
+                                    align_items="center",
+                                ),
+                                rx.button(
+                                    "조회",
+                                    on_click=State.load_vkospi,
+                                    size="1",
+                                    variant="soft",
+                                    color_scheme="purple",
+                                    class_name="no-print",
+                                ),
+                            ),
+                            align_items="center",
+                            width="100%",
+                        ),
+                        padding="12px 16px",
+                        border_radius="8px",
+                        background="var(--purple-2)",
+                        border="1px solid var(--purple-5)",
+                        width="100%",
+                    ),
+                ),
                 # 퀀트 모드: 매수 근거 / 분할 매수 플랜 / 지표 가이드 / 매도 가이드
                 rx.cond(
                     State.scan_mode == "quant",
@@ -5628,6 +5851,11 @@ def backtest_tab() -> rx.Component:
                     "총 거래 수",
                     rx.text(s.trade_count, "회"),
                     "blue",
+                ),
+                metric_card(
+                    "거래비용(왕복)",
+                    rx.text(s.cost_per_trade_pct, "%"),
+                    "gray",
                 ),
                 columns="3",
                 spacing="4",
@@ -7308,6 +7536,59 @@ def holding_analysis_tab() -> rx.Component:
                             )
                         ),
                         color_scheme="amber", variant="soft",
+                    ),
+                ),
+                # ── 드로우다운 서킷브레이커 경보 ─────────────────────
+                rx.cond(
+                    State.portfolio_pnl_pct <= -20,
+                    rx.callout.root(
+                        rx.callout.icon(rx.icon("circle-x", size=16)),
+                        rx.callout.text(
+                            rx.vstack(
+                                rx.text("서킷브레이커 -20% 발동", weight="bold", size="2"),
+                                rx.text(
+                                    "포트폴리오 손실이 -20%를 초과했습니다. "
+                                    "전체 포지션 청산 또는 신규 매수 중단을 강력히 권고합니다.",
+                                    size="2",
+                                ),
+                                spacing="1", align_items="start",
+                            )
+                        ),
+                        color_scheme="red", variant="surface",
+                    ),
+                    rx.cond(
+                        State.portfolio_pnl_pct <= -15,
+                        rx.callout.root(
+                            rx.callout.icon(rx.icon("triangle-alert", size=16)),
+                            rx.callout.text(
+                                rx.vstack(
+                                    rx.text("경고: 손실 -15% 도달", weight="bold", size="2"),
+                                    rx.text(
+                                        "신규 매수를 중단하고 포지션 50% 축소를 고려하세요.",
+                                        size="2",
+                                    ),
+                                    spacing="1", align_items="start",
+                                )
+                            ),
+                            color_scheme="orange", variant="surface",
+                        ),
+                        rx.cond(
+                            State.portfolio_pnl_pct <= -10,
+                            rx.callout.root(
+                                rx.callout.icon(rx.icon("info", size=16)),
+                                rx.callout.text(
+                                    rx.vstack(
+                                        rx.text("주의: 손실 -10% 도달", weight="bold", size="2"),
+                                        rx.text(
+                                            "신규 매수 규모를 줄이고 기존 포지션 손절 기준을 재검토하세요.",
+                                            size="2",
+                                        ),
+                                        spacing="1", align_items="start",
+                                    )
+                                ),
+                                color_scheme="amber", variant="surface",
+                            ),
+                        ),
                     ),
                 ),
                 # 종목별 손익

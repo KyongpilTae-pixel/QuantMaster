@@ -426,6 +426,42 @@ class QuantDataLoader:
         df = df[df["Volume"] > 0]
         return df
 
+    def get_vkospi(self, lookback_days: int = 30) -> dict:
+        """VKOSPI(한국 공포지수) 최신값 + 전일 대비 변화 반환.
+
+        Returns
+        -------
+        {
+            "value"  : float | None   — 최신 VKOSPI 지수값,
+            "change" : float | None   — 전일 대비 변화량,
+            "level"  : str            — "공포" / "중립" / "안도" 구분 레이블,
+            "date"   : str            — 기준일 (YYYY-MM-DD),
+        }
+        """
+        try:
+            end = datetime.today()
+            start = end - timedelta(days=lookback_days)
+            df = fdr.DataReader(
+                "VKOSPI",
+                start.strftime("%Y-%m-%d"),
+                end.strftime("%Y-%m-%d"),
+            )
+            df = df.dropna(subset=["Close"])
+            if df.empty:
+                return {"value": None, "change": None, "level": "-", "date": "-"}
+            latest = float(df["Close"].iloc[-1])
+            change = float(df["Close"].iloc[-1] - df["Close"].iloc[-2]) if len(df) >= 2 else None
+            date_str = str(df.index[-1])[:10]
+            if latest >= 25:
+                level = "공포"
+            elif latest >= 20:
+                level = "주의"
+            else:
+                level = "안도"
+            return {"value": latest, "change": change, "level": level, "date": date_str}
+        except Exception:
+            return {"value": None, "change": None, "level": "-", "date": "-"}
+
 
 # ---------------------------------------------------------------------------
 # 단일 종목 조회 (종목조회 탭용)

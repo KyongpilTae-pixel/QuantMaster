@@ -124,9 +124,15 @@ QuantMaster/
   - **SP500/NASDAQ**: FinanceDataReader로 구성종목 목록 조회 후 yfinance로 PBR·ROE 병렬 수집 (ThreadPoolExecutor, max_workers=8)
 - `QuantDataLoader.get_ohlcv(symbol, lookback_days)` — FinanceDataReader로 OHLCV 반환 (한국/미국 공통).
 
+### `utils/data_loader.py`
+- `QuantDataLoader.get_vkospi(lookback_days)` — VKOSPI(한국 공포지수) 최신값 + 전일 대비 변화량 + 레벨(공포/주의/안도) 반환.
+
 ### `utils/indicators.py`
-- `TechnicalIndicators.calculate_all(df, windows)` — VWAP · TWAP (복수 기간) · MFI(14일) · OBV · OBV_Signal(20일 MA) 계산.
+- `TechnicalIndicators.calculate_all(df, windows)` — VWAP · TWAP (복수 기간) · MFI(14일) · OBV · OBV_Signal(20일 MA) · RSI14 · Bollinger Bands(20일 2σ) · ATR14 계산.
 - MFI 엣지 케이스 처리: 순수 상승 추세 → MFI=100, 횡보 → MFI=50.
+- RSI14: 14일 상대강도지수 (과열≥70, 과매도≤30).
+- Bollinger Bands: BB_upper / BB_lower (가격 차트 오버레이).
+- ATR14: 14일 평균 진폭 (Average True Range, 손절 계산용).
 
 ### `utils/reasoning.py`
 - `InvestmentReasoning.generate_report(name, pbr, vwap_p, mfi, vwap_price, currency)` — KRW/USD에 맞는 가격 포맷으로 매수 근거 / 매도 가이드 생성.
@@ -135,9 +141,16 @@ QuantMaster/
 - `QuantScanner.run_advanced_scan(target_pbr, vwap_period, min_count, market)` — 3단계 필터 + 5단계 자동 완화 스캔.
 - 결과 DataFrame: `Applied_PBR / Applied_GPA / Applied_MFI / Applied_OBV / Condition / Currency`.
 
+### `utils/strategy_engine.py`
+- `calculate_pullback_plan(current_price, vwap_price, mfi, total_budget, atr14, win_rate, avg_win_pct, avg_loss_pct)` — VWAP 눌림목 분할 매수 플랜 계산.
+  - ATR14 제공 시 손절선 = `현재가 - 2.5×ATR14` (ATR 기반), 미제공 시 `VWAP×0.96` (고정).
+  - 반환 dict에 `stop_loss_method` · `kelly_fraction` · `kelly_budget` 포함.
+- `calc_kelly_fraction(win_rate, avg_win_pct, avg_loss_pct)` — Half-Kelly 최적 베팅 비율 계산 (최대 25% 한도).
+
 ### `backtester.py`
 - `Backtester.run(symbol, name, vwap_period, initial_capital)` — VWAP 돌파 진입 / VWAP 이탈 청산 전략 시뮬레이션.
-- 반환: 총수익률 · MDD · 승률 · 평균수익 · Sharpe · 자본금 추이 · 매매 내역.
+- **현실적 거래 비용 반영**: KR 거래세 0.18% + 수수료 0.015% + 슬리피지 0.05% (왕복). US 거래세 없음 + 수수료 0.005%.
+- 반환: 총수익률 · MDD · 승률 · 평균수익 · Sharpe · 거래비용(%) · 자본금 추이 · 매매 내역.
 
 ### `utils/scan_db.py`
 - `save_scan / load_scan_results / load_run_list` — 퀀트 스캔 결과 SQLite 저장·로드.
@@ -282,7 +295,7 @@ QuantMaster Pro
     ├── 스캐너 탭
     │   ├── [밸류 돌파 모드] 결과 테이블
     │   │   └── 종목명 · 심볼 · 시가총액 · PBR · PSR · 배당률
-    │   │       MFI · 현재가 · VWAP · 괴리율 · 조건 · [분석]
+    │   │       MFI · 현재가 · VWAP · 괴리율 · 52W↑(신고가) · 조건 · [분석]
     │   ├── [세력 탐지 모드] 결과 테이블
     │   │   └── 종목명 · 시그널일 · 점수 · 시그널 타입 · 현재가 · 거래량비율 · [분석]
     │   ├── [하락방어 모드] 결과 테이블
@@ -297,14 +310,18 @@ QuantMaster Pro
     ├── 분석 탭 (종목 선택 후)
     │   ├── 종목명 + 종가 기준일 + 보유 추가 버튼 + PDF 저장
     │   ├── 보유 추가 폼 (매수가 · 수량 · 메모 입력 → 등록)
+    │   ├── VKOSPI 공포지수 배너 (KR 종목에만 표시) — 값 · 레벨(공포/주의/안도) · 조회 버튼
     │   ├── [퀀트 모드]
     │   │   ├── 매수 근거
     │   │   ├── 분할 매수 플랜 (예산 입력 → 계산하기)
+    │   │   │   ├── ATR 기반 손절선 or VWAP×0.96 (레이블로 방식 표시)
+    │   │   │   └── Kelly 권장 투자 비율 (Half-Kelly, 최대 25%) + 권장 투자금액
     │   │   ├── 지표 해석 가이드 (MFI / OBV)
     │   │   └── 매도 가이드
     │   ├── [세력 탐지 모드]
     │   │   └── 세력 매집 탐지 요약
-    │   ├── 가격 차트 (공통) ─ 종가 + VWAP + TWAP20/60/120 + SMA120
+    │   ├── 가격 차트 (공통) ─ 종가 + VWAP + TWAP20/60/120 + SMA120 + BB상단/하단
+    │   ├── RSI14 서브차트 (공통) ─ 과열(70) / 과매도(30) 기준선 포함
     │   ├── [세력 탐지 모드] OBV 차트 + 공매도 잔고 추이
     │   ├── Piotroski F-Score 패널 (공통) — 9점 재무 건전성 + 가치 멀티플
     │   │   ├── 점수 배지 (녹색≥7 / 황색≥5 / 적색<5)
@@ -318,7 +335,7 @@ QuantMaster Pro
     │
     ├── 백테스트 탭
     │   ├── VWAP 돌파 전략 설명 (진입 · 청산 · 기본 설정)
-    │   ├── 결과 지표 카드 (총수익률 · MDD · 승률 · 평균수익률 · 샤프지수 · 거래수)
+    │   ├── 결과 지표 카드 (총수익률 · MDD · 승률 · 평균수익률 · 샤프지수 · 거래수 · 왕복거래비용%)
     │   ├── 가격 차트 (매수/매도 마커 포함)
     │   ├── 자본금 추이 차트
     │   └── 매매 내역 테이블
@@ -341,6 +358,10 @@ QuantMaster Pro
     │   │   ├── 총 투자금
     │   │   ├── 예상 손익 (양수=초록 / 음수=빨강)
     │   │   └── 손익률 % (양수=초록 / 음수=빨강)
+    │   ├── 드로우다운 서킷브레이커 경보 (손익률 기준)
+    │   │   ├── -10% 도달 → 주의(황색) : 신규 매수 규모 축소 권고
+    │   │   ├── -15% 도달 → 경고(주황) : 포지션 50% 축소 권고
+    │   │   └── -20% 도달 → 서킷브레이커(적색) : 전체 청산 / 매수 중단 권고
     │   └── 종목별 손익 테이블
     │       └── 종목명 · 시장 · 매수가 · 현재가 · 수량 · 투자금
     │           손익금액 · 손익률(%) · MFI · VWAP괴리율 · 메모 · [분석]
