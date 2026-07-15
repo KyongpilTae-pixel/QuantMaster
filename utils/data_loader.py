@@ -426,6 +426,103 @@ class QuantDataLoader:
         df = df[df["Volume"] > 0]
         return df
 
+    def get_investor_trading(self, symbol: str, lookback_days: int = 20) -> dict:
+        """
+        외국인·기관 순매수 데이터 반환 (KR 종목 전용).
+        pykrx get_market_trading_volume_by_investor → 실패 시 NAVER Finance 스크래핑.
+
+        Returns
+        -------
+        {
+            "rows": list[dict]  — {date, foreign_net, inst_net, retail_net},
+            "cumulative": dict  — {foreign, inst, retail} 기간 누계(주수),
+            "error": str | None,
+        }
+        """
+        try:
+            from pykrx import stock as pykrx_stock
+            end_dt = datetime.today()
+            start_dt = end_dt - timedelta(days=lookback_days * 2)  # 주말 버퍼
+            end_str   = end_dt.strftime("%Y%m%d")
+            start_str = start_dt.strftime("%Y%m%d")
+            df = pykrx_stock.get_market_trading_volume_by_investor(
+                start_str, end_str, symbol
+            )
+            if df is not None and not df.empty:
+                # 컬럼: 기관합계 외국인합계 개인 ...
+                col_map = {}
+                for c in df.columns:
+                    if "외국인" in c:
+                        col_map[c] = "foreign_net"
+                    elif "기관" in c:
+                        col_map[c] = "inst_net"
+                    elif "개인" in c:
+                        col_map[c] = "retail_net"
+                df = df.rename(columns=col_map)
+                needed = [c for c in ("foreign_net", "inst_net", "retail_net") if c in df.columns]
+                df = df[needed].tail(lookback_days)
+                rows = [
+                    {
+                        "date": str(idx)[:10],
+                        "foreign_net": int(row.get("foreign_net", 0)),
+                        "inst_net":    int(row.get("inst_net", 0)),
+                        "retail_net":  int(row.get("retail_net", 0)),
+                    }
+                    for idx, row in df.iterrows()
+                ]
+                cumulative = {
+                    "foreign": int(df["foreign_net"].sum()) if "foreign_net" in df.columns else 0,
+                    "inst":    int(df["inst_net"].sum())    if "inst_net"    in df.columns else 0,
+                    "retail":  int(df["retail_net"].sum())  if "retail_net"  in df.columns else 0,
+                }
+                return {"rows": rows, "cumulative": cumulative, "error": None}
+        except Exception:
+            pass
+
+        # pykrx 실패 → NAVER 종목 투자자별 매매동향 스크래핑
+        return self._naver_investor_trading(symbol, lookback_days)
+
+    def _naver_investor_trading(self, symbol: str, lookback_days: int) -> dict:
+        """NAVER Finance 종목 투자자별 매매동향 스크래핑."""
+        import requests
+        from bs4 import BeautifulSoup
+        url = (
+            f"https://finance.naver.com/item/frgn.naver"
+            f"?code={symbol}&page=1"
+        )
+        headers = {"User-Agent": "Mozilla/5.0"}
+        try:
+            resp = requests.get(url, headers=headers, timeout=10)
+            resp.encoding = "euc-kr"
+            soup = BeautifulSoup(resp.text, "html.parser")
+            table = soup.find("table", {"class": "type2"})
+            if table is None:
+                return {"rows": [], "cumulative": {"foreign": 0, "inst": 0, "retail": 0}, "error": "NAVER 테이블 없음"}
+            rows_out = []
+            for tr in table.find_all("tr")[2:]:
+                tds = [td.get_text(strip=True).replace(",", "") for td in tr.find_all("td")]
+                if len(tds) < 4:
+                    continue
+                date = tds[0]
+                if not date or len(date) < 8:
+                    continue
+                try:
+                    foreign_net = int(tds[2]) if tds[2] and tds[2] not in ("-", "") else 0
+                except ValueError:
+                    foreign_net = 0
+                rows_out.append({
+                    "date": date,
+                    "foreign_net": foreign_net,
+                    "inst_net":    0,
+                    "retail_net":  0,
+                })
+                if len(rows_out) >= lookback_days:
+                    break
+            cumulative = {"foreign": sum(r["foreign_net"] for r in rows_out), "inst": 0, "retail": 0}
+            return {"rows": rows_out, "cumulative": cumulative, "error": None}
+        except Exception as e:
+            return {"rows": [], "cumulative": {"foreign": 0, "inst": 0, "retail": 0}, "error": str(e)}
+
     def get_vkospi(self, lookback_days: int = 30) -> dict:
         """VKOSPI(한국 공포지수) 최신값 + 전일 대비 변화 반환.
 

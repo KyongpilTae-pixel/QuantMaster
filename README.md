@@ -95,6 +95,7 @@ QuantMaster/
 │   ├── trend_scanner.py       # 추세추종 스캐너 (RS90+·EV백테스트·반감기3년)
 │   ├── mean_reversion_scanner.py   # 역발상 과매도 스캐너 (RSI14 + 볼린저밴드 하단 이탈)
 │   ├── magic_formula_scanner.py    # 매직 포뮬러 스캐너 (Greenblatt: EBIT/EV순위 + ROIC순위)
+│   ├── dividend_scanner.py         # 배당 성장 스크리닝 (KR: NAVER / US: yfinance 병렬)
 │   └── factor_loader.py       # 다중 팩터 로더 (Piotroski F-Score 9점 + EV/EBITDA + P/FCF)
 ├── scripts/
 │   ├── fetch_leaders_daily.py  # 당일주도주 자동수집 (Task Scheduler)
@@ -123,9 +124,8 @@ QuantMaster/
   - **KOSPI/KOSDAQ**: NAVER Finance 시가총액 페이지 스크래핑 (pykrx KRX API 연결 불가 문제로 대체)
   - **SP500/NASDAQ**: FinanceDataReader로 구성종목 목록 조회 후 yfinance로 PBR·ROE 병렬 수집 (ThreadPoolExecutor, max_workers=8)
 - `QuantDataLoader.get_ohlcv(symbol, lookback_days)` — FinanceDataReader로 OHLCV 반환 (한국/미국 공통).
-
-### `utils/data_loader.py`
 - `QuantDataLoader.get_vkospi(lookback_days)` — VKOSPI(한국 공포지수) 최신값 + 전일 대비 변화량 + 레벨(공포/주의/안도) 반환.
+- `QuantDataLoader.get_investor_trading(symbol, lookback_days)` — 외국인·기관·개인 일별 순매수 반환 (KR 전용). pykrx 우선, 실패 시 NAVER Finance 스크래핑 폴백. 반환: rows(일별 리스트) + cumulative(누계).
 
 ### `utils/indicators.py`
 - `TechnicalIndicators.calculate_all(df, windows)` — VWAP · TWAP (복수 기간) · MFI(14일) · OBV · OBV_Signal(20일 MA) · RSI14 · Bollinger Bands(20일 2σ) · ATR14 계산.
@@ -151,6 +151,20 @@ QuantMaster/
 - `Backtester.run(symbol, name, vwap_period, initial_capital)` — VWAP 돌파 진입 / VWAP 이탈 청산 전략 시뮬레이션.
 - **현실적 거래 비용 반영**: KR 거래세 0.18% + 수수료 0.015% + 슬리피지 0.05% (왕복). US 거래세 없음 + 수수료 0.005%.
 - 반환: 총수익률 · MDD · 승률 · 평균수익 · Sharpe · 거래비용(%) · 자본금 추이 · 매매 내역.
+- `Backtester.run_monte_carlo(trades, initial_capital, n_sim)` — 매매 내역을 1,000회 무작위 재배열해 결과 분포 계산.
+  - 반환: p5/p50/p95 최종 자본, VaR5%, CVaR1%, 파산확률(초기자본 50% 미만), 퍼센타일 추이 차트 데이터.
+
+### `utils/momentum_scanner.py`
+- **Risk Parity 배분** 추가: scipy 공분산 행렬 기반 최적화(SLSQP) → 각 자산의 위험 기여도를 1/N으로 균등화.
+  - scipy 미설치 또는 수렴 실패 시 역변동성 배분으로 자동 대체.
+  - 글로벌 모멘텀 탭에서 "위험균형" 전략 카드로 표시.
+
+### `utils/dividend_scanner.py`
+- `scan_dividend_stocks(market, min_yield_pct, max_payout_pct, top_n)` — 배당 성장 스크리닝.
+  - **KR**: NAVER 스냅샷 DivYield 컬럼 직접 필터 (즉시).
+  - **US**: S&P500 구성종목 샘플 200개 → yfinance 병렬 수집(max_workers=8) → 배당수익률 + 배당성향 필터.
+  - 배당성장 여부: yfinance 연간 배당 이력 비교 (전년 대비 증가 시 `div_growing=True`).
+  - 배당성향(KR): 간이 추정 = `배당수익률% × PER / 100`.
 
 ### `utils/scan_db.py`
 - `save_scan / load_scan_results / load_run_list` — 퀀트 스캔 결과 SQLite 저장·로드.
@@ -267,7 +281,8 @@ QuantMaster Pro
 │   │   ├── 하락방어       (Beta + RS + Downside Capture, KR 전용)
 │   │   ├── 모멘텀 스캔    (기간별 수익률 상위 종목 — 삼성전기/LG이노텍 류)
 │   │   ├── 역발상 과매도  (RSI14 < 임계값 AND 종가 < 볼린저밴드 하단, 공포 구간 역매수)
-│   │   └── 매직 포뮬러   (Greenblatt: EBIT/EV 순위 + ROIC 순위 → 합산 순위 낮을수록 최우선)
+│   │   ├── 매직 포뮬러   (Greenblatt: EBIT/EV 순위 + ROIC 순위 → 합산 순위 낮을수록 최우선)
+│   │   └── 배당 스캔     (배당수익률 ≥ 기준 + 배당성향 < 70%, KR NAVER / US yfinance)
 │   ├── 시장 선택 (KOSPI / KOSDAQ / KR-ETF / S&P500 / NASDAQ / US-ETF)
 │   ├── [퀀트 스캔 옵션]   PBR 슬라이더 · 시총 · VWAP 기간
 │   ├── [세력 탐지 옵션]   알파 필터 · 공매도 필터 · 최대탐색시간
@@ -304,8 +319,10 @@ QuantMaster Pro
     │   │   └── 순위 · 종목명 · 수익률 · 1주수익률 · 거래량비 · 현재가 · 시가총액 · [조회]
     │   ├── [역발상 과매도 모드] 결과 테이블 (RSI14 < 임계값 AND 종가 < BB하단)
     │   │   └── 순위 · 종목명 · RSI14 · BB괴리 · 1W · 1M · 거래량비 · 점수 · 현재가 · 시총 · [조회]
-    │   └── [매직 포뮬러 모드] 결과 테이블 (Greenblatt Magic Formula 상위 30)
-    │       └── 순위 · 종목명 · 합산순위 · EY순위 · ROIC순위 · EY(EBIT/EV%) · ROIC% · 현재가 · 시가총액 · [분석]
+    │   ├── [매직 포뮬러 모드] 결과 테이블 (Greenblatt Magic Formula 상위 30)
+    │   │   └── 순위 · 종목명 · 합산순위 · EY순위 · ROIC순위 · EY(EBIT/EV%) · ROIC% · 현재가 · 시가총액 · [분석]
+    │   └── [배당 스캔 모드] 결과 테이블
+    │       └── 종목명 · 심볼 · 시장 · 현재가 · 배당수익률 · 배당성향 · 배당성장여부 · 시가총액 · [분석]
     │
     ├── 분석 탭 (종목 선택 후)
     │   ├── 종목명 + 종가 기준일 + 보유 추가 버튼 + PDF 저장
@@ -331,6 +348,7 @@ QuantMaster Pro
     │   ├── [퀀트 모드] 분기별 PSR 추이 (바 차트)
     │   ├── [퀀트 모드] 적용된 스캔 조건 패널
     │   ├── [퀀트 모드] 실제 측정값 패널
+    │   ├── 외국인·기관 순매수 동향 패널 (KR 전용) — 외국인/기관/개인 일별 순매수 + 20거래일 누계
     │   └── 백테스트 실행 버튼
     │
     ├── 백테스트 탭
@@ -338,7 +356,10 @@ QuantMaster Pro
     │   ├── 결과 지표 카드 (총수익률 · MDD · 승률 · 평균수익률 · 샤프지수 · 거래수 · 왕복거래비용%)
     │   ├── 가격 차트 (매수/매도 마커 포함)
     │   ├── 자본금 추이 차트
-    │   └── 매매 내역 테이블
+    │   ├── 매매 내역 테이블
+    │   └── Monte Carlo 시뮬레이션 (1,000회 무작위 재배열)
+    │       ├── p5/p50/p95 최종 자본 · 파산확률 · VaR5% · CVaR1%
+    │       └── 퍼센타일 추이 영역 차트 (p5 빨강 / p50 파랑 / p95 초록)
     │
     ├── 히스토리 탭
     │   ├── 저장된 스캔 선택 (드롭다운)

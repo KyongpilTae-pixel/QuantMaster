@@ -1,9 +1,10 @@
-"""글로벌 시장 모멘텀 스캐너 — 4가지 전략 통합 분석."""
+"""글로벌 시장 모멘텀 스캐너 — 5가지 전략 통합 분석."""
 
 import math
 from datetime import datetime, timedelta
 
 import FinanceDataReader as fdr
+import numpy as np
 import pandas as pd
 
 _ASSETS = [
@@ -178,7 +179,72 @@ def fetch_momentum_data() -> dict:
         invvol_key = "cash"
         invvol_desc = "데이터 부족"
 
-    # ── 6. bool 플래그 (rx.foreach 내 비교 불가 우회) ─────────────
+    # ── 6. Risk Parity 배분 (공분산 행렬 기반 위험 균형) ──────────
+    rp_key = "cash"
+    rp_desc = "데이터 부족"
+    try:
+        from scipy.optimize import minimize as _minimize
+
+        ret_series = []
+        rp_keys = []
+        for r in rows:
+            prices = price_map[r["key"]]
+            if prices is not None and len(prices) >= 61:
+                s = prices.pct_change().dropna().tail(60).values
+                ret_series.append(s)
+                rp_keys.append(r["key"])
+
+        if len(rp_keys) >= 2:
+            min_len = min(len(s) for s in ret_series)
+            R = np.array([s[:min_len] for s in ret_series]).T  # (T, N)
+            cov = np.cov(R, rowvar=False)
+            n = len(rp_keys)
+
+            def _obj(w):
+                port_var = float(w @ cov @ w)
+                if port_var <= 0:
+                    return 1e9
+                rc = w * (cov @ w) / port_var
+                target = np.ones(n) / n
+                return float(np.sum((rc - target) ** 2))
+
+            w0 = np.ones(n) / n
+            bounds = [(0.01, 1.0)] * n
+            cons = [{"type": "eq", "fun": lambda w: float(np.sum(w)) - 1}]
+            res = _minimize(_obj, w0, bounds=bounds, constraints=cons, method="SLSQP",
+                            options={"ftol": 1e-9, "maxiter": 500})
+            rp_w = res.x / res.x.sum()
+
+            for r in rows:
+                if r["key"] in rp_keys:
+                    idx = rp_keys.index(r["key"])
+                    w = round(float(rp_w[idx]) * 100, 1)
+                    r["rp_weight"] = w
+                    r["rp_weight_str"] = f"{w:.1f}%"
+                else:
+                    r["rp_weight"] = 0.0
+                    r["rp_weight_str"] = "-"
+
+            top3_rp = sorted(
+                [r for r in rows if r.get("rp_weight", 0) > 0],
+                key=lambda r: r["rp_weight"], reverse=True,
+            )[:3]
+            rp_key = top3_rp[0]["key"] if top3_rp else "cash"
+            rp_desc = "  /  ".join(
+                f"{r['name'].split('(')[0].strip()} {r['rp_weight_str']}" for r in top3_rp
+            )
+        else:
+            raise ValueError("not enough assets")
+
+    except Exception:
+        # scipy 미설치 또는 최적화 실패 → 역변동성으로 대체
+        for r in rows:
+            r["rp_weight"] = r.get("inv_vol_weight", 0.0)
+            r["rp_weight_str"] = r.get("inv_vol_weight_str", "-")
+        rp_key = invvol_key
+        rp_desc = invvol_desc + " (역변동성 대체)"
+
+    # ── 7. bool 플래그 (rx.foreach 내 비교 불가 우회) ─────────────
     for r in rows:
         for lbl in ("1m", "3m", "6m", "12m"):
             r[f"win_{lbl}"] = (period_winners.get(lbl) == r["key"])
@@ -187,6 +253,7 @@ def fetch_momentum_data() -> dict:
         r["is_rec_vaa"] = (r["key"] == vaa_key)
         r["is_rec_ma"] = (r["key"] == ma_key)
         r["is_rec_invvol"] = (r["key"] == invvol_key)
+        r["is_rec_rp"] = (r["key"] == rp_key)
 
     return {
         "rows": rows,
@@ -205,5 +272,8 @@ def fetch_momentum_data() -> dict:
         # 역변동성
         "invvol_rec_desc": invvol_desc,
         "invvol_rec_key": invvol_key,
+        # Risk Parity
+        "rp_rec_desc": rp_desc,
+        "rp_rec_key":  rp_key,
         "error": "",
     }

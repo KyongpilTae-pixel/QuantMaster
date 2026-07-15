@@ -179,6 +179,77 @@ class Backtester:
 
         return trades, equity_curve
 
+    # ------------------------------------------------------------------
+    # Monte Carlo 시뮬레이션
+    # ------------------------------------------------------------------
+    @staticmethod
+    def run_monte_carlo(
+        trades: list[dict],
+        initial_capital: float = 10_000_000,
+        n_sim: int = 1000,
+    ) -> dict:
+        """
+        매매 결과를 n_sim회 무작위 재배열 → 결과 분포 계산.
+        반환: p5/p50/p95 최종 자본, VaR5%, CVaR1%, 파산확률%, 퍼센타일 곡선
+        """
+        if not trades:
+            return {"error": "매매 내역이 없습니다."}
+
+        returns = [t["Return"] / 100.0 for t in trades]
+        n_trades = len(returns)
+        rng = np.random.default_rng(seed=42)
+
+        # n_sim × (n_trades+1) 자본금 곡선 행렬
+        sim_curves = np.empty((n_sim, n_trades + 1))
+        sim_curves[:, 0] = initial_capital
+        for s in range(n_sim):
+            idxs = rng.integers(0, n_trades, size=n_trades)
+            factors = np.array([1.0 + returns[i] for i in idxs])
+            sim_curves[s, 1:] = initial_capital * np.cumprod(factors)
+
+        final_vals = sim_curves[:, -1]
+        p5  = float(np.percentile(final_vals, 5))
+        p50 = float(np.percentile(final_vals, 50))
+        p95 = float(np.percentile(final_vals, 95))
+
+        bankruptcy_pct = float((final_vals < initial_capital * 0.5).mean() * 100)
+        var5_pct = float((initial_capital - p5) / initial_capital * 100)
+
+        cvar_cut = np.percentile(final_vals, 1)
+        tail = final_vals[final_vals <= cvar_cut]
+        cvar_val = float(tail.mean()) if len(tail) > 0 else p5
+        cvar1_pct = float((initial_capital - cvar_val) / initial_capital * 100)
+
+        # 차트용: 매 거래 단계별 퍼센타일 포인트 (최대 200 포인트로 다운샘플)
+        step = max(1, (n_trades + 1) // 200)
+        indices = list(range(0, n_trades + 1, step))
+        p5_curve  = np.percentile(sim_curves[:, indices], 5,  axis=0)
+        p50_curve = np.percentile(sim_curves[:, indices], 50, axis=0)
+        p95_curve = np.percentile(sim_curves[:, indices], 95, axis=0)
+
+        chart_data = [
+            {
+                "trade": indices[i],
+                "p5":  round(float(p5_curve[i]),  0),
+                "p50": round(float(p50_curve[i]), 0),
+                "p95": round(float(p95_curve[i]), 0),
+            }
+            for i in range(len(indices))
+        ]
+
+        return {
+            "p5":  round(p5,  0),
+            "p50": round(p50, 0),
+            "p95": round(p95, 0),
+            "initial_capital": initial_capital,
+            "bankruptcy_pct": round(bankruptcy_pct, 1),
+            "var5_pct":  round(var5_pct, 1),
+            "cvar1_pct": round(cvar1_pct, 1),
+            "chart_data": chart_data,
+            "n_sim":    n_sim,
+            "n_trades": n_trades,
+        }
+
     @staticmethod
     def _calc_mdd(equity: pd.Series) -> float:
         peak = equity.cummax()

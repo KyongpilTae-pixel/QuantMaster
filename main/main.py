@@ -180,6 +180,26 @@ class State(rx.State):
     plan_kelly_fraction: float = 0.0
     plan_kelly_budget: float = 0.0
 
+    # Monte Carlo 시뮬레이션
+    mc_chart_data: List[dict] = []
+    mc_p5:  float = 0.0
+    mc_p50: float = 0.0
+    mc_p95: float = 0.0
+    mc_bankruptcy_pct: float = 0.0
+    mc_var5_pct:  float = 0.0
+    mc_cvar1_pct: float = 0.0
+    mc_n_sim:    int = 0
+    mc_n_trades: int = 0
+    mc_loading: bool = False
+
+    # 외국인·기관 순매수 추적
+    investor_rows: List[dict] = []
+    investor_cum_foreign: int = 0
+    investor_cum_inst: int = 0
+    investor_cum_retail: int = 0
+    investor_loading: bool = False
+    investor_error: str = ""
+
     # VKOSPI 공포지수
     vkospi_value: float = 0.0
     vkospi_change: float = 0.0
@@ -220,6 +240,10 @@ class State(rx.State):
     mean_reversion_results: List[dict] = []
     mr_rsi_max: List[float] = [30.0]         # RSI14 상한 (과매도 임계값)
     mr_min_mktcap: int = 3_000               # 최소 시가총액 (억원)
+
+    # 배당 성장 스크리닝
+    dividend_results: List[dict] = []
+    dividend_min_yield: List[float] = [3.0]  # 최소 배당수익률(%)
 
     # 다중 팩터 (Phase 1: F-Score, Phase 2: EV/EBITDA·P/FCF)
     f_score_loading: bool = False
@@ -335,8 +359,11 @@ class State(rx.State):
     # 역변동성 배분
     momentum_invvol_rec_desc: str = ""
     momentum_invvol_rec_key: str = ""
+    # Risk Parity 배분
+    momentum_rp_rec_desc: str = ""
+    momentum_rp_rec_key: str = ""
     # 상세 테이블 전략 선택
-    momentum_detail: str = "momentum"   # "momentum"|"vaa"|"ma"|"invvol"
+    momentum_detail: str = "momentum"   # "momentum"|"vaa"|"ma"|"invvol"|"rp"
     # 기간 토글
     momentum_show_1m: bool = True
     momentum_show_3m: bool = True
@@ -756,6 +783,10 @@ class State(rx.State):
     def set_mr_min_mktcap(self, v: int):
         self.mr_min_mktcap = v
 
+    def set_dividend_min_yield(self, v: list):
+        if v:
+            self.dividend_min_yield = [round(float(v[0]), 1)]
+
     def set_magic_min_mktcap(self, v: int):
         self.magic_min_mktcap = v
 
@@ -1054,6 +1085,9 @@ class State(rx.State):
             # 역변동성
             self.momentum_invvol_rec_desc = r["invvol_rec_desc"]
             self.momentum_invvol_rec_key = r["invvol_rec_key"]
+            # Risk Parity
+            self.momentum_rp_rec_desc = r.get("rp_rec_desc", "")
+            self.momentum_rp_rec_key  = r.get("rp_rec_key", "")
         except Exception as e:
             self.momentum_error = f"오류: {e}"
         finally:
@@ -1776,6 +1810,71 @@ class State(rx.State):
     def _find_whale_result(self, name: str):
         """whale_results에서 종목 검색."""
         return next((r for r in self.whale_results if r.name == name), None)
+
+    async def run_monte_carlo(self):
+        """백테스트 매매 내역 기반 Monte Carlo 시뮬레이션 (1000회)."""
+        import asyncio
+        from backtester import Backtester
+
+        if not self.trades_data:
+            return
+        self.mc_loading = True
+        yield
+        try:
+            trades = list(self.trades_data)
+            initial = 10_000_000
+            result = await asyncio.to_thread(
+                Backtester.run_monte_carlo, trades, initial, 1000
+            )
+            if "error" not in result:
+                self.mc_chart_data   = result["chart_data"]
+                self.mc_p5           = result["p5"]
+                self.mc_p50          = result["p50"]
+                self.mc_p95          = result["p95"]
+                self.mc_bankruptcy_pct = result["bankruptcy_pct"]
+                self.mc_var5_pct     = result["var5_pct"]
+                self.mc_cvar1_pct    = result["cvar1_pct"]
+                self.mc_n_sim        = result["n_sim"]
+                self.mc_n_trades     = result["n_trades"]
+        except Exception:
+            pass
+        self.mc_loading = False
+
+    async def load_investor_trading(self):
+        """외국인·기관 순매수 데이터 로드 (KR 전용)."""
+        import asyncio
+        if self.is_us_stock:
+            self.investor_error = "미국 종목은 외국인·기관 데이터를 지원하지 않습니다."
+            return
+        symbol = self.selected_symbol
+        if not symbol:
+            self.investor_error = "종목을 먼저 선택하세요."
+            return
+        self.investor_loading = True
+        self.investor_error = ""
+        self.investor_rows = []
+        yield
+        try:
+            from utils.data_loader import QuantDataLoader
+            result = await asyncio.to_thread(
+                QuantDataLoader().get_investor_trading, symbol, 20
+            )
+            if result.get("error"):
+                self.investor_error = result["error"]
+            else:
+                rows = result.get("rows", [])
+                # bool 플래그 추가 (rx.foreach 비교 불가 우회)
+                for r in rows:
+                    r["foreign_positive"] = r["foreign_net"] > 0
+                    r["inst_positive"]    = r["inst_net"]    > 0
+                self.investor_rows = rows
+                cum = result.get("cumulative", {})
+                self.investor_cum_foreign = int(cum.get("foreign", 0))
+                self.investor_cum_inst    = int(cum.get("inst",    0))
+                self.investor_cum_retail  = int(cum.get("retail",  0))
+        except Exception as e:
+            self.investor_error = str(e)
+        self.investor_loading = False
 
     async def load_vkospi(self):
         """VKOSPI(한국 공포지수) 비동기 로드."""
@@ -2925,6 +3024,38 @@ class State(rx.State):
             yield
             return
 
+        # ── 배당 성장 스캔 ──────────────────────────────────────────────────
+        if self.scan_mode == "dividend":
+            from utils.dividend_scanner import scan_dividend_stocks
+            self.is_scanning = True
+            self.dividend_results = []
+            mkt_map = {"KR-ETF": "KOSPI", "US-ETF": "SP500", "NASDAQ": "SP500"}
+            mkt = mkt_map.get(self.market, self.market)
+            if mkt not in ("KOSPI", "KOSDAQ", "SP500"):
+                mkt = "KOSPI"
+            self.status_msg = f"{mkt} 고배당 종목 스캔 중..."
+            yield
+            try:
+                raw = await asyncio.to_thread(
+                    scan_dividend_stocks,
+                    mkt,
+                    float(self.dividend_min_yield[0]),
+                    70.0,
+                    30,
+                )
+                self.dividend_results = list(raw)
+                cnt = len(raw)
+                self.status_msg = (
+                    f"배당 스크리닝 완료 — {cnt}개 종목" if cnt
+                    else "조건 충족 종목이 없습니다. 최소 배당수익률을 낮춰보세요."
+                )
+            except Exception as e:
+                self.status_msg = f"오류: {e}"
+            finally:
+                self.is_scanning = False
+            yield
+            return
+
         # ── 퀀트 스캔 ────────────────────────────────────────────────────
         self.is_scanning = True
         self.scan_stop_requested = False
@@ -3111,6 +3242,7 @@ def sidebar_controls() -> rx.Component:
                 rx.select.item("모멘텀 스캔", value="stock_momentum"),
                 rx.select.item("역발상 과매도", value="mean_reversion"),
                 rx.select.item("매직 포뮬러", value="magic_formula"),
+                rx.select.item("배당 스캔", value="dividend"),
             ),
             value=State.scan_mode,
             on_change=State.set_scan_mode,
@@ -3303,6 +3435,25 @@ def sidebar_controls() -> rx.Component:
         wrap="wrap",
     )
 
+    dividend_opts = rx.hstack(
+        rx.text("최소 배당률", size="1", color="gray"),
+        rx.button("2%+", size="1",
+            variant=rx.cond(State.dividend_min_yield[0] == 2.0, "solid", "soft"),
+            on_click=State.set_dividend_min_yield([2.0])),
+        rx.button("3%+", size="1",
+            variant=rx.cond(State.dividend_min_yield[0] == 3.0, "solid", "soft"),
+            on_click=State.set_dividend_min_yield([3.0])),
+        rx.button("5%+", size="1",
+            variant=rx.cond(State.dividend_min_yield[0] == 5.0, "solid", "soft"),
+            on_click=State.set_dividend_min_yield([5.0])),
+        rx.button("7%+", size="1",
+            variant=rx.cond(State.dividend_min_yield[0] == 7.0, "solid", "soft"),
+            on_click=State.set_dividend_min_yield([7.0])),
+        spacing="2",
+        align="center",
+        wrap="wrap",
+    )
+
     # ── 추세추종 전용 옵션 행 ────────────────────────────────────
     trend_opts = rx.hstack(
         rx.text("필터", size="1", color="gray", white_space="nowrap"),
@@ -3418,7 +3569,11 @@ def sidebar_controls() -> rx.Component:
                                 rx.cond(
                                     State.scan_mode == "magic_formula",
                                     magic_opts,
-                                    defensive_opts,
+                                    rx.cond(
+                                        State.scan_mode == "dividend",
+                                        dividend_opts,
+                                        defensive_opts,
+                                    ),
                                 ),
                             ),
                         ),
@@ -3463,9 +3618,16 @@ def sidebar_controls() -> rx.Component:
                                     rx.callout.text("💡 Greenblatt Magic Formula — EBIT/EV 순위(저평가) + ROIC 순위(고효율) 합산이 낮은 종목이 최우선. 재무제표 기반 yfinance 수집, 약 2~3분 소요."),
                                     color_scheme="teal", variant="surface", size="1",
                                 ),
-                                rx.callout.root(
-                                    rx.callout.text("💡 하루 급등이 아닌 1주~3개월 꾸준한 우상향 종목을 탐색. 삼성전기·LG이노텍 류 소재·부품株 발굴에 적합. 시총 상위 300개 기준."),
-                                    color_scheme="violet", variant="surface", size="1",
+                                rx.cond(
+                                    State.scan_mode == "dividend",
+                                    rx.callout.root(
+                                        rx.callout.text("💡 고배당(배당수익률 ≥ 최소값) + 배당성향 < 70% 조건으로 배당 지속 가능성이 높은 종목 선별. KR: NAVER 즉시 수집 / US: yfinance 병렬 수집(~2분)."),
+                                        color_scheme="orange", variant="surface", size="1",
+                                    ),
+                                    rx.callout.root(
+                                        rx.callout.text("💡 하루 급등이 아닌 1주~3개월 꾸준한 우상향 종목을 탐색. 삼성전기·LG이노텍 류 소재·부품株 발굴에 적합. 시총 상위 300개 기준."),
+                                        color_scheme="violet", variant="surface", size="1",
+                                    ),
                                 ),
                             ),
                         ),
@@ -3526,7 +3688,10 @@ def scanner_tab() -> rx.Component:
                             State.scan_mode == "magic_formula",
                             magic_formula_table(),
                             rx.cond(
-                                State.scan_results.length() == 0,
+                                State.scan_mode == "dividend",
+                                dividend_scanner_table(),
+                                rx.cond(
+                                    State.scan_results.length() == 0,
                         rx.center(
                             rx.text("스캔 실행 버튼을 눌러 결과를 조회하세요.", color="gray"),
                             height="200px",
@@ -3594,6 +3759,8 @@ def scanner_tab() -> rx.Component:
                 ),
                 ),
             ),
+                ),
+            ),  # rx.cond(dividend)
             ),  # rx.cond(mean_reversion)
             ),  # rx.cond(stock_momentum)
         ),  # rx.cond(whale)
@@ -4113,6 +4280,193 @@ def magic_formula_table() -> rx.Component:
             ),
             width="100%", spacing="2",
         ),
+    )
+
+
+def dividend_scanner_table() -> rx.Component:
+    """배당 성장 스크리닝 결과 테이블."""
+    return rx.cond(
+        State.dividend_results.length() == 0,
+        rx.center(
+            rx.vstack(
+                rx.text("위 패널에서 배당 스크리닝을 실행하세요.", color="gray"),
+                rx.text("배당수익률 ≥ 최소 기준 + 배당성향 < 70% 필터", size="1", color="gray"),
+                rx.text("KR: NAVER 데이터 즉시 수집  /  US: yfinance 병렬 수집 (~2분)", size="1", color="gray"),
+                align="center", spacing="1",
+            ),
+            height="120px",
+        ),
+        rx.vstack(
+            rx.table.root(
+                rx.table.header(
+                    rx.table.row(
+                        rx.table.column_header_cell("종목명"),
+                        rx.table.column_header_cell("심볼"),
+                        rx.table.column_header_cell("시장"),
+                        rx.table.column_header_cell("현재가"),
+                        rx.table.column_header_cell("배당수익률"),
+                        rx.table.column_header_cell("배당성향"),
+                        rx.table.column_header_cell("배당성장"),
+                        rx.table.column_header_cell("시가총액"),
+                        rx.table.column_header_cell(""),
+                    )
+                ),
+                rx.table.body(
+                    rx.foreach(
+                        State.dividend_results,
+                        lambda r: rx.table.row(
+                            rx.table.cell(
+                                rx.text(r["name"], size="2", weight="bold")
+                            ),
+                            rx.table.cell(rx.text(r["symbol"], size="1", color="gray")),
+                            rx.table.cell(
+                                rx.badge(
+                                    r["market"],
+                                    color_scheme=rx.cond(r["is_us"], "blue", "green"),
+                                    size="1",
+                                )
+                            ),
+                            rx.table.cell(rx.text(r["price"], size="2")),
+                            rx.table.cell(
+                                rx.badge(
+                                    rx.text(r["div_yield"], "%"),
+                                    color_scheme="orange",
+                                    variant="solid",
+                                    size="1",
+                                )
+                            ),
+                            rx.table.cell(
+                                rx.cond(
+                                    r["payout_ratio"] != None,
+                                    rx.text(r["payout_ratio"], "%", size="1"),
+                                    rx.text("-", size="1", color="gray"),
+                                )
+                            ),
+                            rx.table.cell(
+                                rx.cond(
+                                    r["div_growing"],
+                                    rx.badge("↑ 성장", color_scheme="green", size="1"),
+                                    rx.text("-", size="1", color="gray"),
+                                )
+                            ),
+                            rx.table.cell(
+                                rx.text(r["mktcap_b"],
+                                    rx.cond(r["is_us"], "B$", "조"),
+                                    size="1", color="gray",
+                                )
+                            ),
+                            rx.table.cell(
+                                rx.button(
+                                    "분석", size="1", variant="soft", color_scheme="orange",
+                                    on_click=State.goto_lookup_from_leaders(r["symbol"], r["is_us"]),
+                                )
+                            ),
+                        ),
+                    )
+                ),
+                variant="surface", width="100%",
+            ),
+            width="100%", spacing="2",
+        ),
+    )
+
+
+def investor_trading_panel() -> rx.Component:
+    """외국인·기관 순매수 동향 패널 (KR 전용)."""
+
+    def _cum_badge(label: str, val, positive_flag) -> rx.Component:
+        return rx.vstack(
+            rx.text(label, size="1", color="gray"),
+            rx.badge(
+                val,
+                color_scheme=rx.cond(positive_flag, "blue", "red"),
+                variant="solid",
+                size="2",
+            ),
+            align="center",
+            spacing="1",
+        )
+
+    return rx.card(
+        rx.vstack(
+            rx.hstack(
+                rx.heading("외국인·기관 순매수 동향", size="3"),
+                rx.text("(최근 20거래일, KR 전용)", size="1", color="gray"),
+                rx.spacer(),
+                rx.button(
+                    rx.cond(State.investor_loading, rx.spinner(size="1"), rx.text("조회")),
+                    on_click=State.load_investor_trading,
+                    disabled=State.investor_loading,
+                    size="1", variant="soft", color_scheme="blue",
+                ),
+                align="center", width="100%",
+            ),
+            rx.cond(
+                State.investor_error != "",
+                rx.callout.root(
+                    rx.callout.text(State.investor_error),
+                    color_scheme="red", variant="surface", size="1",
+                ),
+            ),
+            rx.cond(
+                State.investor_rows.length() > 0,
+                rx.vstack(
+                    # 누적 합계 카드
+                    rx.hstack(
+                        _cum_badge("외국인 누계(주)", State.investor_cum_foreign,
+                                   State.investor_cum_foreign > 0),
+                        _cum_badge("기관 누계(주)", State.investor_cum_inst,
+                                   State.investor_cum_inst > 0),
+                        _cum_badge("개인 누계(주)", State.investor_cum_retail,
+                                   State.investor_cum_retail > 0),
+                        spacing="4",
+                    ),
+                    # 일별 테이블
+                    rx.table.root(
+                        rx.table.header(
+                            rx.table.row(
+                                rx.table.column_header_cell("날짜"),
+                                rx.table.column_header_cell("외국인 순매수"),
+                                rx.table.column_header_cell("기관 순매수"),
+                                rx.table.column_header_cell("개인 순매수"),
+                            )
+                        ),
+                        rx.table.body(
+                            rx.foreach(
+                                State.investor_rows,
+                                lambda r: rx.table.row(
+                                    rx.table.cell(rx.text(r["date"], size="1")),
+                                    rx.table.cell(
+                                        rx.text(
+                                            r["foreign_net"],
+                                            size="1",
+                                            color=rx.cond(r["foreign_positive"], "blue", "red"),
+                                            weight="bold",
+                                        )
+                                    ),
+                                    rx.table.cell(
+                                        rx.text(
+                                            r["inst_net"],
+                                            size="1",
+                                            color=rx.cond(r["inst_positive"], "blue", "red"),
+                                        )
+                                    ),
+                                    rx.table.cell(rx.text(r["retail_net"], size="1", color="gray")),
+                                ),
+                            )
+                        ),
+                        variant="surface", width="100%",
+                    ),
+                    width="100%", spacing="2",
+                ),
+                rx.cond(
+                    ~State.investor_loading,
+                    rx.text("조회 버튼을 눌러 외국인·기관 동향을 확인하세요.", size="1", color="gray"),
+                ),
+            ),
+            width="100%", spacing="3",
+        ),
+        width="100%",
     )
 
 
@@ -5724,6 +6078,11 @@ def analysis_tab() -> rx.Component:
                         ),
                     ),
                 ),
+                # 외국인·기관 순매수 (KR 전용)
+                rx.cond(
+                    ~State.is_us_stock,
+                    investor_trading_panel(),
+                ),
                 rx.button(
                     rx.cond(State.is_backtesting, rx.spinner(size="2"), rx.text("백테스트 실행")),
                     on_click=State.run_backtest,
@@ -5919,6 +6278,111 @@ def backtest_tab() -> rx.Component:
                     overflow_x="auto",
                 ),
             ),
+            # ── Monte Carlo 섹션 ───────────────────────────────────
+            rx.cond(
+                State.trades_data.length() > 0,
+                rx.vstack(
+                    rx.hstack(
+                        rx.heading("Monte Carlo 시뮬레이션", size="4"),
+                        rx.spacer(),
+                        rx.cond(
+                            State.mc_loading,
+                            rx.spinner(size="2"),
+                            rx.button(
+                                rx.cond(
+                                    State.mc_n_sim > 0,
+                                    "재실행 (1,000회)",
+                                    "시뮬레이션 실행 (1,000회)",
+                                ),
+                                on_click=State.run_monte_carlo,
+                                size="2",
+                                color_scheme="violet",
+                            ),
+                        ),
+                        width="100%",
+                    ),
+                    rx.cond(
+                        State.mc_n_sim > 0,
+                        rx.vstack(
+                            rx.grid(
+                                metric_card("5퍼센타일 최종자본",
+                                    rx.text(State.mc_p5, "원"),
+                                    rx.cond(State.mc_p5 >= 10_000_000, "green", "red"),
+                                ),
+                                metric_card("중앙값 최종자본",
+                                    rx.text(State.mc_p50, "원"),
+                                    rx.cond(State.mc_p50 >= 10_000_000, "green", "orange"),
+                                ),
+                                metric_card("95퍼센타일 최종자본",
+                                    rx.text(State.mc_p95, "원"),
+                                    "green",
+                                ),
+                                metric_card("파산 확률 (–50%)",
+                                    rx.text(State.mc_bankruptcy_pct, "%"),
+                                    rx.cond(State.mc_bankruptcy_pct < 5, "green", "red"),
+                                ),
+                                metric_card("VaR 5%",
+                                    rx.text(State.mc_var5_pct, "%"),
+                                    rx.cond(State.mc_var5_pct < 20, "green", "orange"),
+                                ),
+                                metric_card("CVaR 1%",
+                                    rx.text(State.mc_cvar1_pct, "%"),
+                                    rx.cond(State.mc_cvar1_pct < 30, "green", "red"),
+                                ),
+                                columns="3",
+                                spacing="4",
+                                width="100%",
+                            ),
+                            rx.recharts.area_chart(
+                                rx.recharts.area(
+                                    data_key="p95",
+                                    fill="#22c55e",
+                                    stroke="#22c55e",
+                                    fill_opacity=0.15,
+                                    type_="monotone",
+                                    dot=False,
+                                ),
+                                rx.recharts.area(
+                                    data_key="p50",
+                                    fill="#3b82f6",
+                                    stroke="#3b82f6",
+                                    fill_opacity=0.3,
+                                    type_="monotone",
+                                    dot=False,
+                                ),
+                                rx.recharts.area(
+                                    data_key="p5",
+                                    fill="#ef4444",
+                                    stroke="#ef4444",
+                                    fill_opacity=0.15,
+                                    type_="monotone",
+                                    dot=False,
+                                ),
+                                rx.recharts.x_axis(data_key="trade", hide=True),
+                                rx.recharts.y_axis(),
+                                rx.recharts.cartesian_grid(stroke_dasharray="3 3"),
+                                rx.recharts.legend(),
+                                rx.recharts.tooltip(),
+                                data=State.mc_chart_data,
+                                width="100%",
+                                height=280,
+                            ),
+                            rx.text(
+                                f"매매 횟수 {State.mc_n_trades}회를 {State.mc_n_sim}번 재배열 시뮬레이션. "
+                                "녹색=95%, 파란=중앙값, 빨간=5% 구간.",
+                                size="1",
+                                color="gray",
+                            ),
+                            width="100%",
+                            spacing="3",
+                        ),
+                    ),
+                    width="100%",
+                    spacing="3",
+                    padding_top="4",
+                ),
+            ),
+            # ── end Monte Carlo ─────────────────────────────────────
             width="100%",
             spacing="5",
         ),
@@ -6379,6 +6843,43 @@ def momentum_tab() -> rx.Component:
         spacing="2", width="100%",
     )
 
+    # ── Risk Parity 상세 테이블 ────────────────────────────────
+    def rp_row(r):
+        return rx.table.row(
+            name_cell(r, r["is_rec_rp"]),
+            rx.table.cell(r["vol_str"]),
+            rx.table.cell(
+                rx.hstack(
+                    rx.box(
+                        background="var(--violet-8)",
+                        height="10px",
+                        width=r["rp_weight_str"],
+                        border_radius="3px",
+                        min_width="4px",
+                    ),
+                    rx.text(r["rp_weight_str"], size="2"),
+                    spacing="2", align="center",
+                )
+            ),
+        )
+
+    rp_table = rx.vstack(
+        rx.text(
+            "공분산 행렬 기반 Risk Parity — 각 자산의 위험 기여(Risk Contribution)가 동일하도록 비중 최적화 (scipy 미설치 시 역변동성으로 대체)",
+            size="1", color="gray",
+        ),
+        rx.table.root(
+            rx.table.header(rx.table.row(
+                rx.table.column_header_cell("자산"),
+                rx.table.column_header_cell("변동성(연)"),
+                rx.table.column_header_cell("Risk Parity 비중"),
+            )),
+            rx.table.body(rx.foreach(State.momentum_rows, rp_row)),
+            width="100%", variant="surface",
+        ),
+        spacing="2", width="100%",
+    )
+
     # ── 탭 레이아웃 조합 ───────────────────────────────────────
     return rx.vstack(
         # 컨트롤 바
@@ -6438,6 +6939,11 @@ def momentum_tab() -> rx.Component:
                     "분산 배분", State.momentum_invvol_rec_desc,
                     False, "invvol",
                 ),
+                _momentum_strategy_card(
+                    "Risk Parity", "위험 균형 배분 (공분산 최적화)",
+                    "위험균형", State.momentum_rp_rec_desc,
+                    False, "rp",
+                ),
                 columns="2",
                 gap="3",
                 width="100%",
@@ -6451,6 +6957,7 @@ def momentum_tab() -> rx.Component:
                 rx.cond(State.momentum_detail == "vaa", vaa_table, rx.fragment()),
                 rx.cond(State.momentum_detail == "ma", ma_table, rx.fragment()),
                 rx.cond(State.momentum_detail == "invvol", invvol_table, rx.fragment()),
+                rx.cond(State.momentum_detail == "rp", rp_table, rx.fragment()),
                 width="100%",
             ),
         ),
