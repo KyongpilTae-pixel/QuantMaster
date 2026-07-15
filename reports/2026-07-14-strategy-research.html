@@ -1,0 +1,1270 @@
+<!doctype html><html><head><!-- frame-runtime --><script>window.__FRAME_PREAMBLE={"capabilities":{"downloads":"downloads.DUzXFHNF.js","mcp":"mcp.CLzOm9JX.js","permissions":"permissions.C9OCnDjh.js","self":"self.DqF_PxOe.js"},"transforms":"_transforms.DYk1Ltlh.js","comments":"_comments.Dp6RDy7J.js"}</script><script>(function(){"use strict";const ce="modulepreload",le=function(e){return"/"+e},ue={},x=function(t,n,u){let o=Promise.resolve();function s(f){const a=new Event("vite:preloadError",{cancelable:!0});if(a.payload=f,window.dispatchEvent(a),!a.defaultPrevented)throw f}return o.then(f=>{for(const a of f||[])a.status==="rejected"&&s(a.reason);return t().catch(s)})},K=["light","dark","system"];function G(e){if(e==null||typeof e!="object")return!1;const t=e.__frame_init;return t!=null&&typeof t=="object"}function J(e){return e!=null&&typeof e=="object"&&e.__frame_size_poke===!0}function V(e){if(e==null||typeof e!="object")return!1;const t=e.__frame_theme;if(t==null||typeof t!="object")return!1;const n=t.theme;return typeof n=="string"&&K.includes(n)}function Y(e){try{typeof reportError=="function"?reportError(e):setTimeout(()=>{throw e},0)}catch{}}function z(e){if(window===top||e.type==="auxclick"&&e.button!==1)return;const t=e.composedPath?e.composedPath():[e.target];let n=null;for(let f=0;f<t.length;f++){const a=t[f];if(a&&a.matches&&a.matches("a[href],area[href]")){n=a;break}}if(!n&&e.target&&e.target.closest&&(n=e.target.closest("a[href],area[href]")),!n)return;const u=n.getAttribute("href");if(!u)return;let o,s;try{o=new URL(u,document.baseURI),s=new URL(document.baseURI).origin}catch{return}(o.protocol==="http:"||o.protocol==="https:")&&o.origin!==s&&(e.preventDefault(),parent.postMessage({__frame_nav:!0,url:o.href},"*"))}const D={};function T(e){if(window===top)return;const t=Date.now();t-(D[e]||0)<500||(D[e]=t,parent.postMessage({__frame_engaged:!0,kind:e},"*"))}const Q=2e3,U=["wheel","touchstart","touchmove","keydown","pointerdown"];let B=0;function X(e){e.isTrusted&&(B=Date.now())}function Z(){addEventListener("click",z,!0),addEventListener("auxclick",z,!0)}function ee(){for(let e=0;e<U.length;e++)addEventListener(U[e],X,{capture:!0,passive:!0});addEventListener("scroll",e=>{e.isTrusted&&Date.now()-B<Q&&T("scroll")},{capture:!0,passive:!0}),addEventListener("pointermove",e=>{e.isTrusted&&T("pointer")},{capture:!0,passive:!0}),addEventListener("click",e=>{e.isTrusted&&T("click")},{capture:!0,passive:!0})}function te(e,t,n){const u=[...t.values()].filter(o=>o.targets.some(s=>s.startsWith(e+".")));return{wrap(o,s){const f=`${e}.${o}`,a=u.filter(i=>i.targets.includes(f));return a.length===0?(...i)=>{try{return s(...i)}catch(p){return Promise.reject(p)}}:(...i)=>{let p=i;for(const c of a){const l=c.module.parameters;if(l)try{p=l(p)}catch{return Promise.reject({code:"transform_error",id:c.id,scope:e,message:"parameters transform failed"})}}let h;try{h=s(...p)}catch(c){h=Promise.reject(c)}return h.then(c=>{for(let l=a.length-1;l>=0;l--){const m=a[l],d=m.module.returns;if(d)try{c=d(c)}catch{return n({id:m.id,scope:e,leg:"returns"}),c}}return c},c=>{for(let l=a.length-1;l>=0;l--){const m=a[l],d=m.module.throws;if(d)try{c=d(c)}catch{return n({id:m.id,scope:e,leg:"throws"}),Promise.reject(c)}}return Promise.reject(c)})}}}}function ne(e,t,n,u=()=>{}){const o=new Set(e.changes??[]),s=new Map;for(const f of o){const a=t[f];a&&s.set(f,a)}return{contract:e.contract,changes:o,flags:new Set(e.flags??[]),capabilities:e.capabilities??{},capBudgets:e.capBudgets??{},transforms:s,shellOrigin:n.shellOrigin,mount:n.mount,pipe:f=>te(f,s,u)}}(function(){const e=Object.defineProperty,t=globalThis,n=["RTCPeerConnection","webkitRTCPeerConnection","RTCDataChannel","RTCIceCandidate","RTCSessionDescription","RTCRtpSender","RTCRtpReceiver"];let u=0;for(let o=0;o<n.length;o++){const s=n[o];try{e(t,s,{value:void 0,writable:!1,configurable:!1})}catch{try{delete t[s]}catch{}try{e(t,s,{value:void 0,writable:!1,configurable:!0})}catch{}}typeof t[s]=="function"&&u++}if(u&&window!==top)try{parent.postMessage({__frame_rtc_lockdown_failed:u},"*")}catch{}})();const re=1e4,oe=Object.freeze([...window.__FRAME_PREAMBLE?.origins??["https://claude.ai","https://preview.claude.ai"]]);function se(e){for(const t of oe)if(t.endsWith(":*"))try{const n=new URL(e);if(`${n.protocol}//${n.hostname}:*`===t)return!0}catch{}else if(e===t)return!0;return!1}const R=Object.freeze({...window.__FRAME_PREAMBLE?.capabilities??{}}),A=window.__FRAME_PREAMBLE?.transforms,k=window.__FRAME_PREAMBLE?.comments,C=/^[\w.-]+\.js$/,ie=/^[a-z][a-z0-9_-]{0,63}$/;let F=null,v=null;function N(e,t,n){try{Object.defineProperty(e,t,{value:n,writable:!1,configurable:!1,enumerable:!0})}catch{try{Object.defineProperty(e,t,{value:n,writable:!1,configurable:!0,enumerable:!0})}catch{}}}let I=!1;function H(e){const t=document.documentElement;e==="light"||e==="dark"?(t.dataset.theme=e,t.style.colorScheme=e,I=!0):I&&(delete t.dataset.theme,t.style.colorScheme="",I=!1)}const E={mcp:{watchTool:{handlerArg:3}}},P=new Map;function ae(e,t){const n=P.get(e);if(!n)return;Object.assign(n.impl,t),n.impl.__settled=()=>Promise.reject({code:"capability_removed",message:`${e}: method not in this runtime`});const u=n.queue;n.queue=[];for(const o of u){const s=t[o.method];if(s)if(E[e]?.[o.method])try{o.resolve(s(...o.args))}catch{O(o,E[e][o.method].handlerArg,{code:"transform_error",message:`${e}.${o.method} rejected its arguments`})}else s(...o.args).then(o.resolve,o.reject);else{const f={code:"capability_removed",message:`${e}.${o.method} is not in this runtime`},a=E[e]?.[o.method];if(a){O(o,a.handlerArg,f);continue}o.reject(f)}}}function $(e,t){const n=P.get(e);if(!n)return;n.impl.__settled=()=>Promise.reject(t);const u=n.queue;n.queue=[];for(const o of u){const s=E[e]?.[o.method];if(s){O(o,s.handlerArg,t);continue}o.reject(t)}}function O(e,t,n){if(e.syncState?.dead)return;const u=e.args[t];typeof u=="function"&&queueMicrotask(()=>{if(!e.syncState?.dead)try{u({type:"error",error:n})}catch(o){Y(o)}})}const q=Object.getOwnPropertyDescriptor(window,"claude");if(window!==top&&!(q&&q.writable===!1)){Z(),ee();const e=q?.value??{};N(window,"claude",e);const t=i=>{const p={impl:Object.create(null),queue:[]};P.set(i,p);const h=new Proxy(p.impl,{get:(c,l)=>{if(typeof l!="string"||l==="then"||l==="toJSON"||l==="valueOf")return;if(l==="toString")return Object.prototype.toString;const m=E[i]?.[l];return m?(...d)=>{if(typeof d[m.handlerArg]!="function")throw new TypeError(`${i}.${l} requires a handler function`);const g=c[l];if(g)return g(...d);if(c.__settled){const _={dead:!1},S={args:[...d],syncState:_};return c.__settled().catch(j=>O(S,m.handlerArg,j)),()=>{_.dead=!0}}let y=null;const w={dead:!1};return p.queue.push({method:l,args:d,resolve:_=>{y=typeof _=="function"?_:null,w.dead&&y?.()},reject:()=>{},syncState:w}),()=>{w.dead=!0,y?.()}}:(...d)=>{const g=c[l]??c.__settled;return g?g(...d):new Promise((y,w)=>{p.queue.push({method:l,args:d,resolve:y,reject:w})})}},set:()=>!1});N(e,i,h)};for(const i of Object.keys(R)){if(e[i]!==void 0){N(e,i,e[i]);continue}t(i)}let n=null,u=null,o=0;const s=i=>{i.source!==parent||!se(i.origin)||G(i.data)&&(n=i.data.__frame_init,v=i.origin,removeEventListener("message",s),clearTimeout(o),u?.())};addEventListener("message",s),parent.postMessage({__frame_connect:!0},"*");const f=new Promise(i=>{u=i,o=setTimeout(()=>{removeEventListener("message",s),i()},re)}),a=document.readyState==="loading"?new Promise(i=>document.addEventListener("DOMContentLoaded",()=>i(),{once:!0})):Promise.resolve();f.then(async()=>{if(!n||!v){for(const r of P.keys())$(r,{code:"not_granted",message:"frame initialization did not arrive - capability unavailable"});return}H(n.theme);const i=v;let p=!1;addEventListener("message",r=>{if(r.source!==parent||r.origin!==i)return;V(r.data)&&H(r.data.__frame_theme.theme);const b=r.data?.__fc_mode;b&&typeof b=="object"&&!p&&k&&C.test(k)&&(p=!0,h(k).then(L=>L.install?.(i,b.on===!0)).catch(()=>{}))});const h=r=>x(()=>import("/_runtime/"+r),void 0),c=Object.keys(n.capabilities??{});for(const r of c)Object.hasOwn(R,r)||ie.test(r)&&e[r]===void 0&&(t(r),$(r,{code:"capability_disabled",message:"capability not in this runtime generation"}));const l=c.filter(r=>Object.hasOwn(R,r)).map(r=>[r,R[r]]).filter(r=>typeof r[1]=="string"&&C.test(r[1])),[m,...d]=await Promise.allSettled([A&&C.test(A)?h(A):Promise.resolve({}),...l.map(([,r])=>h(r))]),g=v;F=ne(n,m.status==="fulfilled"&&m.value?.TRANSFORMS||{},{shellOrigin:g,mount:ae},r=>parent.postMessage({__frame_cap_telemetry:r},g));const y=r=>parent.postMessage({__frame_cap_telemetry:{kind:"cap-load-error",cap:r}},g),w=F;d.forEach((r,b)=>{const L=l[b][0];if(r.status!=="fulfilled"){y(L);return}try{r.value?.install?.(w)}catch{y(L)}});for(const[r,b]of P)b.queue.length===0&&Object.keys(b.impl).length>0||$(r,{code:c.includes(r)?"capability_disabled":"not_granted",message:"capability not available in this session"});await a,parent.postMessage({__frame_ready:!0},v);let _=-1,S=0;const j=()=>{S=0;const r=Math.max(document.documentElement.scrollHeight,document.body?document.body.scrollHeight:0);r!==_&&(_=r,parent.postMessage({__frame_size:!0,h:r},g))},M=()=>{S||(S=setTimeout(j,200))},W=new ResizeObserver(M);W.observe(document.documentElement),document.body&&W.observe(document.body),document.addEventListener("load",M,!0),document.fonts?.ready.then(M,()=>{}),addEventListener("beforeprint",()=>{_=-1,j()}),M(),addEventListener("message",r=>{r.source!==parent||r.origin!==g||J(r.data)&&(_=-1,M())})})}})();</script><!-- /frame-runtime --><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1"><style>:root{color-scheme:light}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}</style></head><body>
+
+<title>QuantMaster Pro — 전략 리서치 2026-07-14</title>
+<style>
+/* ── Design tokens ── */
+:root {
+  --bg:         #EDF0F4;
+  --surface:    #FFFFFF;
+  --surface2:   #F4F6F9;
+  --border:     #C8D0DC;
+  --border2:    #DDE2EA;
+  --text:       #141C2C;
+  --muted:      #566070;
+  --gold:       #9A6F1A;
+  --gold-bg:    #FDF3DC;
+  --gold-bd:    #E8C96A;
+  --blue:       #1D54A8;
+  --blue-bg:    #EBF2FF;
+  --blue-bd:    #7AAAE0;
+  --red:        #B02820;
+  --red-bg:     #FEF0EF;
+  --red-bd:     #E09090;
+  --green:      #16764A;
+  --green-bg:   #EBF7F1;
+  --green-bd:   #7ACFA8;
+  --purple:     #5C2EA8;
+  --purple-bg:  #F2EDFF;
+  --purple-bd:  #B09ADE;
+  --teal:       #0E7A84;
+  --teal-bg:    #E6F6F7;
+  --teal-bd:    #80CDD4;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg:         #080E1A;
+    --surface:    #0F1826;
+    --surface2:   #141F30;
+    --border:     #1E2E46;
+    --border2:    #19283C;
+    --text:       #D2DCE8;
+    --muted:      #7A8FA8;
+    --gold:       #D4A843;
+    --gold-bg:    #1A1408;
+    --gold-bd:    #5A430E;
+    --blue:       #5B9CE8;
+    --blue-bg:    #081428;
+    --blue-bd:    #1A3C6A;
+    --red:        #E86A62;
+    --red-bg:     #1E0A08;
+    --red-bd:     #6A1E1A;
+    --green:      #42C885;
+    --green-bg:   #061810;
+    --green-bd:   #164A30;
+    --purple:     #A888F0;
+    --purple-bg:  #100C1E;
+    --teal:       #3CCAD6;
+    --teal-bg:    #041418;
+    --teal-bd:    #0C4048;
+    --purple-bd:  #3A2868;
+  }
+}
+
+:root[data-theme="light"] {
+  --bg:#EDF0F4;--surface:#FFFFFF;--surface2:#F4F6F9;--border:#C8D0DC;--border2:#DDE2EA;
+  --text:#141C2C;--muted:#566070;--gold:#9A6F1A;--gold-bg:#FDF3DC;--gold-bd:#E8C96A;
+  --blue:#1D54A8;--blue-bg:#EBF2FF;--blue-bd:#7AAAE0;--red:#B02820;--red-bg:#FEF0EF;
+  --red-bd:#E09090;--green:#16764A;--green-bg:#EBF7F1;--green-bd:#7ACFA8;
+  --purple:#5C2EA8;--purple-bg:#F2EDFF;--purple-bd:#B09ADE;--teal:#0E7A84;
+  --teal-bg:#E6F6F7;--teal-bd:#80CDD4;
+}
+:root[data-theme="dark"] {
+  --bg:#080E1A;--surface:#0F1826;--surface2:#141F30;--border:#1E2E46;--border2:#19283C;
+  --text:#D2DCE8;--muted:#7A8FA8;--gold:#D4A843;--gold-bg:#1A1408;--gold-bd:#5A430E;
+  --blue:#5B9CE8;--blue-bg:#081428;--blue-bd:#1A3C6A;--red:#E86A62;--red-bg:#1E0A08;
+  --red-bd:#6A1E1A;--green:#42C885;--green-bg:#061810;--green-bd:#164A30;
+  --purple:#A888F0;--purple-bg:#100C1E;--purple-bd:#3A2868;--teal:#3CCAD6;
+  --teal-bg:#041418;--teal-bd:#0C4048;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  font-size: 15px;
+  line-height: 1.65;
+  min-height: 100vh;
+}
+
+/* ── Alert banner ── */
+.alert-banner {
+  background: var(--red-bg);
+  border-bottom: 2px solid var(--red-bd);
+  padding: 10px 24px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--red);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.alert-dot {
+  width: 8px; height: 8px;
+  background: var(--red);
+  border-radius: 50%;
+  animation: pulse 1.6s ease-in-out infinite;
+  flex-shrink: 0;
+}
+@keyframes pulse {
+  0%,100%{opacity:1;transform:scale(1)}
+  50%{opacity:0.5;transform:scale(1.3)}
+}
+
+/* ── Page header ── */
+.page-header {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 32px 40px 28px;
+}
+.eyebrow {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+.page-title {
+  font-family: 'Palatino Linotype', 'Book Antiqua', Palatino, Georgia, serif;
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.2;
+  text-wrap: balance;
+  margin-bottom: 8px;
+}
+.page-meta {
+  font-size: 12px;
+  color: var(--muted);
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.meta-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 2px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+/* ── Layout ── */
+.layout {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  max-width: 1100px;
+  margin: 0 auto;
+  gap: 0;
+  padding: 32px 24px;
+  align-items: start;
+}
+@media (max-width: 760px) {
+  .layout { grid-template-columns: 1fr; padding: 20px 16px; }
+  .toc { display: none; }
+  .page-header { padding: 24px 20px 20px; }
+}
+
+/* ── TOC ── */
+.toc {
+  position: sticky;
+  top: 24px;
+  padding-right: 24px;
+}
+.toc-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 10px;
+  padding-left: 10px;
+}
+.toc a {
+  display: block;
+  font-size: 12.5px;
+  color: var(--muted);
+  text-decoration: none;
+  padding: 5px 10px;
+  border-left: 2px solid transparent;
+  border-radius: 0 4px 4px 0;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+  font-weight: 500;
+}
+.toc a:hover { color: var(--text); background: var(--surface2); border-left-color: var(--border); }
+.toc a.urgent { color: var(--red); }
+.toc a.urgent:hover { background: var(--red-bg); border-left-color: var(--red-bd); }
+.toc-divider { height: 1px; background: var(--border); margin: 8px 10px; }
+
+/* ── Content ── */
+.content { min-width: 0; }
+
+/* ── Sections ── */
+.section { margin-bottom: 40px; }
+.section-header {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 20px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+.section-num {
+  font-family: 'Palatino Linotype', Georgia, serif;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--muted);
+  font-style: italic;
+}
+.section-title {
+  font-family: 'Palatino Linotype', 'Book Antiqua', Palatino, Georgia, serif;
+  font-size: 21px;
+  font-weight: 700;
+  color: var(--text);
+  text-wrap: balance;
+}
+.section-subtitle {
+  font-size: 13px;
+  color: var(--muted);
+  margin-top: 4px;
+  line-height: 1.5;
+}
+
+/* ── Strategy cards grid ── */
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+  gap: 14px;
+}
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px 18px;
+  position: relative;
+  overflow: hidden;
+}
+.card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0;
+  width: 3px; height: 100%;
+}
+.card.c-gold::before  { background: var(--gold); }
+.card.c-blue::before  { background: var(--blue); }
+.card.c-red::before   { background: var(--red); }
+.card.c-green::before { background: var(--green); }
+.card.c-purple::before{ background: var(--purple); }
+.card.c-teal::before  { background: var(--teal); }
+
+.card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 6px;
+  gap: 8px;
+}
+.card-title {
+  font-family: 'Palatino Linotype', Georgia, serif;
+  font-size: 14.5px;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.3;
+}
+.tags {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+.tag {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 3px;
+  white-space: nowrap;
+}
+.tag-h1 { background: var(--red-bg); color: var(--red); border: 1px solid var(--red-bd); }
+.tag-h2 { background: var(--gold-bg); color: var(--gold); border: 1px solid var(--gold-bd); }
+.tag-h3 { background: var(--blue-bg); color: var(--blue); border: 1px solid var(--blue-bd); }
+.tag-easy   { background: var(--green-bg); color: var(--green); border: 1px solid var(--green-bd); }
+.tag-medium { background: var(--teal-bg);  color: var(--teal);  border: 1px solid var(--teal-bd); }
+.tag-hard   { background: var(--purple-bg); color: var(--purple); border: 1px solid var(--purple-bd); }
+
+.card-desc {
+  font-size: 12.5px;
+  color: var(--muted);
+  line-height: 1.55;
+  margin-bottom: 10px;
+}
+.card-items {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.card-items li {
+  font-size: 12px;
+  color: var(--text);
+  padding-left: 14px;
+  position: relative;
+  line-height: 1.45;
+}
+.card-items li::before {
+  content: '·';
+  position: absolute;
+  left: 4px;
+  color: var(--muted);
+}
+.card-gap {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border2);
+  font-size: 11px;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.gap-label { font-weight: 700; }
+
+/* ── Volatility section ── */
+.vol-box {
+  background: var(--red-bg);
+  border: 1px solid var(--red-bd);
+  border-radius: 8px;
+  padding: 18px 20px;
+  margin-bottom: 16px;
+}
+.vol-box-title {
+  font-family: 'Palatino Linotype', Georgia, serif;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--red);
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.market-row {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.market-chip {
+  background: var(--surface);
+  border: 1px solid var(--red-bd);
+  border-radius: 6px;
+  padding: 6px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-variant-numeric: tabular-nums;
+}
+.chip-label { font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.chip-w { font-size: 15px; font-weight: 800; color: var(--red); font-variant-numeric: tabular-nums; }
+.chip-m { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+.vol-desc {
+  font-size: 13px;
+  color: var(--text);
+  line-height: 1.6;
+}
+
+/* ── Response strategy steps ── */
+.response-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.resp-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+}
+.resp-phase {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+.phase-now    { color: var(--red); }
+.phase-short  { color: var(--gold); }
+.phase-mid    { color: var(--blue); }
+.phase-prog   { color: var(--green); }
+
+.resp-title {
+  font-family: 'Palatino Linotype', Georgia, serif;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 8px;
+}
+.resp-items {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.resp-items li {
+  font-size: 12px;
+  color: var(--muted);
+  padding-left: 14px;
+  position: relative;
+  line-height: 1.45;
+}
+.resp-items li::before {
+  content: '→';
+  position: absolute;
+  left: 0;
+  font-size: 10px;
+  top: 2px;
+  color: var(--muted);
+}
+.resp-items li strong { color: var(--text); font-weight: 600; }
+
+/* ── Roadmap / priority table ── */
+.roadmap-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.roadmap-table th {
+  text-align: left;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 6px 12px 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+.roadmap-table td {
+  padding: 9px 12px 9px 0;
+  border-bottom: 1px solid var(--border2);
+  vertical-align: top;
+  color: var(--text);
+}
+.roadmap-table tr:last-child td { border-bottom: none; }
+.roadmap-table td:first-child { font-weight: 600; font-family: 'Palatino Linotype', Georgia, serif; font-size: 13.5px; }
+.rt-overflow { overflow-x: auto; }
+
+.badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  padding: 1px 7px;
+  border-radius: 2px;
+}
+.b-high { background: var(--red-bg); color: var(--red); }
+.b-med  { background: var(--gold-bg); color: var(--gold); }
+.b-low  { background: var(--blue-bg); color: var(--blue); }
+
+/* ── Divider text ── */
+.divider-text {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 8px 0 16px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.divider-text::before,
+.divider-text::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+/* ── Intro callout ── */
+.intro-callout {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 18px 20px;
+  margin-bottom: 8px;
+  font-size: 13.5px;
+  color: var(--text);
+  line-height: 1.65;
+}
+.intro-callout strong { color: var(--text); font-weight: 700; }
+
+.current-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--gold-bg);
+  border: 1px solid var(--gold-bd);
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--gold);
+  margin-right: 4px;
+}
+
+p { font-size: 13.5px; color: var(--muted); line-height: 1.65; margin-bottom: 14px; }
+</style>
+
+<!-- Alert banner -->
+<div class="alert-banner">
+  <div class="alert-dot"></div>
+  시장 경보 — KOSPI 5거래일 –10.02% · KOSDAQ 20거래일 –19.09% · 고변동성 국면 진행 중
+</div>
+
+<!-- Page header -->
+<div class="page-header">
+  <div class="eyebrow">QuantMaster Pro · Research</div>
+  <div class="page-title">미도입 전략 리서치 &amp; 변동성 대응 가이드</div>
+  <div class="page-meta">
+    <span class="meta-pill">📅 2026-07-14</span>
+    <span class="meta-pill">12개 미도입 전략 카테고리</span>
+    <span class="meta-pill">현재 구현 대비 분석</span>
+  </div>
+</div>
+
+<!-- Body layout -->
+<div class="layout">
+
+  <!-- TOC -->
+  <nav class="toc">
+    <div class="toc-label">목차</div>
+    <a href="#intro">개요</a>
+    <a href="#factor">다중 팩터 모델</a>
+    <a href="#portfolio">포트폴리오 최적화</a>
+    <a href="#vol-strategy">변동성 전략</a>
+    <a href="#statarb">통계적 차익거래</a>
+    <a href="#event">이벤트 드리븐</a>
+    <a href="#flow">수급·크로스자산</a>
+    <a href="#altdata">대안 데이터</a>
+    <a href="#ml">머신러닝</a>
+    <a href="#backtest">고급 백테스팅</a>
+    <a href="#alert">알림·자동화</a>
+    <a href="#dividend">배당·채권 전략</a>
+    <div class="toc-divider"></div>
+    <a href="#volatility" class="urgent">⚠ 변동성 대응 전략</a>
+    <a href="#roadmap">구현 우선순위</a>
+  </nav>
+
+  <!-- Main content -->
+  <main class="content">
+
+    <!-- Intro -->
+    <section class="section" id="intro">
+      <div class="intro-callout">
+        <strong>현재 QuantMaster Pro의 스캔 전략</strong>은 <strong>PBR+GPA 퀀트 필터, VWAP/MFI/OBV 기술 지표, 세력 탐지, 하락방어, 기간·섹터 모멘텀</strong>을 커버합니다. 글로벌 퀀트 운용사 대비 <strong>아직 없는 기능</strong>은 크게 12개 카테고리로 정리됩니다. 각 카드에는 <span class="current-badge">현재</span> 프로그램과의 격차와 구현 우선순위를 표기했습니다.
+      </div>
+      <p>우선순위: <span class="badge b-high">상</span> 단기 수익성 직결 &nbsp;·&nbsp; <span class="badge b-med">중</span> 중기 신뢰도 향상 &nbsp;·&nbsp; <span class="badge b-low">하</span> 장기 고도화</p>
+    </section>
+
+    <!-- 1. 다중 팩터 모델 -->
+    <section class="section" id="factor">
+      <div class="section-header">
+        <span class="section-num">01</span>
+        <div>
+          <div class="section-title">다중 팩터 모델 (Multi-Factor)</div>
+          <div class="section-subtitle">현재: PBR + GPA(Gross Profitability) 2개 팩터만 사용</div>
+        </div>
+      </div>
+      <div class="cards">
+        <div class="card c-gold">
+          <div class="card-top">
+            <div class="card-title">Piotroski F-Score</div>
+            <div class="tags"><span class="tag tag-h1">우선순위 상</span><span class="tag tag-easy">구현 쉬움</span></div>
+          </div>
+          <div class="card-desc">재무 건전성 9개 항목 스코어링. 현재 PBR/GPA만으로 놓치는 "싼데 부실한" 종목 제거에 탁월.</div>
+          <ul class="card-items">
+            <li>ROA 증가 여부 (순이익/총자산)</li>
+            <li>영업현금흐름 양수 여부</li>
+            <li>부채비율 감소 여부</li>
+            <li>유동비율 개선 여부</li>
+            <li>신주 발행 없음 여부</li>
+            <li>GPM 개선 / 자산회전율 개선</li>
+          </ul>
+          <div class="card-gap"><span class="gap-label">격차:</span> yfinance financials로 계산 가능. KR은 NAVER 재무제표 추가 수집 필요</div>
+        </div>
+
+        <div class="card c-gold">
+          <div class="card-top">
+            <div class="card-title">Magic Formula (Greenblatt)</div>
+            <div class="tags"><span class="tag tag-h1">우선순위 상</span><span class="tag tag-easy">구현 쉬움</span></div>
+          </div>
+          <div class="card-desc">EBIT/EV (이익수익률) × ROIC (투자자본수익률) 순위 합산. 가치+수익성을 동시에 포착.</div>
+          <ul class="card-items">
+            <li>EBIT / Enterprise Value 순위</li>
+            <li>EBIT / (순운전자본 + 고정자산) 순위</li>
+            <li>두 순위 합산 → 상위 30-50개 유니버스 선정</li>
+            <li>연 1회 리밸런싱</li>
+          </ul>
+          <div class="card-gap"><span class="gap-label">격차:</span> EV 계산 (시총 + 순부채) 로직 추가 필요. PBR 필터 대체 또는 병행 가능</div>
+        </div>
+
+        <div class="card c-gold">
+          <div class="card-top">
+            <div class="card-title">EV/EBITDA · P/FCF</div>
+            <div class="tags"><span class="tag tag-h2">우선순위 중</span><span class="tag tag-easy">구현 쉬움</span></div>
+          </div>
+          <div class="card-desc">PBR/PER보다 자본 구조 왜곡에 덜 민감한 밸류에이션 지표. 특히 부채 많은 섹터에서 유용.</div>
+          <ul class="card-items">
+            <li>EV/EBITDA &lt; 섹터 중앙값 필터</li>
+            <li>P/FCF: 자유현금흐름 기반 밸류</li>
+            <li>PBR이 높은 미국주 분석에 효과적</li>
+          </ul>
+          <div class="card-gap"><span class="gap-label">격차:</span> yfinance info에 enterprise_value, ebitda, free_cashflow 있음. 즉시 추가 가능</div>
+        </div>
+
+        <div class="card c-gold">
+          <div class="card-top">
+            <div class="card-title">Quality Factor 복합</div>
+            <div class="tags"><span class="tag tag-h2">우선순위 중</span><span class="tag tag-medium">구현 보통</span></div>
+          </div>
+          <div class="card-desc">ROE 안정성(5년 표준편차), 이익 일관성, 낮은 레버리지를 결합한 퀄리티 스코어.</div>
+          <ul class="card-items">
+            <li>ROE 변동성 (낮을수록 고품질)</li>
+            <li>5년 연속 순이익 양수 여부</li>
+            <li>부채/자본 비율 &lt; 1.0</li>
+            <li>ROIC - WACC 스프레드 (경제적 해자)</li>
+          </ul>
+          <div class="card-gap"><span class="gap-label">격차:</span> 분기별 재무 데이터 5년치 수집 및 저장 인프라 필요</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. 포트폴리오 최적화 -->
+    <section class="section" id="portfolio">
+      <div class="section-header">
+        <span class="section-num">02</span>
+        <div>
+          <div class="section-title">포트폴리오 최적화 (Portfolio Optimization)</div>
+          <div class="section-subtitle">현재: 고정 3분할 매수 플랜 (30% / 30% / 40%) 만 존재</div>
+        </div>
+      </div>
+      <div class="cards">
+        <div class="card c-blue">
+          <div class="card-top">
+            <div class="card-title">Risk Parity (위험 균형 배분)</div>
+            <div class="tags"><span class="tag tag-h1">우선순위 상</span><span class="tag tag-medium">구현 보통</span></div>
+          </div>
+          <div class="card-desc">각 자산이 포트폴리오 전체 변동성에 동일하게 기여하도록 비중 역산. 변동성 큰 자산은 자동으로 비중 줄어듦.</div>
+          <ul class="card-items">
+            <li>개별 변동성 역수로 비중 계산 (1/σ)</li>
+            <li>상관관계 고려 시 → 마코위츠 공분산 행렬</li>
+            <li>글로벌 모멘텀 탭 자산에 즉시 적용 가능</li>
+          </ul>
+          <div class="card-gap"><span class="gap-label">격차:</span> numpy covariance 계산으로 구현 가능. 기존 VAA 전략과 비교 백테스트 권장</div>
+        </div>
+
+        <div class="card c-blue">
+          <div class="card-top">
+            <div class="card-title">Kelly Criterion 포지션 사이징</div>
+            <div class="tags"><span class="tag tag-h1">우선순위 상</span><span class="tag tag-easy">구현 쉬움</span></div>
+          </div>
+          <div class="card-desc">백테스트 승률과 손익비로 최적 배팅 비율 계산. 반켈리(50%)로 실전 적용.</div>
+          <ul class="card-items">
+            <li>f* = (bp - q) / b (b=손익비, p=승률, q=패율)</li>
+            <li>분할 매수 플랜에 반영 가능</li>
+            <li>고MFI 종목 → 반켈리 축소 자동 적용</li>
+          </ul>
+          <div class="card-gap"><span class="gap-label">격차:</span> 백테스트 결과(승률·손익비)가 이미 있으므로 수식 추가만으로 즉시 구현 가능</div>
+        </div>
+
+        <div class="card c-blue">
+          <div class="card-top">
+            <div class="card-title">Markowitz 효율적 프론티어</div>
+            <div class="tags"><span class="tag tag-h2">우선순위 중</span><span class="tag tag-hard">구현 어려움</span></div>
+          </div>
+          <div class="card-desc">최대 샤프비율 포트폴리오, 최소 분산 포트폴리오를 scipy 최적화로 계산.</div>
+          <ul class="card-items">
+            <li>보유 종목 상관관계 히트맵</li>
+            <li>효율적 프론티어 곡선 시각화</li>
+            <li>섹터 집중도 제약 조건 추가 가능</li>
+          </ul>
+          <div class="card-gap"><span class="gap-label">격차:</span> scipy.optimize.minimize + 보유종목 OHLCV 병렬 수집. 보유종목분석 탭 확장</div>
+        </div>
+
+        <div class="card c-blue">
+          <div class="card-top">
+            <div class="card-title">드로우다운 서킷브레이커</div>
+            <div class="tags"><span class="tag tag-h1">우선순위 상</span><span class="tag tag-easy">구현 쉬움</span></div>
+          </div>
+          <div class="card-desc">포트폴리오 전체 평가손실이 임계값 도달 시 신규 진입 자동 차단 및 경고.</div>
+          <ul class="card-items">
+            <li>포트폴리오 손익률 –10% → 황색경보</li>
+            <li>–15% → 신규 스캔 비활성화 권고</li>
+            <li>–20% → 풀 현금 전환 알림</li>
+          </ul>
+          <div class="card-gap"><span class="gap-label">격차:</span> 보유종목분석 손익률(이미 있음)에 임계값 체크 로직만 추가</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 3. 변동성 전략 -->
+    <section class="section" id="vol-strategy">
+      <div class="section-header">
+        <span class="section-num">03</span>
+        <div>
+          <div class="section-title">변동성 기반 전략 (Volatility-Based)</div>
+          <div class="section-subtitle">현재: Beta 계산, 연환산 변동성(60일×√252) — 리스크 관리에 직접 미사용</div>
+        </div>
+      </div>
+      <div class="cards">
+        <div class="card c-red">
+          <div class="card-top">
+            <div class="card-title">변동성 타겟팅 (Vol Targeting)</div>
+            <div class="tags"><span class="tag tag-h1">우선순위 상</span><span class="tag tag-medium">구현 보통</span></div>
+          </div>
+          <div class="card-desc">목표 변동성(예: 연 15%)을 유지하도록 포지션 크기를 자동 조절. 고변동성 구간에서 자동으로 노출 축소.</div>
+          <ul class="card-items">
+            <li>포지션 비율 = 목표변동성 / 실현변동성(20일)</li>
+            <li>VKOSPI &gt; 30 시 추가 축소 (패닉 구간)</li>
+            <li>분할 매수 플랜 비율에 반영</li>
+          </ul>
+          <div class="card-gap"><span class="gap-label">격차:</span> 변동성 계산 이미 있음. 타겟 비율 설정 UI + 전략 엔진 연동 필요</div>
+        </div>
+
+        <div class="card c-red">
+          <div class="card-top">
+            <div class="card-title">ATR 기반 손절 / 포지션 사이징</div>
+            <div class="tags"><span class="tag tag-h1">우선순위 상</span><span class="tag tag-easy">구현 쉬움</span></div>
+          </div>
+          <div class="card-desc">현재 고정 VWAP×0.96 손절을 ATR(14일 평균진폭) 배수로 대체. 종목별 변동성에 맞춘 손절.  </div>
+          <ul class="card-items">
+            <li>ATR = 14일 True Range 평균</li>
+            <li>손절선 = 진입가 – 2.5 × ATR14</li>
+            <li>포지션 크기 = 위험금액 / (2.5 × ATR14)</li>
+          </ul>
+          <div class="card-gap"><span class="gap-label">격차:</span> indicators.py에 ATR 함수 추가 → 전략 엔진 + 분석 탭 연동</div>
+        </div>
+
+        <div class="card c-red">
+          <div class="card-top">
+            <div class="card-title">VKOSPI 공포지수 모니터링</div>
+            <div class="tags"><span class="tag tag-h1">우선순위 상</span><span class="tag tag-easy">구현 쉬움</span></div>
+          </div>
+          <div class="card-desc">한국 시장의 옵션 내재변동성 지수(VKOSPI). 30 초과 = 패닉 구간, 역발상 매수 시그널.</div>
+          <ul class="card-items">
+            <li>FDR: "VKOSPI" 코드로 데이터 수집</li>
+            <li>장세 판단 섹션에 통합</li>
+            <li>VKOSPI &gt; 30 시 "과매도 반등 스캔" 권고</li>
+          </ul>
+          <div class="card-gap"><span class="gap-label">격차:</span> 데이터 수집 1줄. market_regime.py 또는 주간리포트에 즉시 추가 가능</div>
+        </div>
+
+        <div class="card c-red">
+          <div class="card-top">
+            <div class="card-title">Donchian Channel 돌파 전략</div>
+            <div class="tags"><span class="tag tag-h2">우선순위 중</span><span class="tag tag-easy">구현 쉬움</span></div>
+          </div>
+          <div class="card-desc">20일 고가/저가 채널. 채널 상단 돌파 = 추세 진입. CTA(추세추종) 펀드의 가장 기본 전략.</div>
+          <ul class="card-items">
+            <li>진입: 종가 &gt; max(High, 20일)</li>
+            <li>청산: 종가 &lt; min(Low, 10일)</li>
+            <li>추세추종 스캔과 통합 가능</li>
+          </ul>
+          <div class="card-gap"><span class="gap-label">격차:</span> indicators.py 함수 추가 + 추세추종 브랜치 필터로 선택 가능</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 4. 통계적 차익거래 -->
+    <section class="section" id="statarb">
+      <div class="section-header">
+        <span class="section-num">04</span>
+        <div>
+          <div class="section-title">통계적 차익거래 (Statistical Arbitrage)</div>
+          <div class="section-subtitle">현재: 없음 — 단방향 롱 전략만 존재</div>
+        </div>
+      </div>
+      <div class="cards">
+        <div class="card c-purple">
+          <div class="card-top">
+            <div class="card-title">Pairs Trading (페어 트레이딩)</div>
+            <div class="tags"><span class="tag tag-h2">우선순위 중</span><span class="tag tag-hard">구현 어려움</span></div>
+          </div>
+          <div class="card-desc">같은 섹터 내 공적분(cointegration) 관계 종목 쌍 발굴. 스프레드 Z-score 임계값에서 롱/숏 동시 진입.</div>
+          <ul class="card-items">
+            <li>Engle-Granger 공적분 검정</li>
+            <li>스프레드 Z-score &gt; 2.0 → 숏/롱</li>
+            <li>Z-score → 0 수렴 시 청산</li>
+            <li>유사 섹터 ETF로 개인투자자 적용 가능</li>
+          </ul>
+          <div class="card-gap"><span class="gap-label">격차:</span> statsmodels 라이브러리 필요. 쌍 탐색에 O(n²) 계산 → 섹터 내 제한 탐색으로 최적화</div>
+        </div>
+
+        <div class="card c-purple">
+          <div class="card-top">
+            <div class="card-title">RSI 평균회귀 전략</div>
+            <div class="tags"><span class="tag tag-h2">우선순위 중</span><span class="tag tag-easy">구현 쉬움</span></div>
+          </div>
+          <div class="card-desc">RSI &lt; 25 & 볼린저밴드 하단 이탈 → 평균회귀 매수. 현재 추세추종과 방향 반대의 단기 전략.</div>
+          <ul class="card-items">
+            <li>RSI14 &lt; 25 + 종가 &lt; BB 하단(2σ)</li>
+            <li>목표: RSI 50 회복 or BB 중간밴드</li>
+            <li>고변동성 구간에서 수익성 높음</li>
+          </ul>
+          <div class="card-gap"><span class="gap-label">격차:</span> RSI 지표 추가(미구현) + BB 지표. 스캔 모드에 "역발상(Mean-Reversion)" 탭 신설 가능</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 5. 이벤트 드리븐 -->
+    <section class="section" id="event">
+      <div class="section-header">
+        <span class="section-num">05</span>
+        <div>
+          <div class="section-title">이벤트 드리븐 (Event-Driven)</div>
+          <div class="section-subtitle">현재: 가격/재무 데이터만. 이벤트 캘린더·공시 연동 없음</div>
+        </div>
+      </div>
+      <div class="cards">
+        <div class="card c-teal">
+          <div class="card-top">
+            <div class="card-title">PEAD (어닝 드리프트 추종)</div>
+            <div class="tags"><span class="tag tag-h2">우선순위 중</span><span class="tag tag-medium">구현 보통</span></div>
+          </div>
+          <div class="card-desc">어닝 서프라이즈(실적 예상 초과) 발표 후 주가가 같은 방향으로 계속 드리프트하는 현상.</div>
+          <ul class="card-items">
+            <li>실적 발표일 + 예상치 대비 실제 EPS 비교</li>
+            <li>서프라이즈 &gt; 5% → 다음날 진입</li>
+            <li>3-4주 보유 후 청산</li>
+            <li>US: yfinance earnings_history 활용 가능</li>
+          </ul>
+          <div class="card-gap"><span class="gap-label">격차:</span> KR은 FnGuide/에프앤가이드 공시 API 또는 DART API 필요. US는 yfinance로 부분 구현 가능</div>
+        </div>
+
+        <div class="card c-teal">
+          <div class="card-top">
+            <div class="card-title">52주 신고가 브레이크아웃</div>
+            <div class="tags"><span class="tag tag-h1">우선순위 상</span><span class="tag tag-easy">구현 쉬움</span></div>
+          </div>
+          <div class="card-desc">52주 최고가 돌파 종목은 강한 모멘텀 지속성을 보임. 현재 추세추종 스캔과 연계 가능.</div>
+          <ul class="card-items">
+            <li>종가 &gt; max(Close, 252일) 조건 추가</li>
+            <li>돌파 당일 거래량 ≥ 20일 평균 2배</li>
+            <li>기존 스캔 결과에 "신고가 뱃지" 표시</li>
+          </ul>
+          <div class="card-gap"><span class="gap-label">격차:</span> OHLCV 이미 있으므로 252일 rolling max 계산만 추가. 즉시 구현 가능</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 6. 수급·크로스자산 -->
+    <section class="section" id="flow">
+      <div class="section-header">
+        <span class="section-num">06</span>
+        <div>
+          <div class="section-title">수급 분석 &amp; 크로스 자산 상관관계</div>
+          <div class="section-subtitle">현재: OBV + 세력 탐지 (OBV 스파이크 단방향)</div>
+        </div>
+      </div>
+      <div class="cards">
+        <div class="card c-green">
+          <div class="card-top">
+            <div class="card-title">외국인·기관 순매수 추적</div>
+            <div class="tags"><span class="tag tag-h1">우선순위 상</span><span class="tag tag-medium">구현 보통</span></div>
+          </div>
+          <div class="card-desc">한국 시장의 가장 강력한 수급 신호. 외국인 3일 연속 순매수 + 기관 동반 시 신뢰도 높음.</div>
+          <ul class="card-items">
+            <li>pykrx: 투자자별 순매수 데이터 (외/기/개)</li>
+            <li>연속 순매수일 수 → 세력 탐지 점수에 반영</li>
+            <li>KOSPI/KOSDAQ 전용 (한국 시장)</li>
+          </ul>
+          <div class="card-gap"><span class="gap-label">격차:</span> pykrx stock.get_market_trading_volume_by_investor() 활용. KRX API 가용 시 바로 구현</div>
+        </div>
+
+        <div class="card c-green">
+          <div class="card-top">
+            <div class="card-title">USD/KRW → KOSPI 방향성 연계</div>
+            <div class="tags"><span class="tag tag-h2">우선순위 중</span><span class="tag tag-easy">구현 쉬움</span></div>
+          </div>
+          <div class="card-desc">원/달러 환율과 KOSPI의 역상관 관계 활용. 환율 급등 = 외국인 이탈 신호로 매크로 필터링.</div>
+          <ul class="card-items">
+            <li>FDR "USD/KRW" 일별 데이터 수집</li>
+            <li>5일 환율 변화율 &gt; 3% → 경보</li>
+            <li>장세 판단 섹션 + 주간리포트 통합</li>
+          </ul>
+          <div class="card-gap"><span class="gap-label">격차:</span> report_generator.py에 이미 USD/KRW 수집 코드 있음. 판단 로직만 추가</div>
+        </div>
+
+        <div class="card c-green">
+          <div class="card-top">
+            <div class="card-title">공매도 잔고 변화율 추적</div>
+            <div class="tags"><span class="tag tag-h2">우선순위 중</span><span class="tag tag-hard">구현 어려움</span></div>
+          </div>
+          <div class="card-desc">현재 세력 탐지에서 잔고 "급감 20% 이하"만 체크. 주별 변화 추이 시각화로 숏커버 타이밍 정교화.</div>
+          <ul class="card-items">
+            <li>금감원 공매도 공시 또는 KRX 데이터</li>
+            <li>잔고 감소 추이 4주 연속 → 강세 신호</li>
+            <li>분석 탭 차트에 오버레이 표시</li>
+          </ul>
+          <div class="card-gap"><span class="gap-label">격차:</span> KRX OpenAPI 또는 pykrx short 모듈. 주간 단위 데이터라 실시간성 제한</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 7. 대안 데이터 -->
+    <section class="section" id="altdata">
+      <div class="section-header">
+        <span class="section-num">07</span>
+        <div>
+          <div class="section-title">대안 데이터 (Alternative Data)</div>
+          <div class="section-subtitle">현재: 없음 — 가격·재무 데이터 only</div>
+        </div>
+      </div>
+      <div class="cards">
+        <div class="card c-gold">
+          <div class="card-top">
+            <div class="card-title">뉴스 감성 분석 (NLP/LLM)</div>
+            <div class="tags"><span class="tag tag-h2">우선순위 중</span><span class="tag tag-medium">구현 보통</span></div>
+          </div>
+          <div class="card-desc">종목별 최근 뉴스 헤드라인의 감성 점수화. Anthropic API 연동으로 실현 가능.</div>
+          <ul class="card-items">
+            <li>NAVER 뉴스 / NewsAPI 헤드라인 수집</li>
+            <li>Claude API → 긍정/부정/중립 분류</li>
+            <li>7일 평균 감성 점수 → 세력 탐지 보조</li>
+          </ul>
+          <div class="card-gap"><span class="gap-label">격차:</span> requests + Claude API. 종목 분석 탭에 "뉴스 감성" 섹션으로 추가 가능</div>
+        </div>
+
+        <div class="card c-gold">
+          <div class="card-top">
+            <div class="card-title">DART 공시 텍스트 분석</div>
+            <div class="tags"><span class="tag tag-h2">우선순위 중</span><span class="tag tag-medium">구현 보통</span></div>
+          </div>
+          <div class="card-desc">금융감독원 DART API로 사업보고서·공시 자동 수집. 특이 공시(자사주 매입, 대규모 투자) 알림.</div>
+          <ul class="card-items">
+            <li>DART OpenAPI (무료, 키 발급 필요)</li>
+            <li>자사주 취득 공시 → 매수 시그널</li>
+            <li>대주주 지분 변동 → 세력 탐지 연계</li>
+          </ul>
+          <div class="card-gap"><span class="gap-label">격차:</span> dart-fss 라이브러리 또는 직접 API 호출. KR 전용</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 8. ML -->
+    <section class="section" id="ml">
+      <div class="section-header">
+        <span class="section-num">08</span>
+        <div>
+          <div class="section-title">머신러닝 예측 모델</div>
+          <div class="section-subtitle">현재: 없음 — 규칙 기반 필터만 사용</div>
+        </div>
+      </div>
+      <div class="cards">
+        <div class="card c-purple">
+          <div class="card-top">
+            <div class="card-title">XGBoost 상승 확률 분류기</div>
+            <div class="tags"><span class="tag tag-h3">우선순위 하</span><span class="tag tag-hard">구현 어려움</span></div>
+          </div>
+          <div class="card-desc">PBR·MFI·OBV·모멘텀 등 기존 지표를 피처로 → 30일 후 +5% 이상 상승 여부 분류.</div>
+          <ul class="card-items">
+            <li>피처: PBR, GPA, MFI, OBV기울기, 모멘텀1M/3M, Beta</li>
+            <li>레이블: 30일 후 수익률 &gt; 5%</li>
+            <li>Walk-forward 교차검증 필수</li>
+            <li>스캔 결과에 "ML 확률 스코어" 컬럼 추가</li>
+          </ul>
+          <div class="card-gap"><span class="gap-label">격차:</span> xgboost/lightgbm 라이브러리. 학습 데이터셋 구축 (과거 스캔 기록 활용)</div>
+        </div>
+
+        <div class="card c-purple">
+          <div class="card-top">
+            <div class="card-title">피처 중요도 시각화</div>
+            <div class="tags"><span class="tag tag-h3">우선순위 하</span><span class="tag tag-medium">구현 보통</span></div>
+          </div>
+          <div class="card-desc">ML 모델의 feature importance로 "현재 시장에서 어떤 지표가 가장 예측력 높은지" 시각화.</div>
+          <ul class="card-items">
+            <li>SHAP value 기반 설명 가능 AI</li>
+            <li>시장 레짐별 지표 중요도 변화 추적</li>
+            <li>월간 리포트에 "이달의 핵심 팩터" 섹션</li>
+          </ul>
+          <div class="card-gap"><span class="gap-label">격차:</span> shap 라이브러리. ML 모델 완성 후 단계</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 9. 고급 백테스팅 -->
+    <section class="section" id="backtest">
+      <div class="section-header">
+        <span class="section-num">09</span>
+        <div>
+          <div class="section-title">고급 백테스팅</div>
+          <div class="section-subtitle">현재: 단일 종목 VWAP 전략, 단순 수익률 계산. 거래세·슬리피지 미반영</div>
+        </div>
+      </div>
+      <div class="cards">
+        <div class="card c-teal">
+          <div class="card-top">
+            <div class="card-title">Walk-Forward Optimization</div>
+            <div class="tags"><span class="tag tag-h2">우선순위 중</span><span class="tag tag-medium">구현 보통</span></div>
+          </div>
+          <div class="card-desc">전체 기간을 In-Sample/Out-Sample로 나눠 파라미터 과최적화를 방지하는 백테스팅 방법.</div>
+          <ul class="card-items">
+            <li>Training 6개월 → Testing 1개월 → 롤링</li>
+            <li>각 구간 최적 파라미터 자동 탐색</li>
+            <li>단일 최적화 대비 실제 성과 예측력 높음</li>
+          </ul>
+          <div class="card-gap"><span class="gap-label">격차:</span> backtester.py 재설계 필요. 기간 분할 + 파라미터 그리드 서치 구조</div>
+        </div>
+
+        <div class="card c-teal">
+          <div class="card-top">
+            <div class="card-title">Monte Carlo 시뮬레이션</div>
+            <div class="tags"><span class="tag tag-h2">우선순위 중</span><span class="tag tag-medium">구현 보통</span></div>
+          </div>
+          <div class="card-desc">과거 매매 패턴을 기반으로 1000회 무작위 시뮬레이션 → MDD 분포와 파산 확률 계산.</div>
+          <ul class="card-items">
+            <li>매매 결과 랜덤 셔플 × 1000회</li>
+            <li>5% VAR, 1% CVaR 계산</li>
+            <li>파산(–50%) 확률 표시</li>
+          </ul>
+          <div class="card-gap"><span class="gap-label">격차:</span> numpy random으로 구현 가능. 백테스트 결과 탭에 모달로 추가</div>
+        </div>
+
+        <div class="card c-teal">
+          <div class="card-top">
+            <div class="card-title">현실적 거래 비용 모델링</div>
+            <div class="tags"><span class="tag tag-h1">우선순위 상</span><span class="tag tag-easy">구현 쉬움</span></div>
+          </div>
+          <div class="card-desc">한국 주식 거래 시 실제 발생 비용을 반영해 백테스트 신뢰도를 높임.</div>
+          <ul class="card-items">
+            <li>매매수수료: 0.015% (증권사 평균)</li>
+            <li>거래세: 매도 시 0.18% (KOSPI)</li>
+            <li>슬리피지: 평균 호가 스프레드 0.05%</li>
+            <li>US: SEC fee + FINRA + 수수료</li>
+          </ul>
+          <div class="card-gap"><span class="gap-label">격차:</span> backtester.py에 파라미터 3개 추가. 즉시 구현 가능. 현재 수익률과의 차이가 크면 전략 재검토 신호</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 10. 알림·자동화 / 11. 배당 (compressed) -->
+    <section class="section" id="alert">
+      <div class="section-header">
+        <span class="section-num">10–12</span>
+        <div>
+          <div class="section-title">알림·자동화 · 배당 전략 · 기타</div>
+        </div>
+      </div>
+      <div class="cards">
+        <div class="card c-blue">
+          <div class="card-top">
+            <div class="card-title">텔레그램 실시간 알림</div>
+            <div class="tags"><span class="tag tag-h1">우선순위 상</span><span class="tag tag-easy">구현 쉬움</span></div>
+          </div>
+          <div class="card-desc">스캔 결과·목표가 도달·손절선 이탈 시 텔레그램 Bot으로 즉시 알림. 장중 모니터링 자동화.</div>
+          <ul class="card-items">
+            <li>telegram.Bot + requests 2줄</li>
+            <li>일일 스캔 완료 → 탑 5 종목 메시지 전송</li>
+            <li>보유종목 손익 –5% 도달 → 경고</li>
+          </ul>
+          <div class="card-gap"><span class="gap-label">격차:</span> telegram-bot API 키 설정. 스케줄러(Celery 또는 APScheduler)에 추가</div>
+        </div>
+
+        <div class="card c-green" id="dividend">
+          <div class="card-top">
+            <div class="card-title">배당 성장 스크리닝</div>
+            <div class="tags"><span class="tag tag-h2">우선순위 중</span><span class="tag tag-medium">구현 보통</span></div>
+          </div>
+          <div class="card-desc">5년 연속 배당 증가 + FCF 커버리지 2배 이상 + 배당수익률 3% 이상. 방어적 인컴 전략.</div>
+          <ul class="card-items">
+            <li>배당수익률 계산: 이미 있음 (원/주)</li>
+            <li>배당성향 &lt; 60% (지속 가능성)</li>
+            <li>5년 배당 내역 → yfinance dividends</li>
+          </ul>
+          <div class="card-gap"><span class="gap-label">격차:</span> yfinance dividends 히스토리. 고변동성 구간에서 특히 유효한 전략</div>
+        </div>
+
+        <div class="card c-teal">
+          <div class="card-top">
+            <div class="card-title">RSI · Bollinger Band 지표 추가</div>
+            <div class="tags"><span class="tag tag-h1">우선순위 상</span><span class="tag tag-easy">구현 쉬움</span></div>
+          </div>
+          <div class="card-desc">현재 미구현. RSI는 과열·과매도 판단에 필수. BB는 변동성 수축 후 돌파 신호에 사용.</div>
+          <ul class="card-items">
+            <li>RSI14: indicators.py에 함수 1개 추가</li>
+            <li>BB: 20일 SMA ± 2σ</li>
+            <li>차트 오버레이 + 스캔 필터 연동</li>
+          </ul>
+          <div class="card-gap"><span class="gap-label">격차:</span> pandas rolling 10줄 이내. 가장 빠른 ROI</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══ VOLATILITY RESPONSE ══ -->
+    <section class="section" id="volatility">
+      <div class="section-header">
+        <span class="section-num">★</span>
+        <div>
+          <div class="section-title" style="color:var(--red)">지금 당장 — 한국 시장 고변동성 대응</div>
+          <div class="section-subtitle">KOSPI –10%/주 · –15%/월 · KOSDAQ –19%/월 — 극단적 공포 구간</div>
+        </div>
+      </div>
+
+      <div class="vol-box">
+        <div class="vol-box-title">
+          <div class="alert-dot"></div>
+          시장 현황 (2026-07-13 기준)
+        </div>
+        <div class="market-row">
+          <div class="market-chip">
+            <span class="chip-label">KOSPI</span>
+            <span class="chip-w">–10.02%</span>
+            <span class="chip-m">5거래일</span>
+          </div>
+          <div class="market-chip">
+            <span class="chip-label">KOSPI</span>
+            <span class="chip-w">–15.23%</span>
+            <span class="chip-m">20거래일</span>
+          </div>
+          <div class="market-chip">
+            <span class="chip-label">KOSDAQ</span>
+            <span class="chip-w">–19.09%</span>
+            <span class="chip-m">20거래일</span>
+          </div>
+          <div class="market-chip" style="border-color:var(--green-bd)">
+            <span class="chip-label" style="color:var(--green)">금 (GLD)</span>
+            <span class="chip-w" style="color:var(--green)">+0.65%</span>
+            <span class="chip-m">20거래일</span>
+          </div>
+          <div class="market-chip" style="border-color:var(--green-bd)">
+            <span class="chip-label" style="color:var(--green)">S&P500</span>
+            <span class="chip-w" style="color:var(--green)">+4.24%</span>
+            <span class="chip-m">20거래일</span>
+          </div>
+        </div>
+        <div class="vol-desc">
+          월간 –15~19%는 2020년 3월, 2022년 9월 수준의 극단적 낙폭. 역사적으로 이 구간은 중기 저점이 근처에 있었으나, <strong>추가 하락 가능성을 배제할 수 없음</strong>. 지금은 "어떻게 더 벌 것인가"보다 <strong>"어떻게 자산을 지킬 것인가"</strong>가 먼저.
+        </div>
+      </div>
+
+      <div class="response-grid">
+        <div class="resp-card">
+          <div class="resp-phase phase-now">지금 즉시</div>
+          <div class="resp-title">현재 QuantMaster로 할 수 있는 것</div>
+          <ul class="resp-items">
+            <li><strong>하락방어 스캔</strong> 실행 → Beta &lt; 0.8 + RS &gt; 1.0 종목만 보유 허용</li>
+            <li><strong>보유종목 VWAP 괴리율</strong> 확인 → VWAP 이탈 종목 기계적 손절</li>
+            <li>포트폴리오 <strong>현금 비중 50~70%</strong>로 축소</li>
+            <li>신규 퀀트/추세 스캔 <strong>일시 중단</strong></li>
+            <li>글로벌 모멘텀 탭 → <strong>금(GLD)·채권(TLT)</strong> 자산 비중 확인</li>
+          </ul>
+        </div>
+
+        <div class="resp-card">
+          <div class="resp-phase phase-short">단기 (1–2주)</div>
+          <div class="resp-title">역발상 반등 포착 준비</div>
+          <ul class="resp-items">
+            <li>RSI &lt; 25 종목 위시리스트 작성 (아직 미구현, 수동 확인)</li>
+            <li><strong>52주 신고가 대비 낙폭 –30%+</strong> 우량주 리스트업</li>
+            <li>VKOSPI(한국 공포지수) &gt; 30 확인 → 과공포 구간 진입 신호</li>
+            <li>섹터 확인: <strong>방어 섹터</strong>(필수소비재·통신·유틸리티) 상대강도</li>
+            <li>금(GLD) ETF 분할 매수 1차 실행 검토</li>
+          </ul>
+        </div>
+
+        <div class="resp-card">
+          <div class="resp-phase phase-mid">중기 (1–3개월)</div>
+          <div class="resp-title">저점 확인 후 분할 재진입</div>
+          <ul class="resp-items">
+            <li><strong>DCA 진입 계획</strong>: KOSPI –20% 1차(30%), –30% 2차(40%), 반등 확인 3차(30%)</li>
+            <li>퀀트 스캔 재가동 → <strong>F-Score &gt; 6 + PBR &lt; 1.0</strong> 우선</li>
+            <li><strong>Piotroski 필터</strong> 활용 — 싸고 재무 건전한 종목 발굴</li>
+            <li>섹터 로테이션: 경기방어 → 회복 시 경기민감으로 순차 전환</li>
+            <li>배당수익률 4%+ 종목 인컴 포트 구성</li>
+          </ul>
+        </div>
+
+        <div class="resp-card">
+          <div class="resp-phase phase-prog">프로그램에 추가하면 즉시 유용</div>
+          <div class="resp-title">이번 변동성이 알려준 부족한 기능</div>
+          <ul class="resp-items">
+            <li><strong>ATR 기반 손절</strong> — 종목별 변동성에 맞는 손절선 (VWAP×0.96 보다 정교)</li>
+            <li><strong>드로우다운 서킷브레이커</strong> — 포트 –10% 시 자동 경보</li>
+            <li><strong>VKOSPI 모니터링</strong> — 공포 레벨 수치화</li>
+            <li><strong>RSI 과매도 스캔</strong> (RSI &lt; 25) — 역발상 진입 후보 발굴</li>
+            <li><strong>텔레그램 알림</strong> — 손절선 도달 즉시 모바일 수신</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- Roadmap -->
+    <section class="section" id="roadmap">
+      <div class="section-header">
+        <span class="section-num">◆</span>
+        <div>
+          <div class="section-title">구현 우선순위 로드맵</div>
+          <div class="section-subtitle">구현 난이도 vs 기대 효과 기준 정렬</div>
+        </div>
+      </div>
+
+      <div class="divider-text">즉시 (1–2일)</div>
+      <div class="rt-overflow">
+      <table class="roadmap-table">
+        <thead><tr><th>기능</th><th>난이도</th><th>효과</th><th>파일</th></tr></thead>
+        <tbody>
+          <tr><td>RSI·Bollinger Band 지표</td><td><span class="badge b-low">쉬움</span></td><td>스캔 신뢰도 즉시 향상</td><td>indicators.py + scanner.py</td></tr>
+          <tr><td>52주 신고가 뱃지</td><td><span class="badge b-low">쉬움</span></td><td>추세추종 진입 신뢰도</td><td>scanner.py + main.py</td></tr>
+          <tr><td>거래세·수수료 백테스트 반영</td><td><span class="badge b-low">쉬움</span></td><td>백테스트 현실성</td><td>backtester.py</td></tr>
+          <tr><td>VKOSPI 모니터링</td><td><span class="badge b-low">쉬움</span></td><td>공포 레벨 수치화</td><td>market_regime.py</td></tr>
+          <tr><td>드로우다운 서킷브레이커</td><td><span class="badge b-low">쉬움</span></td><td>리스크 관리 강화</td><td>main.py portfolio 탭</td></tr>
+        </tbody>
+      </table>
+      </div>
+
+      <div class="divider-text" style="margin-top:20px">단기 (1–2주)</div>
+      <div class="rt-overflow">
+      <table class="roadmap-table">
+        <thead><tr><th>기능</th><th>난이도</th><th>효과</th><th>파일</th></tr></thead>
+        <tbody>
+          <tr><td>ATR 기반 손절·포지션 사이징</td><td><span class="badge b-med">보통</span></td><td>종목별 맞춤 리스크</td><td>indicators.py + strategy_engine.py</td></tr>
+          <tr><td>Piotroski F-Score 필터</td><td><span class="badge b-med">보통</span></td><td>퀀트 스캔 품질 향상</td><td>data_loader.py + scanner.py</td></tr>
+          <tr><td>Kelly Criterion 사이징</td><td><span class="badge b-low">쉬움</span></td><td>분할 매수 플랜 고도화</td><td>strategy_engine.py</td></tr>
+          <tr><td>EV/EBITDA · P/FCF 지표</td><td><span class="badge b-low">쉬움</span></td><td>밸류에이션 다각화</td><td>data_loader.py</td></tr>
+          <tr><td>텔레그램 알림</td><td><span class="badge b-low">쉬움</span></td><td>장중 모니터링 자동화</td><td>utils/notifier.py (신규)</td></tr>
+        </tbody>
+      </table>
+      </div>
+
+      <div class="divider-text" style="margin-top:20px">중기 (1–2개월)</div>
+      <div class="rt-overflow">
+      <table class="roadmap-table">
+        <thead><tr><th>기능</th><th>난이도</th><th>효과</th><th>파일</th></tr></thead>
+        <tbody>
+          <tr><td>Magic Formula 스캔 모드</td><td><span class="badge b-med">보통</span></td><td>검증된 퀀트 전략</td><td>scanner.py 새 scan_mode</td></tr>
+          <tr><td>Risk Parity 배분</td><td><span class="badge b-med">보통</span></td><td>글로벌모멘텀 고도화</td><td>momentum_scanner.py</td></tr>
+          <tr><td>Monte Carlo 시뮬레이션</td><td><span class="badge b-med">보통</span></td><td>전략 리스크 시각화</td><td>backtester.py + 백테스트 탭</td></tr>
+          <tr><td>외국인·기관 순매수 추적</td><td><span class="badge b-med">보통</span></td><td>수급 신뢰도 강화</td><td>data_loader.py (pykrx)</td></tr>
+          <tr><td>배당 성장 스크리닝</td><td><span class="badge b-med">보통</span></td><td>고변동성 방어 포트</td><td>scanner.py 새 모드</td></tr>
+        </tbody>
+      </table>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+</body></html>
