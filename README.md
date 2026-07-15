@@ -94,7 +94,8 @@ QuantMaster/
 │   ├── defensive_scanner.py   # 하락방어 스캐너 (Beta·RS·Downside Capture)
 │   ├── trend_scanner.py       # 추세추종 스캐너 (RS90+·EV백테스트·반감기3년)
 │   ├── mean_reversion_scanner.py   # 역발상 과매도 스캐너 (RSI14 + 볼린저밴드 하단 이탈)
-│   └── factor_loader.py       # 다중 팩터 로더 (Piotroski F-Score 9점)
+│   ├── magic_formula_scanner.py    # 매직 포뮬러 스캐너 (Greenblatt: EBIT/EV순위 + ROIC순위)
+│   └── factor_loader.py       # 다중 팩터 로더 (Piotroski F-Score 9점 + EV/EBITDA + P/FCF)
 ├── scripts/
 │   ├── fetch_leaders_daily.py  # 당일주도주 자동수집 (Task Scheduler)
 │   ├── fetch_momentum_daily.py # 기간모멘텀 자동수집 16:00 KST
@@ -252,7 +253,8 @@ QuantMaster Pro
 │   │   ├── 세력 탐지      (OBV 스파이크 + 돌파 + 알파 + 숏커버)
 │   │   ├── 하락방어       (Beta + RS + Downside Capture, KR 전용)
 │   │   ├── 모멘텀 스캔    (기간별 수익률 상위 종목 — 삼성전기/LG이노텍 류)
-│   │   └── 역발상 과매도  (RSI14 < 임계값 AND 종가 < 볼린저밴드 하단, 공포 구간 역매수)
+│   │   ├── 역발상 과매도  (RSI14 < 임계값 AND 종가 < 볼린저밴드 하단, 공포 구간 역매수)
+│   │   └── 매직 포뮬러   (Greenblatt: EBIT/EV 순위 + ROIC 순위 → 합산 순위 낮을수록 최우선)
 │   ├── 시장 선택 (KOSPI / KOSDAQ / KR-ETF / S&P500 / NASDAQ / US-ETF)
 │   ├── [퀀트 스캔 옵션]   PBR 슬라이더 · 시총 · VWAP 기간
 │   ├── [세력 탐지 옵션]   알파 필터 · 공매도 필터 · 최대탐색시간
@@ -287,8 +289,10 @@ QuantMaster Pro
     │   │   └── 종목명 · 시가총액 · Beta · RS · 하락포착률 · 하락일상승% · [분석]
     │   ├── [모멘텀 스캔 모드] 결과 테이블
     │   │   └── 순위 · 종목명 · 수익률 · 1주수익률 · 거래량비 · 현재가 · 시가총액 · [조회]
-    │   └── [역발상 과매도 모드] 결과 테이블 (RSI14 < 임계값 AND 종가 < BB하단)
-    │       └── 순위 · 종목명 · RSI14 · BB괴리 · 1W · 1M · 거래량비 · 점수 · 현재가 · 시총 · [조회]
+    │   ├── [역발상 과매도 모드] 결과 테이블 (RSI14 < 임계값 AND 종가 < BB하단)
+    │   │   └── 순위 · 종목명 · RSI14 · BB괴리 · 1W · 1M · 거래량비 · 점수 · 현재가 · 시총 · [조회]
+    │   └── [매직 포뮬러 모드] 결과 테이블 (Greenblatt Magic Formula 상위 30)
+    │       └── 순위 · 종목명 · 합산순위 · EY순위 · ROIC순위 · EY(EBIT/EV%) · ROIC% · 현재가 · 시가총액 · [분석]
     │
     ├── 분석 탭 (종목 선택 후)
     │   ├── 종목명 + 종가 기준일 + 보유 추가 버튼 + PDF 저장
@@ -302,9 +306,11 @@ QuantMaster Pro
     │   │   └── 세력 매집 탐지 요약
     │   ├── 가격 차트 (공통) ─ 종가 + VWAP + TWAP20/60/120 + SMA120
     │   ├── [세력 탐지 모드] OBV 차트 + 공매도 잔고 추이
-    │   ├── Piotroski F-Score 패널 (공통) — 9점 재무 건전성
+    │   ├── Piotroski F-Score 패널 (공통) — 9점 재무 건전성 + 가치 멀티플
     │   │   ├── 점수 배지 (녹색≥7 / 황색≥5 / 적색<5)
-    │   │   └── 9개 기준 체크리스트 (수익성·레버리지·효율성 그룹)
+    │   │   ├── 9개 기준 체크리스트 (수익성·레버리지·효율성 그룹)
+    │   │   ├── EV/EBITDA 카드 (녹색<10x / 황색<20x / 적색≥20x)
+    │   │   └── P/FCF 카드 (녹색<15x / 황색<25x / 적색≥25x)
     │   ├── [퀀트 모드] 분기별 PSR 추이 (바 차트)
     │   ├── [퀀트 모드] 적용된 스캔 조건 패널
     │   ├── [퀀트 모드] 실제 측정값 패널

@@ -208,11 +208,16 @@ class State(rx.State):
     mr_rsi_max: List[float] = [30.0]         # RSI14 상한 (과매도 임계값)
     mr_min_mktcap: int = 3_000               # 최소 시가총액 (억원)
 
-    # Piotroski F-Score (다중 팩터 Phase 1)
+    # 다중 팩터 (Phase 1: F-Score, Phase 2: EV/EBITDA·P/FCF)
     f_score_loading: bool = False
     f_score_score: int = -1                  # -1 = 미로드, 0-9 = 점수
     f_score_error: str = ""
     f_score_criteria: List[dict] = []        # [{name, group, passed, na, value}]
+    value_metrics: dict = {}                 # {ev_ebitda, p_fcf, ev, ebitda, fcf, mktcap, currency, error}
+
+    # Magic Formula 스캔 (Phase 3)
+    magic_results: List[dict] = []
+    magic_min_mktcap: int = 3_000            # 최소 시가총액 (억원)
 
     # 추세추종 스캔
     trend_results: List[dict] = []
@@ -732,6 +737,9 @@ class State(rx.State):
 
     def set_mr_min_mktcap(self, v: int):
         self.mr_min_mktcap = v
+
+    def set_magic_min_mktcap(self, v: int):
+        self.magic_min_mktcap = v
 
     def _apply_sector_sort(self):
         """sector_sort_period 기준으로 sector_data 재정렬 + rank 갱신."""
@@ -1815,6 +1823,7 @@ class State(rx.State):
             self.f_score_score = -1
             self.f_score_error = ""
             self.f_score_criteria = []
+            self.value_metrics = {}
             self.active_tab = "analysis"
             yield
 
@@ -1908,8 +1917,8 @@ class State(rx.State):
                     }
                     for d, row in whale_full.iterrows()
                 ]
-                # F-Score (whale 모드)
-                from utils.factor_loader import load_f_score
+                # F-Score + Value Metrics (whale 모드)
+                from utils.factor_loader import load_f_score, load_value_metrics
                 _t_fs = asyncio.create_task(asyncio.to_thread(
                     load_f_score, w_target.symbol, w_target.market
                 ))
@@ -1924,6 +1933,18 @@ class State(rx.State):
                 self.f_score_score    = fs["score"]
                 self.f_score_error    = fs["error"] or ""
                 self.f_score_criteria = fs["criteria"]
+                _t_vm = asyncio.create_task(asyncio.to_thread(
+                    load_value_metrics, w_target.symbol, w_target.market
+                ))
+                while not _t_vm.done():
+                    try:
+                        vm = await asyncio.wait_for(asyncio.shield(_t_vm), timeout=0.5)
+                        break
+                    except asyncio.TimeoutError:
+                        yield
+                else:
+                    vm = _t_vm.result()
+                self.value_metrics = vm
             except Exception as e:
                 self.status_msg = f"차트 로드 오류: {e}"
             finally:
@@ -1976,6 +1997,7 @@ class State(rx.State):
         self.f_score_score = -1
         self.f_score_error = ""
         self.f_score_criteria = []
+        self.value_metrics = {}
         self.active_tab = "analysis"
         yield
 
@@ -2027,8 +2049,8 @@ class State(rx.State):
             else:
                 psr_data = _t2.result()
             self.psr_chart_data = psr_data
-            # F-Score
-            from utils.factor_loader import load_f_score
+            # F-Score + Value Metrics
+            from utils.factor_loader import load_f_score, load_value_metrics
             _t3 = asyncio.create_task(asyncio.to_thread(
                 load_f_score, target.symbol, target.market_raw
             ))
@@ -2043,6 +2065,18 @@ class State(rx.State):
             self.f_score_score    = fs["score"]
             self.f_score_error    = fs["error"] or ""
             self.f_score_criteria = fs["criteria"]
+            _t4 = asyncio.create_task(asyncio.to_thread(
+                load_value_metrics, target.symbol, target.market_raw
+            ))
+            while not _t4.done():
+                try:
+                    vm = await asyncio.wait_for(asyncio.shield(_t4), timeout=0.5)
+                    break
+                except asyncio.TimeoutError:
+                    yield
+            else:
+                vm = _t4.result()
+            self.value_metrics = vm
 
         except Exception:
             pass
@@ -2088,6 +2122,7 @@ class State(rx.State):
         self.f_score_score = -1
         self.f_score_error = ""
         self.f_score_criteria = []
+        self.value_metrics = {}
         self.active_tab = "analysis"
         yield
 
@@ -2139,8 +2174,8 @@ class State(rx.State):
             else:
                 psr_data = _t2.result()
             self.psr_chart_data = psr_data
-            # F-Score
-            from utils.factor_loader import load_f_score
+            # F-Score + Value Metrics
+            from utils.factor_loader import load_f_score, load_value_metrics
             _t3 = asyncio.create_task(asyncio.to_thread(
                 load_f_score, code, self.market
             ))
@@ -2155,6 +2190,18 @@ class State(rx.State):
             self.f_score_score    = fs["score"]
             self.f_score_error    = fs["error"] or ""
             self.f_score_criteria = fs["criteria"]
+            _t4 = asyncio.create_task(asyncio.to_thread(
+                load_value_metrics, code, self.market
+            ))
+            while not _t4.done():
+                try:
+                    vm = await asyncio.wait_for(asyncio.shield(_t4), timeout=0.5)
+                    break
+                except asyncio.TimeoutError:
+                    yield
+            else:
+                vm = _t4.result()
+            self.value_metrics = vm
         except Exception:
             pass
         finally:
@@ -2772,6 +2819,55 @@ class State(rx.State):
             yield
             return
 
+        if self.scan_mode == "magic_formula":
+            from utils.magic_formula_scanner import scan_magic_formula
+            self.is_scanning = True
+            self.scan_stop_requested = False
+            self.magic_results = []
+            self.scan_warning = ""
+            mkt_map = {"KR-ETF": "KOSPI", "US-ETF": "SP500", "NASDAQ": "SP500"}
+            mkt = mkt_map.get(self.market, self.market)
+            if mkt not in ("KOSPI", "KOSDAQ", "SP500"):
+                mkt = "KOSPI"
+            self.status_msg = f"{mkt} Magic Formula 스캔 중... (약 2~3분 소요)"
+            yield
+            try:
+                _task = asyncio.create_task(asyncio.to_thread(
+                    scan_magic_formula,
+                    mkt,
+                    self.magic_min_mktcap,
+                    30,
+                    150,
+                    120,
+                ))
+                while not _task.done():
+                    try:
+                        res = await asyncio.wait_for(asyncio.shield(_task), timeout=0.5)
+                        break
+                    except asyncio.TimeoutError:
+                        if self.scan_stop_requested:
+                            self.status_msg = "스캔이 중단되었습니다."
+                            self.scan_stop_requested = False
+                            yield
+                            return
+                        yield
+                else:
+                    res = _task.result()
+                self.magic_results = res.get("results", [])
+                self.scan_warning  = res.get("warning", "")
+                cnt = len(self.magic_results)
+                scanned = res.get("count_scanned", 0)
+                self.status_msg = (
+                    f"Magic Formula — {cnt}개 종목 ({scanned}개 분석 완료)" if cnt
+                    else "조건 충족 종목 없음. 최소 시총을 낮춰보세요."
+                )
+            except Exception as e:
+                self.status_msg = f"오류: {e}"
+            finally:
+                self.is_scanning = False
+            yield
+            return
+
         # ── 퀀트 스캔 ────────────────────────────────────────────────────
         self.is_scanning = True
         self.scan_stop_requested = False
@@ -2955,6 +3051,7 @@ def sidebar_controls() -> rx.Component:
                 rx.select.item("추세추종", value="trend"),
                 rx.select.item("모멘텀 스캔", value="stock_momentum"),
                 rx.select.item("역발상 과매도", value="mean_reversion"),
+                rx.select.item("매직 포뮬러", value="magic_formula"),
             ),
             value=State.scan_mode,
             on_change=State.set_scan_mode,
@@ -3130,6 +3227,23 @@ def sidebar_controls() -> rx.Component:
         wrap="wrap",
     )
 
+    # ── Magic Formula 전용 옵션 행 ───────────────────────────────
+    magic_opts = rx.hstack(
+        rx.text("시총", size="1", color="gray"),
+        rx.button("3천억+", size="1",
+            variant=rx.cond(State.magic_min_mktcap == 3_000,  "solid", "soft"),
+            on_click=State.set_magic_min_mktcap(3_000)),
+        rx.button("1조+",   size="1",
+            variant=rx.cond(State.magic_min_mktcap == 10_000, "solid", "soft"),
+            on_click=State.set_magic_min_mktcap(10_000)),
+        rx.button("전체",   size="1",
+            variant=rx.cond(State.magic_min_mktcap == 0,      "solid", "soft"),
+            on_click=State.set_magic_min_mktcap(0)),
+        spacing="2",
+        align="center",
+        wrap="wrap",
+    )
+
     # ── 추세추종 전용 옵션 행 ────────────────────────────────────
     trend_opts = rx.hstack(
         rx.text("필터", size="1", color="gray", white_space="nowrap"),
@@ -3242,7 +3356,11 @@ def sidebar_controls() -> rx.Component:
                             rx.cond(
                                 State.scan_mode == "mean_reversion",
                                 mr_opts,
-                                defensive_opts,
+                                rx.cond(
+                                    State.scan_mode == "magic_formula",
+                                    magic_opts,
+                                    defensive_opts,
+                                ),
                             ),
                         ),
                     ),
@@ -3280,9 +3398,16 @@ def sidebar_controls() -> rx.Component:
                                 rx.callout.text("💡 RSI14 < 임계값 AND 볼린저밴드 하단 이탈을 동시에 만족하는 극단적 과매도 종목 탐색. 공포 구간 역발상 매수 후보 발굴. 점수 높을수록 과매도 강도 강함."),
                                 color_scheme="red", variant="surface", size="1",
                             ),
-                            rx.callout.root(
-                                rx.callout.text("💡 하루 급등이 아닌 1주~3개월 꾸준한 우상향 종목을 탐색. 삼성전기·LG이노텍 류 소재·부품株 발굴에 적합. 시총 상위 300개 기준."),
-                                color_scheme="violet", variant="surface", size="1",
+                            rx.cond(
+                                State.scan_mode == "magic_formula",
+                                rx.callout.root(
+                                    rx.callout.text("💡 Greenblatt Magic Formula — EBIT/EV 순위(저평가) + ROIC 순위(고효율) 합산이 낮은 종목이 최우선. 재무제표 기반 yfinance 수집, 약 2~3분 소요."),
+                                    color_scheme="teal", variant="surface", size="1",
+                                ),
+                                rx.callout.root(
+                                    rx.callout.text("💡 하루 급등이 아닌 1주~3개월 꾸준한 우상향 종목을 탐색. 삼성전기·LG이노텍 류 소재·부품株 발굴에 적합. 시총 상위 300개 기준."),
+                                    color_scheme="violet", variant="surface", size="1",
+                                ),
                             ),
                         ),
                     ),
@@ -3339,7 +3464,10 @@ def scanner_tab() -> rx.Component:
                         State.scan_mode == "mean_reversion",
                         mean_reversion_table(),
                         rx.cond(
-                            State.scan_results.length() == 0,
+                            State.scan_mode == "magic_formula",
+                            magic_formula_table(),
+                            rx.cond(
+                                State.scan_results.length() == 0,
                         rx.center(
                             rx.text("스캔 실행 버튼을 눌러 결과를 조회하세요.", color="gray"),
                             height="200px",
@@ -3400,8 +3528,9 @@ def scanner_tab() -> rx.Component:
                 ),
             ),
             ),  # rx.cond(mean_reversion)
-            ),
-        ),
+            ),  # rx.cond(stock_momentum)
+        ),  # rx.cond(whale)
+        ),  # rx.cond(defensive)
         ),  # rx.cond(trend)
         ),  # rx.cond(pullback)
         width="100%",
@@ -3826,6 +3955,88 @@ def mean_reversion_table() -> rx.Component:
                             rx.table.cell(r["mktcap_str"]),
                             rx.table.cell(
                                 rx.button("조회", size="1", variant="soft", color_scheme="blue",
+                                    on_click=State.goto_lookup_from_leaders(r["code"], r["is_us"]))
+                            ),
+                        ),
+                    )
+                ),
+                variant="surface", width="100%",
+            ),
+            width="100%", spacing="2",
+        ),
+    )
+
+
+def magic_formula_table() -> rx.Component:
+    """Magic Formula 스캔 결과 테이블."""
+    return rx.cond(
+        State.magic_results.length() == 0,
+        rx.center(
+            rx.vstack(
+                rx.text("위 패널에서 매직 포뮬러 스캔을 실행하세요.", color="gray"),
+                rx.text("EBIT/EV 순위 + ROIC 순위 합산 · KOSPI/KOSDAQ/SP500 지원", size="1", color="gray"),
+                rx.text("yfinance 재무제표 기반 — 약 2~3분 소요", size="1", color="gray"),
+                align="center", spacing="1",
+            ),
+            height="120px",
+        ),
+        rx.vstack(
+            rx.table.root(
+                rx.table.header(
+                    rx.table.row(
+                        rx.table.column_header_cell("순위"),
+                        rx.table.column_header_cell("종목명"),
+                        rx.table.column_header_cell("합산순위"),
+                        rx.table.column_header_cell("EY순위"),
+                        rx.table.column_header_cell("ROIC순위"),
+                        rx.table.column_header_cell("EY(EBIT/EV)"),
+                        rx.table.column_header_cell("ROIC"),
+                        rx.table.column_header_cell("현재가"),
+                        rx.table.column_header_cell("시가총액"),
+                        rx.table.column_header_cell(""),
+                    )
+                ),
+                rx.table.body(
+                    rx.foreach(
+                        State.magic_results,
+                        lambda r: rx.table.row(
+                            rx.table.cell(rx.text(r["rank"].to_string(), size="1")),
+                            rx.table.cell(
+                                rx.vstack(
+                                    rx.text(r["name"], size="2", weight="bold"),
+                                    rx.text(r["code"], size="1", color="gray"),
+                                    spacing="0",
+                                )
+                            ),
+                            rx.table.cell(
+                                rx.badge(
+                                    r["combined_str"],
+                                    color_scheme="teal",
+                                    variant="solid",
+                                    size="1",
+                                )
+                            ),
+                            rx.table.cell(
+                                rx.cond(
+                                    r["ey_top"],
+                                    rx.badge(r["ey_rank_str"], color_scheme="green", variant="soft", size="1"),
+                                    rx.text(r["ey_rank_str"], size="1"),
+                                )
+                            ),
+                            rx.table.cell(
+                                rx.cond(
+                                    r["roic_top"],
+                                    rx.badge(r["roic_rank_str"], color_scheme="blue", variant="soft", size="1"),
+                                    rx.text(r["roic_rank_str"], size="1"),
+                                )
+                            ),
+                            rx.table.cell(rx.text(r["ey_str"], size="1", color="green")),
+                            rx.table.cell(rx.text(r["roic_str"], size="1", color="blue")),
+                            rx.table.cell(rx.text(r["price_str"], size="1")),
+                            rx.table.cell(rx.text(r["mktcap_str"], size="1", color="gray")),
+                            rx.table.cell(
+                                rx.button(
+                                    "분석", size="1", variant="soft", color_scheme="teal",
                                     on_click=State.goto_lookup_from_leaders(r["code"], r["is_us"]))
                             ),
                         ),
@@ -4723,63 +4934,137 @@ def _fscore_row(c: dict) -> rx.Component:
     )
 
 
+def _value_metric_card(label: str, value, unit: str, hint: str, color: str) -> rx.Component:
+    """EV/EBITDA · P/FCF 개별 카드."""
+    return rx.vstack(
+        rx.text(label, size="1", color="gray", weight="medium"),
+        rx.cond(
+            value is not None,
+            rx.hstack(
+                rx.text(value.to_string(), size="3", weight="bold", color=color),
+                rx.text(unit, size="1", color="gray"),
+                spacing="1", align_items="baseline",
+            ),
+            rx.text("-", size="3", color="gray"),
+        ),
+        rx.text(hint, size="1", color="gray"),
+        align_items="start",
+        spacing="1",
+        flex="1",
+    )
+
+
 def f_score_panel() -> rx.Component:
-    """Piotroski F-Score 패널 (분석 탭에서 표시)."""
+    """Piotroski F-Score + EV/EBITDA·P/FCF 통합 팩터 패널."""
     score_color = rx.cond(
         State.f_score_score >= 7, "green",
         rx.cond(State.f_score_score >= 5, "amber", "red"),
+    )
+    vm = State.value_metrics
+    ev_ebitda_color = rx.cond(
+        vm["ev_ebitda"] < 10, "green",
+        rx.cond(vm["ev_ebitda"] < 20, "amber", "red"),
+    )
+    p_fcf_color = rx.cond(
+        vm["p_fcf"] < 15, "green",
+        rx.cond(vm["p_fcf"] < 25, "amber", "red"),
     )
     return rx.box(
         rx.cond(
             State.f_score_loading,
             rx.hstack(
                 rx.spinner(size="2"),
-                rx.text("F-Score 계산 중...", size="2", color="gray"),
+                rx.text("팩터 계산 중...", size="2", color="gray"),
                 spacing="2", align_items="center",
             ),
-            rx.cond(
-                State.f_score_error != "",
-                rx.hstack(
-                    rx.badge("F-Score", color_scheme="gray", variant="soft"),
-                    rx.text(State.f_score_error, size="1", color="gray"),
-                    spacing="2", align_items="center",
-                ),
-                rx.vstack(
-                    # 헤더: 점수 배지 + 설명
+            rx.vstack(
+                # ── F-Score 섹션 ─────────────────────────────────────────
+                rx.cond(
+                    State.f_score_error != "",
                     rx.hstack(
-                        rx.badge(
-                            "Piotroski F-Score",
-                            color_scheme="purple",
-                            variant="soft",
-                        ),
-                        rx.badge(
-                            State.f_score_score.to_string() + " / 9",
-                            color_scheme=score_color,
-                            variant="solid",
-                            size="2",
-                        ),
-                        rx.cond(
-                            State.f_score_score >= 7,
-                            rx.text("재무 우량 (High)", size="1", color="green"),
-                            rx.cond(
-                                State.f_score_score >= 5,
-                                rx.text("보통 (Mid)", size="1", color="orange"),
-                                rx.text("재무 취약 (Low)", size="1", color="red"),
+                        rx.badge("F-Score", color_scheme="gray", variant="soft"),
+                        rx.text(State.f_score_error, size="1", color="gray"),
+                        spacing="2", align_items="center",
+                    ),
+                    rx.vstack(
+                        rx.hstack(
+                            rx.badge("Piotroski F-Score", color_scheme="purple", variant="soft"),
+                            rx.badge(
+                                State.f_score_score.to_string() + " / 9",
+                                color_scheme=score_color,
+                                variant="solid",
+                                size="2",
                             ),
+                            rx.cond(
+                                State.f_score_score >= 7,
+                                rx.text("재무 우량", size="1", color="green"),
+                                rx.cond(
+                                    State.f_score_score >= 5,
+                                    rx.text("보통", size="1", color="orange"),
+                                    rx.text("재무 취약", size="1", color="red"),
+                                ),
+                            ),
+                            spacing="2", align_items="center",
                         ),
-                        spacing="2",
-                        align_items="center",
+                        rx.grid(
+                            rx.foreach(State.f_score_criteria, _fscore_row),
+                            columns="1", spacing="0", width="100%",
+                        ),
+                        spacing="3", width="100%",
                     ),
-                    # 9개 기준 목록 — 3열 그리드
-                    rx.grid(
-                        rx.foreach(State.f_score_criteria, _fscore_row),
-                        columns="1",
-                        spacing="0",
-                        width="100%",
-                    ),
-                    spacing="3",
-                    width="100%",
                 ),
+                # ── EV/EBITDA · P/FCF 섹션 ──────────────────────────────
+                rx.cond(
+                    vm["ev_ebitda"] != None,
+                    rx.vstack(
+                        rx.hstack(
+                            rx.badge("가치 팩터", color_scheme="indigo", variant="soft"),
+                            rx.text("낮을수록 저평가", size="1", color="gray"),
+                            spacing="2", align_items="center",
+                        ),
+                        rx.hstack(
+                            rx.box(
+                                rx.text("EV/EBITDA", size="1", color="gray", weight="medium"),
+                                rx.hstack(
+                                    rx.text(
+                                        vm["ev_ebitda"].to_string(),
+                                        size="4", weight="bold",
+                                        color=ev_ebitda_color,
+                                    ),
+                                    rx.text("x", size="1", color="gray"),
+                                    spacing="1", align_items="baseline",
+                                ),
+                                rx.text("우량 < 10x", size="1", color="gray"),
+                                padding="12px 16px",
+                                border_radius="6px",
+                                background="var(--indigo-2)",
+                                border="1px solid var(--indigo-4)",
+                                flex="1",
+                            ),
+                            rx.box(
+                                rx.text("P/FCF", size="1", color="gray", weight="medium"),
+                                rx.hstack(
+                                    rx.text(
+                                        vm["p_fcf"].to_string(),
+                                        size="4", weight="bold",
+                                        color=p_fcf_color,
+                                    ),
+                                    rx.text("x", size="1", color="gray"),
+                                    spacing="1", align_items="baseline",
+                                ),
+                                rx.text("우량 < 15x", size="1", color="gray"),
+                                padding="12px 16px",
+                                border_radius="6px",
+                                background="var(--indigo-2)",
+                                border="1px solid var(--indigo-4)",
+                                flex="1",
+                            ),
+                            spacing="3", width="100%",
+                        ),
+                        spacing="2", width="100%",
+                    ),
+                ),
+                spacing="4", width="100%",
             ),
         ),
         padding="16px",

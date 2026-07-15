@@ -1,8 +1,9 @@
 """
-다중 팩터 로더 — Piotroski F-Score (Phase 1)
+다중 팩터 로더 — Piotroski F-Score (Phase 1) + EV/EBITDA · P/FCF (Phase 2)
 
-Piotroski F-Score: 9점 만점 재무 건전성 점수.
+Phase 1: Piotroski F-Score — 9점 만점 재무 건전성 점수.
   수익성(4) + 레버리지·유동성(3) + 영업 효율성(2)
+Phase 2: 가치 팩터 — EV/EBITDA, P/FCF (현금흐름 기반 저평가 측정)
 """
 
 import yfinance as yf
@@ -196,3 +197,115 @@ def load_f_score(symbol: str, market: str = "KOSPI") -> dict:
 
     except Exception as e:
         return {"score": 0, "criteria": [], "error": f"계산 오류: {str(e)[:100]}"}
+
+
+def load_value_metrics(symbol: str, market: str = "KOSPI") -> dict:
+    """
+    EV/EBITDA, P/FCF 계산 (Phase 2).
+
+    Returns:
+        {
+          "ev_ebitda": float | None,
+          "p_fcf":     float | None,
+          "ev":        float | None,   # 억원 or $M
+          "ebitda":    float | None,
+          "fcf":       float | None,
+          "mktcap":    float | None,
+          "currency":  str,
+          "error":     str | None
+        }
+    """
+    is_us  = market not in ("KOSPI", "KOSDAQ")
+    yf_sym = _yf_symbol(symbol, market)
+    cur    = "USD" if is_us else "KRW"
+
+    try:
+        ticker = yf.Ticker(yf_sym)
+        info   = ticker.info or {}
+        fin    = ticker.financials
+        cf     = ticker.cashflow
+        bs     = ticker.balance_sheet
+
+        # ── 시가총액 ────────────────────────────────────────────────────────
+        mktcap = (info.get("marketCap")
+                  or info.get("market_cap"))
+
+        # ── EBITDA ──────────────────────────────────────────────────────────
+        # yfinance info에서 먼저 시도 (이미 계산된 값)
+        ebitda = info.get("ebitda")
+        if ebitda is None and fin is not None and not fin.empty:
+            ebit  = _get(fin, ["EBIT", "Operating Income"])
+            da    = _get(fin, ["Reconciled Depreciation",
+                                "Depreciation And Amortization",
+                                "Depreciation Amortization Depletion"])
+            if ebit is not None and da is not None:
+                ebitda = ebit + da
+
+        # ── FCF (Free Cash Flow) ─────────────────────────────────────────────
+        # FCF = OCF - CapEx
+        fcf = info.get("freeCashflow")
+        if fcf is None and cf is not None and not cf.empty:
+            ocf   = _get(cf, ["Operating Cash Flow",
+                               "Cash From Operating Activities",
+                               "Total Cash From Operating Activities"])
+            capex = _get(cf, ["Capital Expenditure",
+                               "Purchase Of PPE",
+                               "Capital Expenditures"])
+            if ocf is not None and capex is not None:
+                fcf = ocf + capex   # capex는 음수로 보고되는 경우가 많음
+                if fcf > ocf:       # capex가 양수로 보고된 경우
+                    fcf = ocf - capex
+
+        # ── 부채·현금 (EV 계산용) ────────────────────────────────────────────
+        total_debt = info.get("totalDebt")
+        cash       = info.get("totalCash") or info.get("cash")
+
+        if total_debt is None and bs is not None and not bs.empty:
+            lt  = _get(bs, ["Long Term Debt", "Long-Term Debt"])
+            st  = _get(bs, ["Current Debt", "Short Term Debt",
+                             "Current Portion Of Long Term Debt"])
+            total_debt = (lt or 0) + (st or 0)
+
+        if cash is None and bs is not None and not bs.empty:
+            cash = _get(bs, ["Cash And Cash Equivalents",
+                              "Cash Cash Equivalents And Short Term Investments"])
+
+        # ── EV = 시가총액 + 부채 - 현금 ────────────────────────────────────
+        ev = None
+        if mktcap is not None:
+            ev = mktcap + (total_debt or 0) - (cash or 0)
+
+        # ── 멀티플 계산 ─────────────────────────────────────────────────────
+        ev_ebitda = None
+        if ev is not None and ebitda and ebitda > 0:
+            ev_ebitda = round(ev / ebitda, 1)
+
+        p_fcf = None
+        if mktcap is not None and fcf and fcf > 0:
+            p_fcf = round(mktcap / fcf, 1)
+
+        # ── 표시용 단위 변환 ─────────────────────────────────────────────────
+        def _fmt(v):
+            if v is None:
+                return None
+            if is_us:
+                return round(v / 1e9, 2)   # $B
+            return round(v / 1e8, 0)       # 억원
+
+        return {
+            "ev_ebitda": ev_ebitda,
+            "p_fcf":     p_fcf,
+            "ev":        _fmt(ev),
+            "ebitda":    _fmt(ebitda),
+            "fcf":       _fmt(fcf),
+            "mktcap":    _fmt(mktcap),
+            "currency":  cur,
+            "error":     None,
+        }
+
+    except Exception as e:
+        return {
+            "ev_ebitda": None, "p_fcf": None, "ev": None,
+            "ebitda": None, "fcf": None, "mktcap": None,
+            "currency": cur, "error": f"계산 오류: {str(e)[:100]}",
+        }
