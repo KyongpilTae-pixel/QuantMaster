@@ -250,7 +250,7 @@ class State(rx.State):
     f_score_score: int = -1                  # -1 = 미로드, 0-9 = 점수
     f_score_error: str = ""
     f_score_criteria: List[dict] = []        # [{name, group, passed, na, value}]
-    value_metrics: dict = {}                 # {ev_ebitda, p_fcf, ev, ebitda, fcf, mktcap, currency, error}
+    value_metrics: dict = {"ev_ebitda_green": False, "ev_ebitda_amber": False, "p_fcf_green": False, "p_fcf_amber": False}
 
     # Magic Formula 스캔 (Phase 3)
     magic_results: List[dict] = []
@@ -966,11 +966,18 @@ class State(rx.State):
         self.tracker_updating = True
         self.tracker_status   = "현재가 업데이트 중..."
         yield
-        import asyncio
+        import asyncio, time
         try:
             from utils.scan_results_tracker import update_pick_prices
             _t = asyncio.create_task(asyncio.to_thread(update_pick_prices))
+            _deadline = time.monotonic() + 120  # 최대 2분
+            n = None
+            timed_out = False
             while not _t.done():
+                if time.monotonic() > _deadline:
+                    _t.cancel()
+                    timed_out = True
+                    break
                 try:
                     n = await asyncio.wait_for(asyncio.shield(_t), timeout=0.5)
                     break
@@ -978,7 +985,10 @@ class State(rx.State):
                     yield
             else:
                 n = _t.result()
-            self.tracker_status = f"완료 — {n}건 업데이트"
+            if timed_out:
+                self.tracker_status = "시간 초과 (2분)"
+            else:
+                self.tracker_status = f"완료 — {n}건 업데이트"
         except Exception as e:
             self.tracker_status = f"오류: {e}"
         finally:
@@ -990,17 +1000,23 @@ class State(rx.State):
         self.tracker_updating = True
         self.tracker_status   = "스캔 실행 중... (3~5분 소요)"
         yield
-        import asyncio
+        import asyncio, time
         try:
             from utils.scan_results_tracker import save_scan_picks
             from utils.pullback_scanner import scan_pullback_stocks
             from scanner import QuantScanner
             total = 0
+            _global_deadline = time.monotonic() + 600  # 전체 최대 10분
             for mkt in ("KOSPI", "KOSDAQ", "SP500"):
+                if time.monotonic() > _global_deadline:
+                    break
                 # 퀀트
                 try:
                     _tq = asyncio.create_task(asyncio.to_thread(lambda m=mkt: QuantScanner(market=m).scan()))
+                    r = None
                     while not _tq.done():
+                        if time.monotonic() > _global_deadline:
+                            _tq.cancel(); break
                         try:
                             r = await asyncio.wait_for(asyncio.shield(_tq), timeout=0.5)
                             break
@@ -1019,7 +1035,10 @@ class State(rx.State):
                         3_000 if mkt != "SP500" else 0,
                         -5.0, 45.0, 0.0, 30, 150, 90,
                     ))
+                    r2 = None
                     while not _tp.done():
+                        if time.monotonic() > _global_deadline:
+                            _tp.cancel(); break
                         try:
                             r2 = await asyncio.wait_for(asyncio.shield(_tp), timeout=0.5)
                             break
@@ -1847,7 +1866,7 @@ class State(rx.State):
     async def load_investor_trading(self):
         """외국인·기관 순매수 데이터 로드 (KR 전용)."""
         import asyncio
-        if self.is_us_stock:
+        if self.selected_currency == "USD":
             self.investor_error = "미국 종목은 외국인·기관 데이터를 지원하지 않습니다."
             return
         symbol = self.selected_symbol
@@ -1860,8 +1879,9 @@ class State(rx.State):
         yield
         try:
             from utils.data_loader import QuantDataLoader
-            result = await asyncio.to_thread(
-                QuantDataLoader().get_investor_trading, symbol, 20
+            result = await asyncio.wait_for(
+                asyncio.to_thread(QuantDataLoader().get_investor_trading, symbol, 20),
+                timeout=20.0,
             )
             if result.get("error"):
                 self.investor_error = result["error"]
@@ -1968,7 +1988,7 @@ class State(rx.State):
             self.f_score_score = -1
             self.f_score_error = ""
             self.f_score_criteria = []
-            self.value_metrics = {}
+            self.value_metrics = {"ev_ebitda_green": False, "ev_ebitda_amber": False, "p_fcf_green": False, "p_fcf_amber": False}
             self.active_tab = "analysis"
             yield
 
@@ -2094,6 +2114,10 @@ class State(rx.State):
                         yield
                 else:
                     vm = _t_vm.result()
+                vm["ev_ebitda_green"] = (vm.get("ev_ebitda") or 999) < 10
+                vm["ev_ebitda_amber"] = 10 <= (vm.get("ev_ebitda") or 999) < 20
+                vm["p_fcf_green"]     = (vm.get("p_fcf") or 999) < 15
+                vm["p_fcf_amber"]     = 15 <= (vm.get("p_fcf") or 999) < 25
                 self.value_metrics = vm
             except Exception as e:
                 self.status_msg = f"차트 로드 오류: {e}"
@@ -3763,7 +3787,6 @@ def scanner_tab() -> rx.Component:
                 ),
                 ),
             ),
-                ),
             ),  # rx.cond(dividend)
             ),  # rx.cond(mean_reversion)
             ),  # rx.cond(stock_momentum)
@@ -5486,12 +5509,12 @@ def f_score_panel() -> rx.Component:
     )
     vm = State.value_metrics
     ev_ebitda_color = rx.cond(
-        vm["ev_ebitda"] < 10, "green",
-        rx.cond(vm["ev_ebitda"] < 20, "amber", "red"),
+        vm["ev_ebitda_green"], "green",
+        rx.cond(vm["ev_ebitda_amber"], "amber", "red"),
     )
     p_fcf_color = rx.cond(
-        vm["p_fcf"] < 15, "green",
-        rx.cond(vm["p_fcf"] < 25, "amber", "red"),
+        vm["p_fcf_green"], "green",
+        rx.cond(vm["p_fcf_amber"], "amber", "red"),
     )
     return rx.box(
         rx.cond(
@@ -6084,7 +6107,7 @@ def analysis_tab() -> rx.Component:
                 ),
                 # 외국인·기관 순매수 (KR 전용)
                 rx.cond(
-                    ~State.is_us_stock,
+                    State.selected_currency != "USD",
                     investor_trading_panel(),
                 ),
                 rx.button(

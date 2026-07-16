@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import concurrent.futures
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+import FinanceDataReader as fdr
 import pandas as pd
 import yfinance as yf
 
@@ -93,10 +95,10 @@ def _scan_kr_dividend(
     rows: list[dict] = []
     for _, row in df.iterrows():
         per = row.get("PER")
-        # 간이 배당성향: 배당금/EPS ≈ (div_yield*price) / (price/PER) = div_yield*PER/100
+        # 간이 배당성향%: 배당금/EPS ≈ (div_yield%*price/100) / (price/PER) = div_yield%*PER/100*100 = div_yield%*PER
         payout = None
         if per and per > 0:
-            payout = round(float(row["DivYield"]) * float(per) / 100, 1)
+            payout = round(float(row["DivYield"]) * float(per), 1)
 
         mktcap_eok = row.get("MarketCap") or 0
         rows.append({
@@ -119,20 +121,26 @@ def _scan_us_dividend(
     max_payout_pct: float,
     top_n: int,
 ) -> list[dict]:
-    import FinanceDataReader as fdr
+    # fdr.StockListing 타임아웃 처리
     try:
-        df = fdr.StockListing("S&P500")
+        with ThreadPoolExecutor(max_workers=1) as _ex:
+            _f = _ex.submit(fdr.StockListing, "S&P500")
+            df = _f.result(timeout=15)
         symbols = df["Symbol"].dropna().tolist()
     except Exception:
         return []
 
-    # 최대 200개 샘플 병렬 수집
+    # 최대 200개 샘플 병렬 수집 — 전체 배치 30초 상한
     sample = symbols[:200]
     results: list[dict] = []
     with ThreadPoolExecutor(max_workers=8) as ex:
         futures = {ex.submit(_us_dividend_info, sym): sym for sym in sample}
-        for fut in as_completed(futures):
-            r = fut.result()
+        done, _ = concurrent.futures.wait(futures, timeout=30)
+        for fut in done:
+            try:
+                r = fut.result()
+            except Exception:
+                continue
             if r and r["div_yield"] >= min_yield_pct:
                 if r["payout_ratio"] is None or r["payout_ratio"] <= max_payout_pct:
                     results.append(r)
