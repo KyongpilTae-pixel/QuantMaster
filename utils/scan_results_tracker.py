@@ -30,9 +30,10 @@ _SCAN_MODE_LABELS = {
 # ---------------------------------------------------------------------------
 
 def _connect() -> sqlite3.Connection:
-    conn = sqlite3.connect(str(DB_PATH))
+    conn = sqlite3.connect(str(DB_PATH), timeout=5)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("PRAGMA busy_timeout = 3000")
     return conn
 
 
@@ -139,19 +140,21 @@ def _fetch_price(args: tuple) -> tuple:
 
 
 def _trading_days_between(date_str: str) -> int:
-    """scan_date 에서 오늘까지 거래일 수 (주말 제외 대략값)."""
+    """scan_date 에서 오늘까지 거래일 수 (주말 제외 근사값)."""
     try:
-        start = datetime.strptime(date_str, "%Y-%m-%d")
-        end   = datetime.today()
-        days  = 0
-        cur   = start
-        while cur < end:
-            cur += timedelta(days=1)
-            if cur.weekday() < 5:  # 월~금
-                days += 1
-        return days
+        import numpy as np
+        start = datetime.strptime(date_str, "%Y-%m-%d").date()
+        end   = datetime.today().date()
+        if end <= start:
+            return 0
+        return int(np.busday_count(start, end))
     except Exception:
-        return 0
+        try:
+            # numpy 없을 때 캘린더일 × 5/7 근사
+            cal = (datetime.today().date() - datetime.strptime(date_str, "%Y-%m-%d").date()).days
+            return max(0, int(cal * 5 / 7))
+        except Exception:
+            return 0
 
 
 def update_pick_prices() -> int:

@@ -872,7 +872,7 @@ class State(rx.State):
         elif tab == "report":
             self.load_report_files()
         elif tab == "tracker":
-            self.load_tracker_picks()
+            return State.load_tracker_picks
 
     def load_report_files(self):
         """quantReports/ 폴더의 HTML 파일 목록 로드."""
@@ -936,12 +936,16 @@ class State(rx.State):
                 self.report_generating = False
                 self.load_report_files()
 
-    def load_tracker_picks(self):
-        """성과 추적 종목 로드 (필터 적용)."""
+    async def load_tracker_picks(self):
+        """성과 추적 종목 로드 (필터 적용) — 비동기, DB 블로킹 방지."""
+        import asyncio
         from utils.scan_results_tracker import load_tracked_picks, get_tracker_summary
         mode   = None if self.tracker_filter_mode   == "all" else self.tracker_filter_mode
         market = None if self.tracker_filter_market == "all" else self.tracker_filter_market
-        picks  = load_tracked_picks(days=30, scan_mode=mode, market=market)
+        try:
+            picks = await asyncio.to_thread(load_tracked_picks, 30, mode, market)
+        except Exception:
+            picks = []
         self.tracker_picks   = picks
         self.tracker_summary = get_tracker_summary(picks)
 
@@ -949,13 +953,13 @@ class State(rx.State):
         if v == self.tracker_filter_mode:
             return
         self.tracker_filter_mode = v
-        self.load_tracker_picks()
+        return State.load_tracker_picks
 
     def set_tracker_filter_market(self, v: str):
         if v == self.tracker_filter_market:
             return
         self.tracker_filter_market = v
-        self.load_tracker_picks()
+        return State.load_tracker_picks
 
     async def update_tracker_prices(self):
         """활성 종목 현재가 일괄 업데이트."""
