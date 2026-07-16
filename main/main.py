@@ -937,11 +937,12 @@ class State(rx.State):
                 self.load_report_files()
 
     async def load_tracker_picks(self):
-        """성과 추적 종목 로드 (필터 적용) — 비동기, DB 블로킹 방지."""
+        """성과 추적 종목 로드 (필터 적용) — async generator: yield로 Reflex 상태 락 해제 후 DB 조회."""
         import asyncio
         from utils.scan_results_tracker import load_tracked_picks, get_tracker_summary
         mode   = None if self.tracker_filter_mode   == "all" else self.tracker_filter_mode
         market = None if self.tracker_filter_market == "all" else self.tracker_filter_market
+        yield  # 상태 락 해제 → 다른 이벤트(탭 전환 등) 처리 가능
         try:
             picks = await asyncio.to_thread(load_tracked_picks, 30, mode, market)
         except Exception:
