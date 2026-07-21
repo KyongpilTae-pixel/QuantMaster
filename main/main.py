@@ -2558,6 +2558,360 @@ class State(rx.State):
 })();
 """)
 
+    @rx.event(background=True)
+    async def run_pullback_bg(self):
+        """눌림목 스캔 — background task (state 락 점유 없음)."""
+        import asyncio
+        from utils.pullback_scanner import scan_pullback_stocks
+
+        async with self:
+            mkt_map    = {"SP500": "SP500", "NASDAQ": "SP500",
+                          "KR-ETF": "KOSPI", "US-ETF": "SP500"}
+            mkt        = mkt_map.get(self.market, self.market)
+            min_mktcap = self.pullback_min_mktcap
+            min_dip    = self.pullback_min_dip[0]
+            max_rsi    = self.pullback_max_rsi[0]
+            self.is_scanning         = True
+            self.scan_stop_requested = False
+            self.pullback_results    = []
+            self.scan_warning        = ""
+            self.status_msg          = f"{mkt} 눌림목 종목 탐색 중... (약 1~2분 소요)"
+
+        try:
+            raw = await asyncio.to_thread(
+                scan_pullback_stocks, mkt, min_mktcap, min_dip, max_rsi, 0.0, 30, 150, 90
+            )
+            async with self:
+                self.pullback_results = list(raw)
+                warn = getattr(raw, "warning", "")
+                if warn:
+                    self.scan_warning = warn
+                cnt = len(self.pullback_results)
+                self.status_msg = (
+                    f"눌림목 종목 {cnt}개 발굴 완료" if cnt
+                    else "조건을 만족하는 종목이 없습니다. 낙폭·RSI 조건을 완화해보세요."
+                )
+        except Exception as e:
+            async with self:
+                self.status_msg = f"오류: {e}"
+        finally:
+            async with self:
+                self.is_scanning = False
+
+    @rx.event(background=True)
+    async def run_trend_bg(self):
+        """추세추종 스캔 — background task (진행 상황 폴링 포함)."""
+        import asyncio
+        from utils.trend_scanner import scan_trend_following
+
+        async with self:
+            mkt_map     = {"KR-ETF": "KOSPI", "US-ETF": "SP500"}
+            mkt         = mkt_map.get(self.market, self.market)
+            filter_mode = self.trend_filter_mode
+            min_mktcap  = float(self.trend_min_mktcap)
+            mode_label  = {"relative": "RS90+", "absolute": "절대강도", "both": "RS90+·절대강도"}
+            self.is_scanning         = True
+            self.scan_stop_requested = False
+            self.trend_results       = []
+            self.trend_progress      = ""
+            self.scan_warning        = ""
+            self.status_msg = (
+                f"{mkt} 추세추종 종목 탐색 중 ({mode_label.get(filter_mode, '')}) "
+                f"... (약 2~4분 소요)"
+            )
+
+        done_ref  = [0]
+        total_ref = [0]
+
+        def _progress(done, total):
+            done_ref[0]  = done
+            total_ref[0] = total
+
+        try:
+            scan_task = asyncio.create_task(asyncio.to_thread(
+                scan_trend_following, mkt, filter_mode, min_mktcap, 30, 150, _progress
+            ))
+            while not scan_task.done():
+                await asyncio.sleep(0.5)
+                async with self:
+                    d, t = done_ref[0], total_ref[0]
+                    if t > 0:
+                        self.trend_progress = f"{d}/{t}개 수집 중..."
+                    if self.scan_stop_requested:
+                        scan_task.cancel()
+                        self.scan_stop_requested = False
+                        self.status_msg          = "스캔이 중단되었습니다."
+                        return
+            raw = scan_task.result()
+            async with self:
+                self.trend_results = list(raw)
+                warn = getattr(raw, "warning", "")
+                if warn:
+                    self.scan_warning = warn
+                cnt = len(self.trend_results)
+                self.status_msg = (
+                    f"추세추종 신호 {cnt}개 발굴 완료" if cnt
+                    else "신호 없음 — 필터 조건(RS90/절대강도)을 완화하거나 시장을 바꿔보세요."
+                )
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            async with self:
+                self.status_msg = f"오류: {e}"
+        finally:
+            async with self:
+                self.is_scanning    = False
+                self.trend_progress = ""
+
+    @rx.event(background=True)
+    async def run_defensive_bg(self):
+        """하락방어 스캔 — background task."""
+        import asyncio
+        from utils.defensive_scanner import scan_defensive_stocks
+
+        async with self:
+            mkt        = self.market if self.market in ("KOSPI", "KOSDAQ") else "KOSPI"
+            period     = self.defensive_period
+            max_beta   = self.defensive_max_beta[0]
+            min_mktcap = self.defensive_min_mktcap
+            self.is_scanning         = True
+            self.scan_stop_requested = False
+            self.defensive_results   = []
+            self.status_msg          = f"{mkt} 하락방어 종목 분석 중... (약 1~2분 소요)"
+
+        try:
+            raw = await asyncio.to_thread(
+                scan_defensive_stocks, mkt, period, max_beta, min_mktcap, 30
+            )
+            async with self:
+                self.defensive_results = raw
+                cnt = len(raw)
+                self.status_msg = (
+                    f"하락방어 종목 {cnt}개 발굴 완료" if cnt
+                    else "조건을 만족하는 종목이 없습니다."
+                )
+        except Exception as e:
+            async with self:
+                self.status_msg = f"오류: {e}"
+        finally:
+            async with self:
+                self.is_scanning = False
+
+    @rx.event(background=True)
+    async def run_stock_momentum_bg(self):
+        """종목 모멘텀 스캔 — background task."""
+        import asyncio
+        from utils.stock_scanner import scan_stock_momentum
+
+        async with self:
+            mkt_map    = {"SP500": "SP500", "NASDAQ": "SP500",
+                          "KR-ETF": "KOSPI", "US-ETF": "SP500"}
+            mkt        = mkt_map.get(self.market, self.market)
+            if mkt not in ("KOSPI", "KOSDAQ", "SP500"):
+                mkt = "KOSPI"
+            period     = self.stock_momentum_period
+            min_mktcap = self.stock_momentum_mktcap
+            period_lbl = {"1W": "1주", "1M": "1개월", "2M": "2개월", "3M": "3개월"}.get(period, "")
+            self.is_scanning            = True
+            self.scan_stop_requested    = False
+            self.stock_momentum_results = []
+            self.scan_warning           = ""
+            self.status_msg             = f"{mkt} {period_lbl} 모멘텀 스캔 중... (약 1~2분 소요)"
+
+        try:
+            raw = await asyncio.to_thread(
+                scan_stock_momentum, mkt, period, min_mktcap, 30
+            )
+            async with self:
+                self.stock_momentum_results = list(raw)
+                self.scan_warning           = getattr(raw, "warning", "")
+                cnt = len(self.stock_momentum_results)
+                self.status_msg = (
+                    f"모멘텀 {cnt}개 종목 발굴 완료" if cnt
+                    else "조건을 만족하는 종목이 없습니다."
+                )
+        except Exception as e:
+            async with self:
+                self.status_msg = f"오류: {e}"
+        finally:
+            async with self:
+                self.is_scanning = False
+
+    @rx.event(background=True)
+    async def run_magic_formula_bg(self):
+        """Magic Formula 스캔 — background task."""
+        import asyncio
+        from utils.magic_formula_scanner import scan_magic_formula
+
+        async with self:
+            mkt_map    = {"KR-ETF": "KOSPI", "US-ETF": "SP500", "NASDAQ": "SP500"}
+            mkt        = mkt_map.get(self.market, self.market)
+            if mkt not in ("KOSPI", "KOSDAQ", "SP500"):
+                mkt = "KOSPI"
+            min_mktcap = self.magic_min_mktcap
+            self.is_scanning         = True
+            self.scan_stop_requested = False
+            self.magic_results       = []
+            self.scan_warning        = ""
+            self.status_msg          = f"{mkt} Magic Formula 스캔 중... (약 2~3분 소요)"
+
+        try:
+            res = await asyncio.to_thread(
+                scan_magic_formula, mkt, min_mktcap, 30, 150, 120
+            )
+            async with self:
+                self.magic_results = res.get("results", [])
+                self.scan_warning  = res.get("warning", "")
+                cnt     = len(self.magic_results)
+                scanned = res.get("count_scanned", 0)
+                self.status_msg = (
+                    f"Magic Formula — {cnt}개 종목 ({scanned}개 분석 완료)" if cnt
+                    else "조건 충족 종목 없음. 최소 시총을 낮춰보세요."
+                )
+        except Exception as e:
+            async with self:
+                self.status_msg = f"오류: {e}"
+        finally:
+            async with self:
+                self.is_scanning = False
+
+    @rx.event(background=True)
+    async def run_dividend_bg(self):
+        """배당 스캔 — background task (기존 단일 await 방식 개선: state 락 해제)."""
+        import asyncio
+        from utils.dividend_scanner import scan_dividend_stocks
+
+        async with self:
+            mkt_map   = {"KR-ETF": "KOSPI", "US-ETF": "SP500", "NASDAQ": "SP500"}
+            mkt       = mkt_map.get(self.market, self.market)
+            if mkt not in ("KOSPI", "KOSDAQ", "SP500"):
+                mkt = "KOSPI"
+            min_yield  = float(self.dividend_min_yield[0])
+            self.is_scanning      = True
+            self.dividend_results = []
+            self.status_msg       = f"{mkt} 고배당 종목 스캔 중..."
+
+        try:
+            raw = await asyncio.to_thread(
+                scan_dividend_stocks, mkt, min_yield, 70.0, 30
+            )
+            async with self:
+                self.dividend_results = list(raw)
+                cnt = len(self.dividend_results)
+                self.status_msg = (
+                    f"배당 스크리닝 완료 — {cnt}개 종목" if cnt
+                    else "조건 충족 종목이 없습니다. 최소 배당수익률을 낮춰보세요."
+                )
+        except Exception as e:
+            async with self:
+                self.status_msg = f"오류: {e}"
+        finally:
+            async with self:
+                self.is_scanning = False
+
+    @rx.event(background=True)
+    async def run_quant_bg(self):
+        """퀀트 스캔 — background task."""
+        import asyncio, math
+
+        async with self:
+            pbr_limit = self.pbr_limit[0]
+            vwap      = int(self.vwap_period)
+            market    = self.market
+            min_cap   = self.min_cap_label
+            self.is_scanning         = True
+            self.scan_stop_requested = False
+            self.status_msg          = "시장 데이터 수집 중..."
+            self.scan_results        = []
+
+        try:
+            scanner = QuantScanner()
+            results = await asyncio.to_thread(
+                scanner.run_advanced_scan, pbr_limit, vwap, 10, market, min_cap
+            )
+            scan_list = [
+                ScanResult(
+                    name=str(row["Name"]),
+                    symbol=str(row["Symbol"]),
+                    market_raw=str(row.get("Market", "KOSPI")),
+                    pbr=float(row["PBR"]),
+                    psr=float(row["PSR"]) if not math.isnan(
+                        float(row.get("PSR", float("nan")))
+                    ) else 0.0,
+                    mfi=float(row["MFI"]),
+                    obv_ok=bool(row["OBV_OK"]),
+                    new_52w_high=bool(row.get("New52WHigh", False)),
+                    vwap_price=float(row["VWAP_Price"]),
+                    close=float(row["Close"]),
+                    vwap_gap=float(row["VWAP_Gap"]),
+                    condition=str(row["Condition"]),
+                    applied_pbr=float(row["Applied_PBR"]),
+                    applied_gpa=float(row["Applied_GPA"]),
+                    applied_mfi=int(row["Applied_MFI"]),
+                    applied_obv=bool(row["Applied_OBV"]),
+                    applied_min_cap=str(row.get("Applied_MinCap", "전체")),
+                    currency=str(row.get("Currency", "KRW")),
+                    market_cap_str=str(row.get("MarketCap_Str", "-")),
+                    div_yield=str(row.get("DivYield", "-")),
+                )
+                for _, row in results.iterrows()
+            ]
+            async with self:
+                self.scan_results = scan_list
+                count = len(scan_list)
+                self.status_msg = (
+                    f"{count}개 종목 발굴 완료" if count
+                    else "조건을 만족하는 종목이 없습니다."
+                )
+        except Exception as e:
+            async with self:
+                self.status_msg = f"오류: {e}"
+        finally:
+            async with self:
+                self.is_scanning = False
+
+    @rx.event(background=True)
+    async def run_mean_reversion_bg(self):
+        """역발상 과매도 스캔 — background task.
+
+        @rx.event(background=True): state 락을 점유하지 않고 실행.
+        async with self: 블록에서만 순간적으로 락 획득 → 다른 탭 자유롭게 전환 가능.
+        """
+        import asyncio
+        from utils.mean_reversion_scanner import scan_mean_reversion
+
+        async with self:
+            mkt_map = {"KR-ETF": "KOSPI", "US-ETF": "SP500", "NASDAQ": "SP500"}
+            mkt        = mkt_map.get(self.market, self.market)
+            if mkt not in ("KOSPI", "KOSDAQ", "SP500"):
+                mkt = "KOSPI"
+            min_mktcap = self.mr_min_mktcap
+            max_rsi    = self.mr_rsi_max[0]
+            self.is_scanning            = True
+            self.scan_stop_requested    = False
+            self.mean_reversion_results = []
+            self.scan_warning           = ""
+            self.status_msg             = f"{mkt} 역발상 과매도 종목 탐색 중... (약 1~2분 소요)"
+
+        try:
+            raw = await asyncio.to_thread(
+                scan_mean_reversion, mkt, min_mktcap, max_rsi, 30, 150, 90
+            )
+            async with self:
+                self.mean_reversion_results = list(raw)
+                self.scan_warning           = getattr(raw, "warning", "")
+                cnt = len(self.mean_reversion_results)
+                self.status_msg = (
+                    f"역발상 후보 {cnt}개 종목 발굴 완료" if cnt
+                    else "RSI+BB 조건을 만족하는 종목이 없습니다. RSI 임계값을 높여보세요."
+                )
+        except Exception as e:
+            async with self:
+                self.status_msg = f"오류: {e}"
+        finally:
+            async with self:
+                self.is_scanning = False
+
     async def run_scan(self):
         if self.scan_mode == "whale":
             # ── 세력 탐지 스캔 (단계별 점진 완화 + 타임아웃) ────────────
@@ -2735,422 +3089,43 @@ class State(rx.State):
             yield
             return
 
-        # ── 눌림목 스캔 ──────────────────────────────────────────────────
+        # ── 눌림목 스캔 ── background task로 위임
         if self.scan_mode == "pullback":
-            from utils.pullback_scanner import scan_pullback_stocks
-            self.is_scanning = True
-            self.scan_stop_requested = False
-            self.pullback_results = []
-            self.scan_warning = ""
-            mkt_map = {"SP500": "SP500", "NASDAQ": "SP500",
-                       "KR-ETF": "KOSPI", "US-ETF": "SP500"}
-            mkt = mkt_map.get(self.market, self.market)
-            self.status_msg = f"{mkt} 눌림목 종목 탐색 중... (약 1~2분 소요)"
-            yield
-            try:
-                _task = asyncio.create_task(asyncio.to_thread(
-                    scan_pullback_stocks,
-                    mkt,
-                    self.pullback_min_mktcap,
-                    self.pullback_min_dip[0],
-                    self.pullback_max_rsi[0],
-                    0.0,
-                    30,
-                    150,
-                    90,
-                ))
-                while not _task.done():
-                    try:
-                        raw = await asyncio.wait_for(asyncio.shield(_task), timeout=0.5)
-                        break
-                    except asyncio.TimeoutError:
-                        if self.scan_stop_requested:
-                            self.status_msg = "스캔이 중단되었습니다."
-                            self.scan_stop_requested = False
-                            yield
-                            return
-                        yield
-                else:
-                    raw = _task.result()
-                self.pullback_results = list(raw)
-                warn = getattr(raw, "warning", "")
-                if warn:
-                    self.scan_warning = warn
-                cnt = len(raw)
-                self.status_msg = (
-                    f"눌림목 종목 {cnt}개 발굴 완료" if cnt
-                    else "조건을 만족하는 종목이 없습니다. 낙폭·RSI 조건을 완화해보세요."
-                )
-            except Exception as e:
-                self.status_msg = f"오류: {e}"
-            finally:
-                self.is_scanning = False
-            yield
+            yield State.run_pullback_bg
             return
 
-        # ── 추세추종 스캔 ────────────────────────────────────────────────
+        # ── 추세추종 스캔 ── background task로 위임
         if self.scan_mode == "trend":
-            from utils.trend_scanner import scan_trend_following
-            self.is_scanning   = True
-            self.scan_stop_requested = False
-            self.trend_results = []
-            self.trend_progress = ""
-            self.scan_warning  = ""
-            mkt_map = {"KR-ETF": "KOSPI", "US-ETF": "SP500"}
-            mkt = mkt_map.get(self.market, self.market)
-            mode_label = {"relative": "RS90+", "absolute": "절대강도", "both": "RS90+·절대강도"}
-            self.status_msg = (
-                f"{mkt} 추세추종 종목 탐색 중 ({mode_label.get(self.trend_filter_mode, '')}) "
-                f"... (약 2~4분 소요)"
-            )
-            yield
-
-            done_ref = [0]
-            total_ref = [0]
-
-            def _progress(done, total):
-                done_ref[0]  = done
-                total_ref[0] = total
-
-            try:
-                # CLOSE_WAIT 방지: 최대 600초 타임아웃 + 주기적 yield(heartbeat)
-                scan_task = asyncio.create_task(asyncio.to_thread(
-                    scan_trend_following,
-                    mkt,
-                    self.trend_filter_mode,
-                    float(self.trend_min_mktcap),
-                    30,
-                    150,
-                    _progress,
-                ))
-                while not scan_task.done():
-                    try:
-                        raw = await asyncio.wait_for(asyncio.shield(scan_task), timeout=0.5)
-                        break
-                    except asyncio.TimeoutError:
-                        d, t = done_ref[0], total_ref[0]
-                        if t > 0:
-                            self.trend_progress = f"{d}/{t}개 수집 중..."
-                        if self.scan_stop_requested:
-                            self.status_msg = "스캔이 중단되었습니다."
-                            self.scan_stop_requested = False
-                            yield
-                            return
-                        yield
-                else:
-                    raw = scan_task.result()
-                self.trend_results = list(raw)
-                warn = getattr(raw, "warning", "")
-                if warn:
-                    self.scan_warning = warn
-                cnt = len(raw)
-                self.status_msg = (
-                    f"추세추종 신호 {cnt}개 발굴 완료" if cnt
-                    else "신호 없음 — 필터 조건(RS90/절대강도)을 완화하거나 시장을 바꿔보세요."
-                )
-            except Exception as e:
-                self.status_msg = f"오류: {e}"
-            finally:
-                self.is_scanning   = False
-                self.trend_progress = ""
-            yield
+            yield State.run_trend_bg
             return
 
-        # ── 하락방어 스캔 ────────────────────────────────────────────────
+        # ── 하락방어 스캔 ── background task로 위임
         if self.scan_mode == "defensive":
-            from utils.defensive_scanner import scan_defensive_stocks
-            self.is_scanning = True
-            self.scan_stop_requested = False
-            self.defensive_results = []
-            mkt = self.market if self.market in ("KOSPI", "KOSDAQ") else "KOSPI"
-            self.status_msg = f"{mkt} 하락방어 종목 분석 중... (약 1~2분 소요)"
-            yield
-            try:
-                _task = asyncio.create_task(asyncio.to_thread(
-                    scan_defensive_stocks,
-                    mkt,
-                    self.defensive_period,
-                    self.defensive_max_beta[0],
-                    self.defensive_min_mktcap,
-                    30,
-                ))
-                while not _task.done():
-                    try:
-                        raw = await asyncio.wait_for(asyncio.shield(_task), timeout=0.5)
-                        break
-                    except asyncio.TimeoutError:
-                        if self.scan_stop_requested:
-                            self.status_msg = "스캔이 중단되었습니다."
-                            self.scan_stop_requested = False
-                            yield
-                            return
-                        yield
-                else:
-                    raw = _task.result()
-                self.defensive_results = raw
-                cnt = len(raw)
-                self.status_msg = (
-                    f"하락방어 종목 {cnt}개 발굴 완료" if cnt else "조건을 만족하는 종목이 없습니다."
-                )
-            except Exception as e:
-                self.status_msg = f"오류: {e}"
-            finally:
-                self.is_scanning = False
-            yield
+            yield State.run_defensive_bg
             return
 
-        # ── 종목 모멘텀 스캔 ─────────────────────────────────────────────
+        # ── 종목 모멘텀 스캔 ── background task로 위임
         if self.scan_mode == "stock_momentum":
-            from utils.stock_scanner import scan_stock_momentum
-            self.is_scanning = True
-            self.scan_stop_requested = False
-            self.stock_momentum_results = []
-            self.scan_warning = ""
-            mkt_map = {
-                "SP500": "SP500", "NASDAQ": "SP500",
-                "KR-ETF": "KOSPI", "US-ETF": "SP500",
-            }
-            mkt = mkt_map.get(self.market, self.market)
-            if mkt not in ("KOSPI", "KOSDAQ", "SP500"):
-                mkt = "KOSPI"
-            period_lbl = {"1W": "1주", "1M": "1개월", "2M": "2개월", "3M": "3개월"}.get(
-                self.stock_momentum_period, ""
-            )
-            self.status_msg = f"{mkt} {period_lbl} 모멘텀 스캔 중... (약 1~2분 소요)"
-            yield
-            try:
-                _task = asyncio.create_task(asyncio.to_thread(
-                    scan_stock_momentum,
-                    mkt,
-                    self.stock_momentum_period,
-                    self.stock_momentum_mktcap,
-                    30,
-                ))
-                while not _task.done():
-                    try:
-                        raw = await asyncio.wait_for(asyncio.shield(_task), timeout=0.5)
-                        break
-                    except asyncio.TimeoutError:
-                        if self.scan_stop_requested:
-                            self.status_msg = "스캔이 중단되었습니다."
-                            self.scan_stop_requested = False
-                            yield
-                            return
-                        yield
-                else:
-                    raw = _task.result()
-                self.stock_momentum_results = list(raw)
-                self.scan_warning = getattr(raw, "warning", "")
-                cnt = len(raw)
-                self.status_msg = (
-                    f"모멘텀 {cnt}개 종목 발굴 완료" if cnt
-                    else "조건을 만족하는 종목이 없습니다."
-                )
-            except Exception as e:
-                self.status_msg = f"오류: {e}"
-            finally:
-                self.is_scanning = False
-            yield
+            yield State.run_stock_momentum_bg
             return
 
-        # ── 역발상 과매도 스캔 ──────────────────────────────────────────
+        # ── 역발상 과매도 스캔 ── background task로 위임
         if self.scan_mode == "mean_reversion":
-            from utils.mean_reversion_scanner import scan_mean_reversion
-            self.is_scanning = True
-            self.scan_stop_requested = False
-            self.mean_reversion_results = []
-            self.scan_warning = ""
-            mkt_map = {"KR-ETF": "KOSPI", "US-ETF": "SP500",
-                       "NASDAQ": "SP500"}
-            mkt = mkt_map.get(self.market, self.market)
-            if mkt not in ("KOSPI", "KOSDAQ", "SP500"):
-                mkt = "KOSPI"
-            self.status_msg = f"{mkt} 역발상 과매도 종목 탐색 중... (약 1~2분 소요)"
-            yield
-            try:
-                _task = asyncio.create_task(asyncio.to_thread(
-                    scan_mean_reversion,
-                    mkt,
-                    self.mr_min_mktcap,
-                    self.mr_rsi_max[0],
-                    30,
-                    150,
-                    90,
-                ))
-                while not _task.done():
-                    try:
-                        raw = await asyncio.wait_for(asyncio.shield(_task), timeout=0.5)
-                        break
-                    except asyncio.TimeoutError:
-                        if self.scan_stop_requested:
-                            self.status_msg = "스캔이 중단되었습니다."
-                            self.scan_stop_requested = False
-                            yield
-                            return
-                        yield
-                else:
-                    raw = _task.result()
-                self.mean_reversion_results = list(raw)
-                self.scan_warning = getattr(raw, "warning", "")
-                cnt = len(raw)
-                self.status_msg = (
-                    f"역발상 후보 {cnt}개 종목 발굴 완료" if cnt
-                    else "RSI+BB 조건을 만족하는 종목이 없습니다. RSI 임계값을 높여보세요."
-                )
-            except Exception as e:
-                self.status_msg = f"오류: {e}"
-            finally:
-                self.is_scanning = False
-            yield
+            yield State.run_mean_reversion_bg
             return
 
+        # ── Magic Formula 스캔 ── background task로 위임
         if self.scan_mode == "magic_formula":
-            from utils.magic_formula_scanner import scan_magic_formula
-            self.is_scanning = True
-            self.scan_stop_requested = False
-            self.magic_results = []
-            self.scan_warning = ""
-            mkt_map = {"KR-ETF": "KOSPI", "US-ETF": "SP500", "NASDAQ": "SP500"}
-            mkt = mkt_map.get(self.market, self.market)
-            if mkt not in ("KOSPI", "KOSDAQ", "SP500"):
-                mkt = "KOSPI"
-            self.status_msg = f"{mkt} Magic Formula 스캔 중... (약 2~3분 소요)"
-            yield
-            try:
-                _task = asyncio.create_task(asyncio.to_thread(
-                    scan_magic_formula,
-                    mkt,
-                    self.magic_min_mktcap,
-                    30,
-                    150,
-                    120,
-                ))
-                while not _task.done():
-                    try:
-                        res = await asyncio.wait_for(asyncio.shield(_task), timeout=0.5)
-                        break
-                    except asyncio.TimeoutError:
-                        if self.scan_stop_requested:
-                            self.status_msg = "스캔이 중단되었습니다."
-                            self.scan_stop_requested = False
-                            yield
-                            return
-                        yield
-                else:
-                    res = _task.result()
-                self.magic_results = res.get("results", [])
-                self.scan_warning  = res.get("warning", "")
-                cnt = len(self.magic_results)
-                scanned = res.get("count_scanned", 0)
-                self.status_msg = (
-                    f"Magic Formula — {cnt}개 종목 ({scanned}개 분석 완료)" if cnt
-                    else "조건 충족 종목 없음. 최소 시총을 낮춰보세요."
-                )
-            except Exception as e:
-                self.status_msg = f"오류: {e}"
-            finally:
-                self.is_scanning = False
-            yield
+            yield State.run_magic_formula_bg
             return
 
-        # ── 배당 성장 스캔 ──────────────────────────────────────────────────
+        # ── 배당 스캔 ── background task로 위임
         if self.scan_mode == "dividend":
-            from utils.dividend_scanner import scan_dividend_stocks
-            self.is_scanning = True
-            self.dividend_results = []
-            mkt_map = {"KR-ETF": "KOSPI", "US-ETF": "SP500", "NASDAQ": "SP500"}
-            mkt = mkt_map.get(self.market, self.market)
-            if mkt not in ("KOSPI", "KOSDAQ", "SP500"):
-                mkt = "KOSPI"
-            self.status_msg = f"{mkt} 고배당 종목 스캔 중..."
-            yield
-            try:
-                raw = await asyncio.to_thread(
-                    scan_dividend_stocks,
-                    mkt,
-                    float(self.dividend_min_yield[0]),
-                    70.0,
-                    30,
-                )
-                self.dividend_results = list(raw)
-                cnt = len(raw)
-                self.status_msg = (
-                    f"배당 스크리닝 완료 — {cnt}개 종목" if cnt
-                    else "조건 충족 종목이 없습니다. 최소 배당수익률을 낮춰보세요."
-                )
-            except Exception as e:
-                self.status_msg = f"오류: {e}"
-            finally:
-                self.is_scanning = False
-            yield
+            yield State.run_dividend_bg
             return
 
-        # ── 퀀트 스캔 ────────────────────────────────────────────────────
-        self.is_scanning = True
-        self.scan_stop_requested = False
-        self.status_msg = "시장 데이터 수집 중..."
-        self.scan_results = []
-        yield
-
-        try:
-            scanner = QuantScanner()
-            vwap = int(self.vwap_period)
-            _task = asyncio.create_task(asyncio.to_thread(
-                scanner.run_advanced_scan,
-                self.pbr_limit[0],
-                vwap,
-                10,
-                self.market,
-                self.min_cap_label,
-            ))
-            while not _task.done():
-                try:
-                    results = await asyncio.wait_for(asyncio.shield(_task), timeout=0.5)
-                    break
-                except asyncio.TimeoutError:
-                    if self.scan_stop_requested:
-                        self.status_msg = "스캔이 중단되었습니다."
-                        self.scan_stop_requested = False
-                        yield
-                        return
-                    yield
-            else:
-                results = _task.result()
-
-            self.scan_results = [
-                ScanResult(
-                    name=str(row["Name"]),
-                    symbol=str(row["Symbol"]),
-                    market_raw=str(row.get("Market", "KOSPI")),
-                    pbr=float(row["PBR"]),
-                    psr=float(row["PSR"]) if not math.isnan(float(row.get("PSR", float("nan")))) else 0.0,
-                    mfi=float(row["MFI"]),
-                    obv_ok=bool(row["OBV_OK"]),
-                    new_52w_high=bool(row.get("New52WHigh", False)),
-                    vwap_price=float(row["VWAP_Price"]),
-                    close=float(row["Close"]),
-                    vwap_gap=float(row["VWAP_Gap"]),
-                    condition=str(row["Condition"]),
-                    applied_pbr=float(row["Applied_PBR"]),
-                    applied_gpa=float(row["Applied_GPA"]),
-                    applied_mfi=int(row["Applied_MFI"]),
-                    applied_obv=bool(row["Applied_OBV"]),
-                    applied_min_cap=str(row.get("Applied_MinCap", "전체")),
-                    currency=str(row.get("Currency", "KRW")),
-                    market_cap_str=str(row.get("MarketCap_Str", "-")),
-                    div_yield=str(row.get("DivYield", "-")),
-                )
-                for _, row in results.iterrows()
-            ]
-            count = len(self.scan_results)
-            self.status_msg = (
-                f"{count}개 종목 발굴 완료" if count else "조건을 만족하는 종목이 없습니다."
-            )
-        except Exception as e:
-            self.status_msg = f"오류: {e}"
-        finally:
-            self.is_scanning = False
-        yield
+        # ── 퀀트 스캔 (default) ── background task로 위임
+        yield State.run_quant_bg
 
     async def run_backtest(self):
         # 퀀트(현재+히스토리) 및 세력탐지(현재+히스토리) 모두에서 종목 검색
