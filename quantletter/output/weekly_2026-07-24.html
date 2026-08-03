@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="ko"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>퀀트레터 WEEKLY — 2026-07-24</title>
+<style>
+:root{--kr:#1b3a6b;--kr-l:#2b6fb3;--kr-bg:#eaf0fb;--us:#1a5c3a;--us-l:#2e8b57;--us-bg:#e6f4ec;
+      --pu:#5b2d8e;--pu-l:#8e44ad;--pu-bg:#f4ebfd;
+      --bg:#eef1f7;--card:#ffffff;--txt:#1c2430;--sub:#5a6b7e;--border:#dde4ef}
+@media(prefers-color-scheme:dark){:root{--bg:#0f1620;--card:#1a2332;--txt:#e8edf5;--sub:#8a9ab0;
+  --border:#2a3548;--kr-bg:#152038;--us-bg:#0f2820;--pu-bg:#1e0f2e}}
+:root[data-theme=light]{--bg:#eef1f7;--card:#fff;--txt:#1c2430;--sub:#5a6b7e;--border:#dde4ef;
+  --kr-bg:#eaf0fb;--us-bg:#e6f4ec;--pu-bg:#f4ebfd}
+:root[data-theme=dark]{--bg:#0f1620;--card:#1a2332;--txt:#e8edf5;--sub:#8a9ab0;--border:#2a3548;
+  --kr-bg:#152038;--us-bg:#0f2820;--pu-bg:#1e0f2e}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--txt);font-family:'Apple SD Gothic Neo','Malgun Gothic',system-ui,sans-serif;line-height:1.65}
+.header{background:linear-gradient(135deg,#0d2040 0%,#1b3a6b 50%,#1a5c3a 100%);padding:28px 24px}
+.header-inner{max-width:680px;margin:0 auto}
+.brand{font-size:12px;font-weight:800;letter-spacing:.15em;text-transform:uppercase;color:rgba(255,255,255,.6);margin-bottom:6px}
+.header h1{font-family:Georgia,serif;font-size:clamp(18px,3vw,26px);font-weight:700;color:#fff;line-height:1.25}
+.header-meta{margin-top:10px;display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:rgba(255,255,255,.65)}
+.body{max-width:680px;margin:0 auto;padding:24px 14px 52px}
+.sec-head{display:flex;align-items:center;gap:10px;padding:12px 16px;border-radius:12px;margin:22px 0 12px}
+.sec-head.kr{background:var(--kr-bg);border-left:5px solid var(--kr-l)}
+.sec-head.us{background:var(--us-bg);border-left:5px solid var(--us-l)}
+.sec-icon{font-size:20px}
+.sec-title{font-size:14px;font-weight:800}
+.sec-title.kr{color:var(--kr)}
+.sec-title.us{color:var(--us)}
+.sec-sub{font-size:11px;color:var(--sub);margin-top:2px}
+.strategy-tag{display:inline-block;padding:2px 9px;border-radius:20px;font-size:11px;font-weight:700;margin-left:auto}
+.strategy-tag.kr{background:var(--kr-bg);color:var(--kr-l)}
+.strategy-tag.us{background:var(--us-bg);color:var(--us-l)}
+.picks{display:flex;flex-direction:column;gap:9px}
+.pick-card{background:var(--card);border-radius:11px;padding:14px 16px;border:1px solid var(--border);box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.pick-top{display:flex;align-items:center;gap:7px;margin-bottom:7px;flex-wrap:wrap}
+.pick-num{width:22px;height:22px;border-radius:50%;background:var(--border);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;color:var(--sub);flex-shrink:0}
+.pick-name{font-size:15px;font-weight:800;color:var(--txt)}
+.pick-code{font-size:11px;color:var(--sub)}
+.pick-price{font-size:13px;font-weight:700;color:var(--sub);margin-bottom:8px;font-variant-numeric:tabular-nums}
+.badge{display:inline-flex;align-items:center;padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700}
+.badge.green{background:#d4edda;color:#155724}
+.badge.grey{background:var(--border);color:var(--sub)}
+.badge.blue{background:#d1e4f7;color:var(--kr)}
+.pick-stats{display:flex;flex-direction:column;gap:4px}
+.ps-item{display:flex;align-items:center;gap:7px;font-size:12.5px}
+.ps-label{color:var(--sub);width:65px;flex-shrink:0;font-size:11.5px}
+.ps-val{font-weight:700;font-variant-numeric:tabular-nums}
+.ps-val.pos{color:#1a7a46}
+.ps-val.neg{color:#c0392b}
+.bold-kr{color:var(--kr-l)}
+.vol-track{flex:1;max-width:90px;height:5px;background:var(--border);border-radius:3px;overflow:hidden}
+.vol-fill{height:100%;background:linear-gradient(90deg,var(--kr-l),#5b9bd5);border-radius:3px}
+.info-box{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px 15px;margin-top:18px;font-size:12.5px;color:var(--sub);line-height:1.7}
+.info-box b{color:var(--txt)}
+.pos-section{background:var(--card);border:1px solid var(--border);border-radius:12px;margin-bottom:18px;overflow:hidden}
+.pos-head{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:var(--bg);font-size:13.5px;font-weight:700;border-bottom:1px solid var(--border)}
+.sell-alert{background:#fff0f0;border-bottom:1px solid #f5c6cb;padding:8px 14px;font-size:12.5px;color:#c0392b;font-weight:700}
+.pos-table{width:100%;border-collapse:collapse;font-size:12px}
+.pos-table th{background:var(--bg);color:var(--sub);font-size:10.5px;font-weight:700;padding:6px 9px;text-align:right;border-bottom:1px solid var(--border)}
+.pos-table th:first-child{text-align:left}
+.pos-table td{padding:8px 9px;border-bottom:1px solid var(--border);text-align:right;vertical-align:middle}
+.pos-table td:first-child{text-align:left}
+.pos-table tr:last-child td{border-bottom:none}
+.sell-badge{background:#c0392b;color:#fff;border-radius:20px;padding:2px 7px;font-size:10.5px;font-weight:700;white-space:nowrap}
+.hold-badge{background:#d4edda;color:#155724;border-radius:20px;padding:2px 7px;font-size:10.5px;font-weight:700}
+.sell-ret{color:#c0392b;font-weight:700}
+.footer{background:var(--border);padding:16px 24px;font-size:11px;color:var(--sub);line-height:1.7}
+.footer-inner{max-width:680px;margin:0 auto}
+</style></head><body>
+<div class="header"><div class="header-inner">
+  <div class="brand">퀀트레터 · Weekly Signal</div>
+  <h1>이번 주 알고리즘 추천 종목</h1>
+  <div class="header-meta">
+    <span>📅 발행일 2026년 07월 24일</span>
+    <span>🇰🇷🇺🇸 기준일 2026-07-24</span>
+    <span>📌 매주 발송</span>
+  </div>
+</div></div>
+<div class="body">
+  <div class="pos-section"><div class="pos-head"><span>📋 🇺🇸 미국주식 보유 현황</span><span style="font-size:12px;color:#8090a0">7종목</span></div><div class="sell-alert">⚠️ 매도 신호 1건 — GOOGL</div><div style="overflow-x:auto"><table class="pos-table"><thead><tr><th>종목</th><th>진입가</th><th>현재가</th><th>수익률</th><th>100MA</th><th>손절가</th><th>상태</th></tr></thead><tbody><tr style="background:#fff5f5"><td><b>GOOGL</b><br><span style="font-size:11px;color:#8090a0">2026-06-26</span></td><td>$337.39</td><td>$319.74</td><td class="sell-ret">-5.2%</td><td>$345.65</td><td>$286.78</td><td><span class="sell-badge">매도 추세이탈(100MA↓)</span></td></tr><tr ><td><b>AVGO</b><br><span style="font-size:11px;color:#8090a0">2026-07-17</span></td><td>$370.83</td><td>$381.92</td><td class="pos">+3.0%</td><td>$380.65</td><td>$315.21</td><td><span class="hold-badge">보유유지</span></td></tr><tr ><td><b>LLY</b><br><span style="font-size:11px;color:#8090a0">2026-06-05</span></td><td>$1,131.42</td><td>$1,196.03</td><td class="pos">+5.7%</td><td>$1,033.63</td><td>$961.71</td><td><span class="hold-badge">보유유지</span></td></tr><tr ><td><b>NVDA</b><br><span style="font-size:11px;color:#8090a0">2026-07-03</span></td><td>$194.83</td><td>$206.84</td><td class="pos">+6.2%</td><td>$199.57</td><td>$165.61</td><td><span class="hold-badge">보유유지</span></td></tr><tr ><td><b>XOM</b><br><span style="font-size:11px;color:#8090a0">2026-07-17</span></td><td>$147.36</td><td>$156.94</td><td class="pos">+6.5%</td><td>$150.12</td><td>$125.26</td><td><span class="hold-badge">보유유지</span></td></tr><tr ><td><b>AAPL</b><br><span style="font-size:11px;color:#8090a0">2026-07-03</span></td><td>$308.63</td><td>$333.02</td><td class="pos">+7.9%</td><td>$284.99</td><td>$262.34</td><td><span class="hold-badge">보유유지</span></td></tr><tr ><td><b>AMD</b><br><span style="font-size:11px;color:#8090a0">2026-06-05</span></td><td>$466.38</td><td>$521.95</td><td class="pos">+11.9%</td><td>$386.58</td><td>$396.42</td><td><span class="hold-badge">보유유지</span></td></tr></tbody></table></div></div>
+  <div class="sec-head us"><span class="sec-icon">🇺🇸</span>
+    <div><div class="sec-title us">미국 주식 — 모멘텀 전략</div>
+    <div class="sec-sub">6개월 추세 상위 | Sharpe 1.03 · 초과수익 +14.6%/년</div></div>
+    <span class="strategy-tag us">Top 6</span>
+  </div>
+  <div class="picks"><div class="pick-card"><div class="pick-top"><span class="pick-num">1</span><span class="pick-name">AMD</span><span class="badge blue">모멘텀 상위</span></div><div class="pick-price">$521.95</div><div class="pick-stats"><div class="ps-item"><span class="ps-label">6개월</span><span class="ps-val pos">+101.0%</span></div><div class="ps-item"><span class="ps-label">3개월</span><span class="ps-val pos">+50.1%</span></div><div class="ps-item"><span class="ps-label">12개월</span><span class="ps-val pos">+808.4%</span></div></div></div><div class="pick-card"><div class="pick-top"><span class="pick-num">2</span><span class="pick-name">AVGO</span><span class="badge blue">모멘텀 상위</span></div><div class="pick-price">$381.92</div><div class="pick-stats"><div class="ps-item"><span class="ps-label">6개월</span><span class="ps-val pos">+19.8%</span></div><div class="ps-item"><span class="ps-label">3개월</span><span class="ps-val neg">-9.5%</span></div><div class="ps-item"><span class="ps-label">12개월</span><span class="ps-val pos">+1267.4%</span></div></div></div><div class="pick-card"><div class="pick-top"><span class="pick-num">3</span><span class="pick-name">JPM</span><span class="badge blue">모멘텀 상위</span></div><div class="pick-price">$353.21</div><div class="pick-stats"><div class="ps-item"><span class="ps-label">6개월</span><span class="ps-val pos">+19.8%</span></div><div class="ps-item"><span class="ps-label">3개월</span><span class="ps-val pos">+15.1%</span></div><div class="ps-item"><span class="ps-label">12개월</span><span class="ps-val pos">+323.1%</span></div></div></div><div class="pick-card"><div class="pick-top"><span class="pick-num">4</span><span class="pick-name">AAPL</span><span class="badge blue">모멘텀 상위</span></div><div class="pick-price">$333.02</div><div class="pick-stats"><div class="ps-item"><span class="ps-label">6개월</span><span class="ps-val pos">+34.5%</span></div><div class="ps-item"><span class="ps-label">3개월</span><span class="ps-val pos">+23.0%</span></div><div class="ps-item"><span class="ps-label">12개월</span><span class="ps-val pos">+249.7%</span></div></div></div><div class="pick-card"><div class="pick-top"><span class="pick-num">5</span><span class="pick-name">NVDA</span><span class="badge blue">모멘텀 상위</span></div><div class="pick-price">$206.84</div><div class="pick-stats"><div class="ps-item"><span class="ps-label">6개월</span><span class="ps-val pos">+10.3%</span></div><div class="ps-item"><span class="ps-label">3개월</span><span class="ps-val neg">-0.6%</span></div><div class="ps-item"><span class="ps-label">12개월</span><span class="ps-val pos">+1877.0%</span></div></div></div><div class="pick-card"><div class="pick-top"><span class="pick-num">6</span><span class="pick-name">XOM</span><span class="badge blue">모멘텀 상위</span></div><div class="pick-price">$156.94</div><div class="pick-stats"><div class="ps-item"><span class="ps-label">6개월</span><span class="ps-val pos">+17.8%</span></div><div class="ps-item"><span class="ps-label">3개월</span><span class="ps-val pos">+6.1%</span></div><div class="ps-item"><span class="ps-label">12개월</span><span class="ps-val pos">+378.2%</span></div></div></div></div>
+
+  <div class="pos-section"><div class="pos-head"><span>📋 🇰🇷 한국주식 보유 현황</span><span style="font-size:12px;color:#8090a0">10종목</span></div><div class="sell-alert">⚠️ 매도 신호 8건 — 삼성생명, SK하이닉스, LG전자, 삼성전자, 기업은행, LG유플러스, KT, CJ제일제당</div><div style="overflow-x:auto"><table class="pos-table"><thead><tr><th>종목</th><th>진입가</th><th>현재가</th><th>수익률</th><th>100MA</th><th>손절가</th><th>상태</th></tr></thead><tbody><tr style="background:#fff5f5"><td><b>삼성생명</b><br><span style="font-size:11px;color:#8090a0">2026-07-03</span></td><td>₩383,000</td><td>₩318,000</td><td class="sell-ret">-17.0%</td><td>₩306,575</td><td>₩325,550</td><td><span class="sell-badge">매도 손절가 도달</span></td></tr><tr style="background:#fff5f5"><td><b>SK하이닉스</b><br><span style="font-size:11px;color:#8090a0">2026-06-05</span></td><td>₩2,070,000</td><td>₩1,759,000</td><td class="sell-ret">-15.0%</td><td>₩1,650,696</td><td>₩1,759,500</td><td><span class="sell-badge">매도 손절가 도달</span></td></tr><tr style="background:#fff5f5"><td><b>LG전자</b><br><span style="font-size:11px;color:#8090a0">2026-07-03</span></td><td>₩191,000</td><td>₩169,200</td><td class="sell-ret">-11.4%</td><td>₩171,841</td><td>₩162,350</td><td><span class="sell-badge">매도 추세이탈(100MA↓)</span></td></tr><tr style="background:#fff5f5"><td><b>삼성전자</b><br><span style="font-size:11px;color:#8090a0">2026-07-17</span></td><td>₩255,000</td><td>₩249,500</td><td class="sell-ret">-2.2%</td><td>₩255,761</td><td>₩216,750</td><td><span class="sell-badge">매도 추세이탈(100MA↓)</span></td></tr><tr style="background:#fff5f5"><td><b>기업은행</b><br><span style="font-size:11px;color:#8090a0">2026-07-17</span></td><td>₩21,600</td><td>₩21,350</td><td class="sell-ret">-1.2%</td><td>₩21,552</td><td>₩18,360</td><td><span class="sell-badge">매도 추세이탈(100MA↓)</span></td></tr><tr style="background:#fff5f5"><td><b>LG유플러스</b><br><span style="font-size:11px;color:#8090a0">2026-07-17</span></td><td>₩14,620</td><td>₩14,740</td><td class="sell-ret">+0.8%</td><td>₩15,410</td><td>₩12,427</td><td><span class="sell-badge">매도 추세이탈(100MA↓)</span></td></tr><tr style="background:#fff5f5"><td><b>KT</b><br><span style="font-size:11px;color:#8090a0">2026-07-17</span></td><td>₩51,822</td><td>₩53,503</td><td class="sell-ret">+3.2%</td><td>₩56,512</td><td>₩44,049</td><td><span class="sell-badge">매도 추세이탈(100MA↓)</span></td></tr><tr style="background:#fff5f5"><td><b>CJ제일제당</b><br><span style="font-size:11px;color:#8090a0">2026-07-17</span></td><td>₩184,800</td><td>₩194,100</td><td class="sell-ret">+5.0%</td><td>₩208,310</td><td>₩157,080</td><td><span class="sell-badge">매도 추세이탈(100MA↓)</span></td></tr><tr ><td><b>삼성전기</b><br><span style="font-size:11px;color:#8090a0">2026-07-17</span></td><td>₩1,277,000</td><td>₩1,326,000</td><td class="pos">+3.8%</td><td>₩1,120,560</td><td>₩1,085,450</td><td><span class="hold-badge">보유유지</span></td></tr><tr ><td><b>KT&G</b><br><span style="font-size:11px;color:#8090a0">2026-06-26</span></td><td>₩167,400</td><td>₩182,600</td><td class="pos">+9.1%</td><td>₩171,406</td><td>₩142,290</td><td><span class="hold-badge">보유유지</span></td></tr></tbody></table></div></div>
+  <div class="sec-head kr"><span class="sec-icon">🇰🇷</span>
+    <div><div class="sec-title kr">한국 ① 저변동성 전략</div>
+    <div class="sec-sub">연간 변동성 최소 | Sharpe 1.05 · MDD –12.8%</div></div>
+    <span class="strategy-tag kr">LowVol 5</span>
+  </div>
+  <div class="picks"><div class="pick-card"><div class="pick-top"><span class="pick-num">1</span><span class="pick-name">기업은행</span><span class="pick-code">024110</span><span class="badge green">200MA 위</span></div><div class="pick-price">₩21,350</div><div class="pick-stats"><div class="ps-item"><span class="ps-label">변동성</span><div class="vol-track"><div class="vol-fill" style="width:75%"></div></div><span class="ps-val bold-kr">30.1%</span></div><div class="ps-item"><span class="ps-label">6개월</span><span class="ps-val pos">+282.0%</span></div></div></div><div class="pick-card"><div class="pick-top"><span class="pick-num">2</span><span class="pick-name">CJ제일제당</span><span class="pick-code">097950</span><span class="badge grey">200MA 아래</span></div><div class="pick-price">₩194,100</div><div class="pick-stats"><div class="ps-item"><span class="ps-label">변동성</span><div class="vol-track"><div class="vol-fill" style="width:76%"></div></div><span class="ps-val bold-kr">30.7%</span></div><div class="ps-item"><span class="ps-label">6개월</span><span class="ps-val neg">-42.3%</span></div></div></div><div class="pick-card"><div class="pick-top"><span class="pick-num">3</span><span class="pick-name">KT&G</span><span class="pick-code">033780</span><span class="badge green">200MA 위</span></div><div class="pick-price">₩182,600</div><div class="pick-stats"><div class="ps-item"><span class="ps-label">변동성</span><div class="vol-track"><div class="vol-fill" style="width:77%"></div></div><span class="ps-val bold-kr">31.0%</span></div><div class="ps-item"><span class="ps-label">6개월</span><span class="ps-val pos">+202.4%</span></div></div></div><div class="pick-card"><div class="pick-top"><span class="pick-num">4</span><span class="pick-name">KT</span><span class="pick-code">030200</span><span class="badge grey">200MA 아래</span></div><div class="pick-price">₩53,503</div><div class="pick-stats"><div class="ps-item"><span class="ps-label">변동성</span><div class="vol-track"><div class="vol-fill" style="width:80%"></div></div><span class="ps-val bold-kr">32.1%</span></div><div class="ps-item"><span class="ps-label">6개월</span><span class="ps-val pos">+211.9%</span></div></div></div><div class="pick-card"><div class="pick-top"><span class="pick-num">5</span><span class="pick-name">LG유플러스</span><span class="pick-code">032640</span><span class="badge grey">200MA 아래</span></div><div class="pick-price">₩14,740</div><div class="pick-stats"><div class="ps-item"><span class="ps-label">변동성</span><div class="vol-track"><div class="vol-fill" style="width:87%"></div></div><span class="ps-val bold-kr">35.0%</span></div><div class="ps-item"><span class="ps-label">6개월</span><span class="ps-val pos">+61.5%</span></div></div></div></div>
+
+  <div class="sec-head kr" style="border-left-color:#8e44ad"><span class="sec-icon">🇰🇷</span>
+    <div><div class="sec-title kr" style="color:#5b2d8e">한국 ② 반전회피 모멘텀</div>
+    <div class="sec-sub">최근 1개월 제외 6개월 추세 | CAGR +28%</div></div>
+    <span class="strategy-tag kr" style="color:#5b2d8e">MomSkip 5</span>
+  </div>
+  <div class="picks"><div class="pick-card"><div class="pick-top"><span class="pick-num">1</span><span class="pick-name">삼성전기</span><span class="pick-code">009150</span><span class="badge green">200MA 위</span></div><div class="pick-price">₩1,326,000</div><div class="pick-stats"><div class="ps-item"><span class="ps-label">추세점수</span><span class="ps-val pos">+690.3%</span></div><div class="ps-item"><span class="ps-label">6개월</span><span class="ps-val pos">+981.7%</span></div></div></div><div class="pick-card"><div class="pick-top"><span class="pick-num">2</span><span class="pick-name">SK하이닉스</span><span class="pick-code">000660</span><span class="badge green">200MA 위</span></div><div class="pick-price">₩1,759,000</div><div class="pick-stats"><div class="ps-item"><span class="ps-label">추세점수</span><span class="ps-val pos">+451.5%</span></div><div class="ps-item"><span class="ps-label">6개월</span><span class="ps-val pos">+2179.9%</span></div></div></div><div class="pick-card"><div class="pick-top"><span class="pick-num">3</span><span class="pick-name">삼성전자</span><span class="pick-code">005930</span><span class="badge green">200MA 위</span></div><div class="pick-price">₩249,500</div><div class="pick-stats"><div class="ps-item"><span class="ps-label">추세점수</span><span class="ps-val pos">+251.2%</span></div><div class="ps-item"><span class="ps-label">6개월</span><span class="ps-val pos">+428.9%</span></div></div></div><div class="pick-card"><div class="pick-top"><span class="pick-num">4</span><span class="pick-name">삼성생명</span><span class="pick-code">032830</span><span class="badge green">200MA 위</span></div><div class="pick-price">₩318,000</div><div class="pick-stats"><div class="ps-item"><span class="ps-label">추세점수</span><span class="ps-val pos">+204.6%</span></div><div class="ps-item"><span class="ps-label">6개월</span><span class="ps-val pos">+769.1%</span></div></div></div><div class="pick-card"><div class="pick-top"><span class="pick-num">5</span><span class="pick-name">LG전자</span><span class="pick-code">066570</span><span class="badge green">200MA 위</span></div><div class="pick-price">₩169,200</div><div class="pick-stats"><div class="ps-item"><span class="ps-label">추세점수</span><span class="ps-val pos">+119.7%</span></div><div class="ps-item"><span class="ps-label">6개월</span><span class="ps-val pos">+135.6%</span></div></div></div></div>
+
+  <div class="info-box" style="margin-top:14px;border-color:rgba(184,134,11,.3);background:rgba(184,134,11,.05)">
+    ⚠️ 본 시그널은 알고리즘이 자동 생성한 정보 제공용 리스트입니다. 투자 결정은 본인 판단으로 하시기 바랍니다.
+  </div>
+</div>
+<div class="footer"><div class="footer-inner">
+  퀀트레터 · 유사투자자문업자(신고 예정) · 본 콘텐츠는 불특정 다수 대상 정보 제공이며 개별 투자 자문이 아닙니다.
+</div></div></body></html>

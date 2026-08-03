@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>퀀트레터 백테스트 — 미국(S&P500)</title>
+<style>
+body{margin:0;background:#eef1f5;font-family:'Apple SD Gothic Neo','Malgun Gothic',system-ui,sans-serif;color:#1c2430;line-height:1.6}
+.wrap{max-width:720px;margin:0 auto;padding:28px 16px}
+.hd{background:linear-gradient(135deg,#12233b,#1b3a6b);color:#fff;border-radius:14px;padding:26px 28px;margin-bottom:24px}
+.hd h1{margin:0 0 4px;font-size:22px;font-weight:800}
+.hd p{margin:0;opacity:.85;font-size:13px}
+.card{background:#fff;border-radius:14px;padding:20px 22px;margin-bottom:18px;box-shadow:0 1px 4px rgba(0,0,0,.07)}
+h2{font-size:16px;margin:0 0 14px;color:#12233b;border-left:4px solid #2b6fb3;padding-left:10px}
+.kpis{display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap}
+.kpi{flex:1;min-width:110px;background:#f4f7fb;border-radius:10px;padding:12px;text-align:center}
+.kpi .n{font-size:11px;color:#5a6b7e}
+.kpi .v{font-size:20px;font-weight:800;margin-top:2px}
+.kpi.g .v{color:#1e7e46}
+.kpi.r .v{color:#c0392b}
+.kpi.b .v{color:#2b6fb3}
+table{width:100%;border-collapse:collapse;font-size:13px;margin-top:6px}
+th,td{padding:8px 7px;border-bottom:1px solid #e6ebf1;text-align:center}
+th{background:#f4f7fb;color:#5a6b7e;font-size:11.5px;font-weight:700}
+td:first-child{text-align:left;font-weight:700;color:#12233b}
+.pos{color:#1e7e46;font-weight:700}
+.neg{color:#c0392b;font-weight:700}
+.cell-best{background:#dbeafe;font-weight:800;color:#1b3a6b}
+.legend{display:flex;gap:16px;font-size:12px;color:#5a6b7e;margin-bottom:10px}
+.legend span{display:flex;align-items:center;gap:5px}
+.dot{width:10px;height:10px;border-radius:50%;display:inline-block}
+.picks-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+.pick-item{background:#f4f7fb;border-radius:8px;padding:8px 10px;font-size:12px}
+.pick-item .date{color:#8090a0;font-size:11px}
+.pick-item .ret{font-weight:700}
+.note{font-size:12px;color:#8090a0;margin-top:10px;line-height:1.5}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="hd">
+    <h1>퀀트레터 모멘텀 전략 백테스트</h1>
+    <p>미국(S&P500) · 기준일 2026-07-28 · 거래비용 0.15% 편도</p>
+  </div>
+
+  <div class="card">
+    <h2>📈 누적 수익률 (6개월 룩백 · 상위 5종목)</h2>
+    <svg viewBox="0 0 560 240" width="100%" xmlns="http://www.w3.org/2000/svg"><line x1="50" y1="206.2" x2="550" y2="206.2" stroke="#e6ebf1" stroke-width="1"/><text x="46" y="210.2" text-anchor="end" font-size="9" fill="#8090a0">+0%</text><line x1="50" y1="177.6" x2="550" y2="177.6" stroke="#e6ebf1" stroke-width="1"/><text x="46" y="181.6" text-anchor="end" font-size="9" fill="#8090a0">+50%</text><line x1="50" y1="149.1" x2="550" y2="149.1" stroke="#e6ebf1" stroke-width="1"/><text x="46" y="153.1" text-anchor="end" font-size="9" fill="#8090a0">+100%</text><line x1="50" y1="120.6" x2="550" y2="120.6" stroke="#e6ebf1" stroke-width="1"/><text x="46" y="124.6" text-anchor="end" font-size="9" fill="#8090a0">+150%</text><line x1="50" y1="92.0" x2="550" y2="92.0" stroke="#e6ebf1" stroke-width="1"/><text x="46" y="96.0" text-anchor="end" font-size="9" fill="#8090a0">+200%</text><line x1="50" y1="63.5" x2="550" y2="63.5" stroke="#e6ebf1" stroke-width="1"/><text x="46" y="67.5" text-anchor="end" font-size="9" fill="#8090a0">+250%</text><line x1="50" y1="35.0" x2="550" y2="35.0" stroke="#e6ebf1" stroke-width="1"/><text x="46" y="39.0" text-anchor="end" font-size="9" fill="#8090a0">+300%</text><text x="50.0" y="224" text-anchor="middle" font-size="9" fill="#8090a0">2021</text><text x="135.1" y="224" text-anchor="middle" font-size="9" fill="#8090a0">2022</text><text x="227.4" y="224" text-anchor="middle" font-size="9" fill="#8090a0">2023</text><text x="319.6" y="224" text-anchor="middle" font-size="9" fill="#8090a0">2024</text><text x="412.1" y="224" text-anchor="middle" font-size="9" fill="#8090a0">2025</text><text x="504.3" y="224" text-anchor="middle" font-size="9" fill="#8090a0">2026</text><polyline points="50.0,204.7 57.8,202.2 65.4,199.0 73.2,198.6 80.8,197.2 88.7,195.7 96.5,193.7 104.1,197.1 111.9,192.5 119.5,193.1 127.3,190.0 135.1,193.9 142.2,196.0 150.1,193.6 157.6,199.7 165.5,199.7 173.0,205.1 180.9,199.8 188.7,202.5 196.3,208.1 204.1,203.7 211.7,200.5 219.5,204.2 227.4,200.6 234.4,202.2 242.3,200.1 249.8,199.2 257.7,199.0 265.3,194.9 273.1,192.7 280.9,194.0 288.5,197.4 296.3,198.8 303.9,193.1 311.7,189.9 319.6,188.8 326.9,184.9 334.7,182.5 342.3,185.9 350.2,182.1 357.7,179.3 365.6,178.4 373.4,176.4 381.0,174.7 388.8,175.6 396.4,170.5 404.2,172.9 412.1,170.4 419.1,171.7 427.0,177.0 434.5,177.7 442.4,172.4 449.9,167.9 457.8,165.8 465.6,164.0 473.2,160.5 481.0,158.1 488.6,158.0 496.4,158.1 504.3,156.6 511.3,157.5 519.2,162.9 526.8,152.5 534.6,146.8 542.2,148.0 550.0,149.3" fill="none" stroke="#b0bec8" stroke-width="1.5" stroke-dasharray="4,3"/><polyline points="50.0,206.9 57.8,207.5 65.4,204.9 73.2,204.0 80.8,201.8 88.7,200.9 96.5,197.0 104.1,202.4 111.9,193.9 119.5,187.0 127.3,192.7 135.1,202.8 142.2,203.9 150.1,197.4 157.6,205.4 165.5,204.9 173.0,207.5 180.9,203.0 188.7,206.0 196.3,207.9 204.1,201.0 211.7,199.0 219.5,202.1 227.4,197.6 234.4,199.5 242.3,196.2 249.8,196.6 257.7,181.3 265.3,178.2 273.1,173.0 280.9,174.9 288.5,180.6 296.3,180.1 303.9,170.0 311.7,167.6 319.6,159.7 326.9,143.8 334.7,142.3 342.3,151.8 350.2,141.1 357.7,127.2 365.6,135.2 373.4,130.0 381.0,130.7 388.8,131.7 396.4,117.1 404.2,115.7 412.1,111.3 419.1,127.5 427.0,140.9 434.5,134.9 442.4,121.9 449.9,112.9 457.8,105.5 465.6,108.6 473.2,98.1 481.0,66.1 488.6,70.3 496.4,78.3 504.3,76.2 511.3,83.6 519.2,89.0 526.8,53.4 534.6,28.4 542.2,36.3 550.0,41.0" fill="none" stroke="#2b6fb3" stroke-width="2.5"/><line x1="55" y1="26" x2="75" y2="26" stroke="#2b6fb3" stroke-width="2.5"/><text x="79" y="30" font-size="10" fill="#33475b">모멘텀 전략</text><line x1="145" y1="26" x2="165" y2="26" stroke="#b0bec8" stroke-width="1.5" stroke-dasharray="4,3"/><text x="169" y="30" font-size="10" fill="#33475b">벤치마크</text></svg>
+    
+    <div class="kpis">
+      <div class="kpi g">
+        <div class="n">전략 CAGR</div>
+        <div class="v">+28.0%</div>
+      </div>
+      <div class="kpi g">
+        <div class="n">S&P 500 CAGR</div>
+        <div class="v">+13.4%</div>
+      </div>
+      <div class="kpi b">
+        <div class="n">초과수익 (연)</div>
+        <div class="v">+14.6%</div>
+      </div>
+      <div class="kpi">
+        <div class="n">샤프</div>
+        <div class="v">1.03</div>
+      </div>
+      <div class="kpi r">
+        <div class="n">최대 낙폭</div>
+        <div class="v">-27.5%</div>
+      </div>
+      <div class="kpi">
+        <div class="n">월간 승률</div>
+        <div class="v">55%</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>📊 전략 vs 벤치마크 지표 비교</h2>
+    
+    <table>
+      <tr><th>지표</th><th>전략 (6m / 상위5)</th>
+          <th>S&P 500</th><th>초과</th></tr>
+      <tr><td>CAGR</td>
+          <td class="pos">+28.0%</td>
+          <td class="pos">+13.4%</td>
+          <td class="pos">+14.6%</td></tr>
+      <tr><td>총수익</td>
+          <td class="pos">+289.4%</td>
+          <td class="pos">+99.6%</td>
+          <td class="pos">+189.8%</td></tr>
+      <tr><td>변동성(연)</td>
+          <td>+27.2%</td><td>+15.3%</td>
+          <td class="neg">-11.9%</td></tr>
+      <tr><td>샤프</td>
+          <td>1.03</td><td>0.87</td>
+          <td class="pos">+0.16</td></tr>
+      <tr><td>최대 낙폭</td>
+          <td class="neg">-27.5%</td>
+          <td class="neg">-24.8%</td>
+          <td class="pos">+2.7%</td></tr>
+      <tr><td>관찰 기간</td>
+          <td colspan="3">66개월
+          (2021-02 ~
+           2026-07)</td></tr>
+    </table>
+    <p class="note">※ 거래비용 0.15% 편도 적용. 보유기간: 1개월.</p>
+  </div>
+
+  <div class="card">
+    <h2>🔲 파라미터 스윕 — CAGR 히트맵</h2>
+    <p style="font-size:13px;color:#33475b;margin-bottom:10px">
+      룩백 기간 × 보유 종목 수 조합별 연환산 수익률 (거래비용 차감 후)</p>
+    
+    <table>
+      <tr><th>룩백 \ 상위</th>
+          <th>3종목</th><th>5종목</th><th>10종목</th></tr>
+      <tr><td>3개월</td><td style='background:rgb(122,160,186);color:#1b3a6b'>+35.0%</td><td style='background:rgb(161,190,213);color:#33475b'>+31.2%</td><td style='background:rgb(188,210,232);color:#33475b'>+28.7%</td></tr><tr><td>6개월</td><td style='background:rgb(129,165,191);color:#1b3a6b'>+34.3%</td><td style='background:rgb(195,216,237);color:#33475b'>+28.0%</td><td style='background:rgb(219,234,254);color:#33475b'>+25.8%</td></tr><tr><td>12개월</td><td class='cell-best' style='background:rgb(92,137,165);color:#1b3a6b'>+37.9%</td><td style='background:rgb(151,182,206);color:#1b3a6b'>+32.3%</td><td style='background:rgb(218,233,253);color:#33475b'>+25.8%</td></tr>
+    </table>
+    <p class="note">진한 파란색 = 높은 CAGR. 굵은 테두리(cell-best) = 최고 설정.</p>
+  </div>
+
+  <div class="card">
+    <h2>📋 최근 12개월 월별 픽 (6개월 룩백 · 상위 5종목)</h2>
+    <div class='picks-grid'><div class='pick-item'><div class='date'>2026-07</div><div style='font-size:11px;margin:3px 0;color:#33475b'>AMD · UNH · XOM · GOOGL…</div><div class='ret neg'>-2.1% <span class='neg' style='font-weight:400;font-size:11px'>vs -1.1%</span></div></div><div class='pick-item'><div class='date'>2026-06</div><div style='font-size:11px;margin:3px 0;color:#33475b'>AMD · XOM · GOOGL · AMZN…</div><div class='ret neg'>-3.3% <span class='neg' style='font-weight:400;font-size:11px'>vs -1.1%</span></div></div><div class='pick-item'><div class='date'>2026-05</div><div style='font-size:11px;margin:3px 0;color:#33475b'>GOOGL · XOM · AMD · LLY…</div><div class='ret pos'>+11.9% <span class='pos' style='font-weight:400;font-size:11px'>vs +5.2%</span></div></div><div class='pick-item'><div class='date'>2026-04</div><div style='font-size:11px;margin:3px 0;color:#33475b'>XOM · AMD · LLY · GOOGL…</div><div class='ret pos'>+20.4% <span class='pos' style='font-weight:400;font-size:11px'>vs +10.4%</span></div></div><div class='pick-item'><div class='date'>2026-03</div><div style='font-size:11px;margin:3px 0;color:#33475b'>GOOGL · LLY · XOM · AMD…</div><div class='ret neg'>-3.0% <span class='neg' style='font-weight:400;font-size:11px'>vs -5.1%</span></div></div><div class='pick-item'><div class='date'>2026-02</div><div style='font-size:11px;margin:3px 0;color:#33475b'>GOOGL · TSLA · AMD · LLY…</div><div class='ret neg'>-4.0% <span class='neg' style='font-weight:400;font-size:11px'>vs -0.9%</span></div></div><div class='pick-item'><div class='date'>2026-01</div><div style='font-size:11px;margin:3px 0;color:#33475b'>GOOGL · AMD · TSLA · LLY…</div><div class='ret pos'>+1.2% <span class='pos' style='font-weight:400;font-size:11px'>vs +1.4%</span></div></div><div class='pick-item'><div class='date'>2025-12</div><div style='font-size:11px;margin:3px 0;color:#33475b'>GOOGL · AMD · AVGO · LLY…</div><div class='ret neg'>-4.2% <span class='neg' style='font-weight:400;font-size:11px'>vs -0.1%</span></div></div><div class='pick-item'><div class='date'>2025-11</div><div style='font-size:11px;margin:3px 0;color:#33475b'>AMD · AVGO · NVDA · GOOGL…</div><div class='ret neg'>-2.1% <span class='pos' style='font-weight:400;font-size:11px'>vs +0.1%</span></div></div><div class='pick-item'><div class='date'>2025-10</div><div style='font-size:11px;margin:3px 0;color:#33475b'>AVGO · NVDA · TSLA · AMD…</div><div class='ret pos'>+19.4% <span class='pos' style='font-weight:400;font-size:11px'>vs +2.3%</span></div></div><div class='pick-item'><div class='date'>2025-09</div><div style='font-size:11px;margin:3px 0;color:#33475b'>AMD · AVGO · NVDA · MSFT…</div><div class='ret pos'>+6.8% <span class='pos' style='font-weight:400;font-size:11px'>vs +3.5%</span></div></div><div class='pick-item'><div class='date'>2025-08</div><div style='font-size:11px;margin:3px 0;color:#33475b'>AMD · NVDA · AVGO · MSFT…</div><div class='ret neg'>-2.0% <span class='pos' style='font-weight:400;font-size:11px'>vs +1.9%</span></div></div></div>
+  </div>
+
+  <div class="card" style="background:#f8fafc">
+    <h2 style="border-color:#9aa7b5">⚠ 유의사항</h2>
+    <p class="note">
+    · 본 백테스트는 과거 데이터를 이용한 시뮬레이션이며 미래 수익을 보장하지 않습니다.<br>
+    · 인샘플 백테스트입니다. 실제 투자 성과는 거래비용·슬리피지·유동성에 따라 크게 달라질 수 있습니다.<br>
+    · 거래세(한국 0.18~0.23%), 증권사 수수료가 포함되지 않은 단순화된 비용 구조입니다.<br>
+    · 보유종목이 상장폐지·합병된 경우 생존자 편향(Survivorship Bias)이 일부 존재합니다.<br>
+    · 유사투자자문업 신고 전 유료 배포 불가.
+    </p>
+  </div>
+</div>
+</body>
+</html>

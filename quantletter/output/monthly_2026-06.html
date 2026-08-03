@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="ko"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>퀀트레터 MONTHLY — 2026-06</title>
+<style>
+:root{--kr:#1b3a6b;--kr-l:#2b6fb3;--kr-bg:#eaf0fb;--us:#1a5c3a;--us-l:#2e8b57;--us-bg:#e6f4ec;
+      --pu:#5b2d8e;--pu-l:#8e44ad;--pu-bg:#f4ebfd;
+      --bg:#eef1f7;--card:#ffffff;--txt:#1c2430;--sub:#5a6b7e;--border:#dde4ef}
+@media(prefers-color-scheme:dark){:root{--bg:#0f1620;--card:#1a2332;--txt:#e8edf5;--sub:#8a9ab0;
+  --border:#2a3548;--kr-bg:#152038;--us-bg:#0f2820;--pu-bg:#1e0f2e}}
+:root[data-theme=light]{--bg:#eef1f7;--card:#fff;--txt:#1c2430;--sub:#5a6b7e;--border:#dde4ef;
+  --kr-bg:#eaf0fb;--us-bg:#e6f4ec;--pu-bg:#f4ebfd}
+:root[data-theme=dark]{--bg:#0f1620;--card:#1a2332;--txt:#e8edf5;--sub:#8a9ab0;--border:#2a3548;
+  --kr-bg:#152038;--us-bg:#0f2820;--pu-bg:#1e0f2e}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--txt);font-family:'Apple SD Gothic Neo','Malgun Gothic',system-ui,sans-serif;line-height:1.65}
+.header{background:linear-gradient(135deg,#0d2040 0%,#1b3a6b 50%,#1a5c3a 100%);padding:28px 24px}
+.header-inner{max-width:680px;margin:0 auto}
+.brand{font-size:12px;font-weight:800;letter-spacing:.15em;text-transform:uppercase;color:rgba(255,255,255,.6);margin-bottom:6px}
+.header h1{font-family:Georgia,serif;font-size:clamp(18px,3vw,26px);font-weight:700;color:#fff;line-height:1.25}
+.header-meta{margin-top:10px;display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:rgba(255,255,255,.65)}
+.body{max-width:680px;margin:0 auto;padding:24px 14px 52px}
+.sec-head{display:flex;align-items:center;gap:10px;padding:12px 16px;border-radius:12px;margin:22px 0 12px}
+.sec-head.kr{background:var(--kr-bg);border-left:5px solid var(--kr-l)}
+.sec-head.us{background:var(--us-bg);border-left:5px solid var(--us-l)}
+.sec-icon{font-size:20px}
+.sec-title{font-size:14px;font-weight:800}
+.sec-title.kr{color:var(--kr)}
+.sec-title.us{color:var(--us)}
+.sec-sub{font-size:11px;color:var(--sub);margin-top:2px}
+.strategy-tag{display:inline-block;padding:2px 9px;border-radius:20px;font-size:11px;font-weight:700;margin-left:auto}
+.strategy-tag.kr{background:var(--kr-bg);color:var(--kr-l)}
+.strategy-tag.us{background:var(--us-bg);color:var(--us-l)}
+.picks{display:flex;flex-direction:column;gap:9px}
+.pick-card{background:var(--card);border-radius:11px;padding:14px 16px;border:1px solid var(--border);box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.pick-top{display:flex;align-items:center;gap:7px;margin-bottom:7px;flex-wrap:wrap}
+.pick-num{width:22px;height:22px;border-radius:50%;background:var(--border);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;color:var(--sub);flex-shrink:0}
+.pick-name{font-size:15px;font-weight:800;color:var(--txt)}
+.pick-code{font-size:11px;color:var(--sub)}
+.pick-price{font-size:13px;font-weight:700;color:var(--sub);margin-bottom:8px;font-variant-numeric:tabular-nums}
+.badge{display:inline-flex;align-items:center;padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700}
+.badge.green{background:#d4edda;color:#155724}
+.badge.grey{background:var(--border);color:var(--sub)}
+.badge.blue{background:#d1e4f7;color:var(--kr)}
+.pick-stats{display:flex;flex-direction:column;gap:4px}
+.ps-item{display:flex;align-items:center;gap:7px;font-size:12.5px}
+.ps-label{color:var(--sub);width:65px;flex-shrink:0;font-size:11.5px}
+.ps-val{font-weight:700;font-variant-numeric:tabular-nums}
+.ps-val.pos{color:#1a7a46}
+.ps-val.neg{color:#c0392b}
+.bold-kr{color:var(--kr-l)}
+.vol-track{flex:1;max-width:90px;height:5px;background:var(--border);border-radius:3px;overflow:hidden}
+.vol-fill{height:100%;background:linear-gradient(90deg,var(--kr-l),#5b9bd5);border-radius:3px}
+.info-box{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px 15px;margin-top:18px;font-size:12.5px;color:var(--sub);line-height:1.7}
+.info-box b{color:var(--txt)}
+.pos-section{background:var(--card);border:1px solid var(--border);border-radius:12px;margin-bottom:18px;overflow:hidden}
+.pos-head{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:var(--bg);font-size:13.5px;font-weight:700;border-bottom:1px solid var(--border)}
+.sell-alert{background:#fff0f0;border-bottom:1px solid #f5c6cb;padding:8px 14px;font-size:12.5px;color:#c0392b;font-weight:700}
+.pos-table{width:100%;border-collapse:collapse;font-size:12px}
+.pos-table th{background:var(--bg);color:var(--sub);font-size:10.5px;font-weight:700;padding:6px 9px;text-align:right;border-bottom:1px solid var(--border)}
+.pos-table th:first-child{text-align:left}
+.pos-table td{padding:8px 9px;border-bottom:1px solid var(--border);text-align:right;vertical-align:middle}
+.pos-table td:first-child{text-align:left}
+.pos-table tr:last-child td{border-bottom:none}
+.sell-badge{background:#c0392b;color:#fff;border-radius:20px;padding:2px 7px;font-size:10.5px;font-weight:700;white-space:nowrap}
+.hold-badge{background:#d4edda;color:#155724;border-radius:20px;padding:2px 7px;font-size:10.5px;font-weight:700}
+.sell-ret{color:#c0392b;font-weight:700}
+.footer{background:var(--border);padding:16px 24px;font-size:11px;color:var(--sub);line-height:1.7}
+.footer-inner{max-width:680px;margin:0 auto}
+
+.m-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px 18px;margin-bottom:14px}
+.m-head{font-size:14px;font-weight:800;color:var(--txt);margin-bottom:10px;border-left:4px solid var(--kr-l);padding-left:9px;display:flex;align-items:baseline;gap:8px}
+.m-head-period{font-size:11px;font-weight:400;color:var(--sub)}
+.bar{height:13px;border-radius:7px;overflow:hidden;display:flex;margin:10px 0 4px}
+.alloc-grid{display:flex;gap:9px;flex-wrap:wrap;margin:8px 0}
+.a-card{flex:1;min-width:90px;background:var(--bg);border-radius:9px;padding:10px;text-align:center}
+.a-name{font-size:11.5px;color:var(--sub)}
+.a-val{font-size:20px;font-weight:800;margin-top:2px}
+.kpi-row{display:flex;gap:9px;flex-wrap:wrap;margin:10px 0}
+.kpi{background:var(--bg);border-radius:9px;padding:10px 12px;text-align:center;flex:1;min-width:80px}
+.kn{font-size:10.5px;color:var(--sub)}
+.kv{font-size:17px;font-weight:800;margin-top:2px}
+.pos{color:#1a7a46}.neg{color:#c0392b}
+/* 전략별 성적표 */
+.sc-outer{margin-top:14px;display:flex;flex-direction:column;gap:10px}
+.sc-strat{border:1px solid var(--border);border-radius:10px;overflow:hidden}
+.sc-strat-head{display:flex;align-items:center;justify-content:space-between;padding:9px 13px;font-size:13px;font-weight:800}
+.sc-strat-head.us{background:var(--us-bg);color:var(--us)}
+.sc-strat-head.kr{background:var(--kr-bg);color:var(--kr)}
+.sc-strat-head.pu{background:var(--pu-bg);color:var(--pu)}
+.sc-avg-badge{font-size:12px;font-weight:700;padding:2px 8px;border-radius:20px}
+.sc-avg-badge.pos{background:#d4edda;color:#155724}
+.sc-avg-badge.neg{background:#fde8e8;color:#a00}
+.sc-table{width:100%;border-collapse:collapse;font-size:12.5px}
+.sc-table th{background:var(--bg);color:var(--sub);font-size:10.5px;font-weight:700;padding:5px 11px;text-align:right;border-bottom:1px solid var(--border)}
+.sc-table th:first-child{text-align:left}
+.sc-table td{padding:7px 11px;border-bottom:1px solid var(--border);text-align:right;font-variant-numeric:tabular-nums}
+.sc-table td:first-child{text-align:left}
+.sc-table tr:last-child td{border-bottom:none}
+.above-avg{color:#1a7a46;font-weight:700}
+.below-avg{color:#a05010}
+.sc-empty{padding:11px 13px;color:var(--sub);font-size:12.5px}
+</style></head><body>
+<div class="header"><div class="header-inner">
+  <div class="brand">퀀트레터 · Monthly</div>
+  <h1>이달의 자산배분 &amp; 성적표</h1>
+  <div class="header-meta">
+    <span>📅 2026년 6월호</span>
+    <span>기준일 2026-06-30</span>
+    <span>📌 매월 첫 주 발송</span>
+  </div>
+</div></div>
+<div class="body">
+  <div class="m-card">
+    <div class="m-head">🧭 이달의 자산배분</div>
+    <div class="bar"><div style="width:40%;background:#2b6fb3"></div><div style="width:30%;background:#3da35d"></div><div style="width:20%;background:#8e44ad"></div><div style="width:10%;background:#e0a020"></div></div>
+    <div class="alloc-grid"><div class="a-card"><div class="a-name">한국주식</div><div class="a-val" style="color:#2b6fb3">40%</div></div><div class="a-card"><div class="a-name">미국주식</div><div class="a-val" style="color:#3da35d">30%</div></div><div class="a-card"><div class="a-name">미국채권</div><div class="a-val" style="color:#8e44ad">20%</div></div><div class="a-card"><div class="a-name">금</div><div class="a-val" style="color:#e0a020">10%</div></div></div>
+    <div class="info-box" style="margin-top:8px;font-size:11.5px">
+      모멘텀 점수 (최근 12개월 이동평균): 한국주식 <b>86</b> · 미국주식 <b>18</b> · 미국채권 <b>7</b> · 금 <b>4</b>
+    </div>
+  </div>
+
+  <div class="m-card">
+  <div class="m-head">📋 지난달 추천 성적표
+    <span class="m-head-period">2026-06-05 → 2026-06-26</span></div>
+  <div class="kpi-row">
+    <div class="kpi"><div class="kn">전체 평균</div>
+      <div class="kv neg">-3.0%</div></div>
+    <div class="kpi"><div class="kn">수익 종목</div>
+      <div class="kv neg">5 / 16</div></div>
+  </div>
+  <div class="sc-outer">
+    <div class="sc-strat"><div class="sc-strat-head us">🇺🇸 미국 모멘텀 <span style="font-size:11px;font-weight:400">2/6 종목 양수</span><span class="sc-avg-badge neg">-1.7% 평균</span></div><div style="overflow-x:auto"><table class="sc-table"><thead><tr><th>종목</th><th>수익률</th><th>전략 내 비교</th></tr></thead><tbody><tr><td><b>AMD</b></td><td class="pos">+11.8%</td><td class="above-avg">▲ 평균대비 +13.5%</td></tr><tr><td><b>LLY</b></td><td class="pos">+6.8%</td><td class="above-avg">▲ 평균대비 +8.5%</td></tr><tr><td><b>AVGO</b></td><td class="neg">-5.2%</td><td class="below-avg">▽ 평균대비 -3.5%</td></tr><tr><td><b>NVDA</b></td><td class="neg">-6.1%</td><td class="below-avg">▽ 평균대비 -4.4%</td></tr><tr><td><b>GOOGL</b></td><td class="neg">-8.4%</td><td class="below-avg">▽ 평균대비 -6.7%</td></tr><tr><td><b>XOM</b></td><td class="neg">-8.9%</td><td class="below-avg">▽ 평균대비 -7.2%</td></tr></tbody></table></div></div>
+    <div class="sc-strat"><div class="sc-strat-head kr">🇰🇷 한국 ① 저변동성 <span style="font-size:11px;font-weight:400">0/5 종목 양수</span><span class="sc-avg-badge neg">-6.6% 평균</span></div><div style="overflow-x:auto"><table class="sc-table"><thead><tr><th>종목</th><th>수익률</th><th>전략 내 비교</th></tr></thead><tbody><tr><td><b>KT</b></td><td class="neg">-3.3%</td><td class="above-avg">▲ 평균대비 +3.3%</td></tr><tr><td><b>기업은행</b></td><td class="neg">-4.8%</td><td class="above-avg">▲ 평균대비 +1.8%</td></tr><tr><td><b>KT&G</b></td><td class="neg">-6.6%</td><td class="above-avg">▲ 평균대비 +0.0%</td></tr><tr><td><b>LG유플러스</b></td><td class="neg">-7.2%</td><td class="below-avg">▽ 평균대비 -0.6%</td></tr><tr><td><b>CJ제일제당</b></td><td class="neg">-11.3%</td><td class="below-avg">▽ 평균대비 -4.7%</td></tr></tbody></table></div></div>
+    <div class="sc-strat"><div class="sc-strat-head pu">🇰🇷 한국 ② 반전회피 모멘텀 <span style="font-size:11px;font-weight:400">3/5 종목 양수</span><span class="sc-avg-badge neg">-1.1% 평균</span></div><div style="overflow-x:auto"><table class="sc-table"><thead><tr><th>종목</th><th>수익률</th><th>전략 내 비교</th></tr></thead><tbody><tr><td><b>SK하이닉스</b></td><td class="pos">+29.1%</td><td class="above-avg">▲ 평균대비 +30.2%</td></tr><tr><td><b>삼성전기</b></td><td class="pos">+13.4%</td><td class="above-avg">▲ 평균대비 +14.5%</td></tr><tr><td><b>삼성전자</b></td><td class="pos">+3.2%</td><td class="above-avg">▲ 평균대비 +4.3%</td></tr><tr><td><b>삼성SDI</b></td><td class="neg">-19.9%</td><td class="below-avg">▽ 평균대비 -18.8%</td></tr><tr><td><b>현대차</b></td><td class="neg">-31.4%</td><td class="below-avg">▽ 평균대비 -30.3%</td></tr></tbody></table></div></div>
+  </div>
+</div>
+
+  <div class="info-box" style="border-color:rgba(184,134,11,.3);background:rgba(184,134,11,.05)">
+    ⚠️ 본 콘텐츠는 불특정 다수 대상 정보 제공이며 개별 투자 자문이 아닙니다.
+    과거 성과는 미래 수익을 보장하지 않습니다.
+  </div>
+</div>
+<div class="footer"><div class="footer-inner">퀀트레터 · 유사투자자문업자(신고 예정)</div></div>
+</body></html>
