@@ -43,7 +43,7 @@ $backendProc = Start-Process -FilePath $PYTHON `
     -ArgumentList "-m", "reflex", "run", "--backend-only", "--backend-port", $BackendPort `
     -WorkingDirectory $ProjectDir `
     -PassThru `
-    -WindowStyle Normal
+    -WindowStyle Hidden
 
 Write-Log "[백엔드] PID: $($backendProc.Id)"
 
