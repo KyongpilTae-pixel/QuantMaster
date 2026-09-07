@@ -436,6 +436,18 @@ def main():
     for f in generated:
         log.info(f"  → {os.path.basename(f)}")
 
+    # ④ 이메일 발송 (구독자 있고 SMTP 설정 시)
+    try:
+        from email_delivery import _auto_send_if_configured
+        if weekly_file:
+            friday_str = os.path.basename(weekly_file).replace("weekly_", "").replace(".html", "")
+            _auto_send_if_configured(weekly_file, f"[퀀트레터] 주간 리포트 {friday_str}")
+        if monthly_file:
+            ym_str = os.path.basename(monthly_file).replace("monthly_", "").replace(".html", "")
+            _auto_send_if_configured(monthly_file, f"[퀀트레터] 월간 성과 리포트 {ym_str}")
+    except ImportError:
+        pass
+
 
 if __name__ == "__main__":
     main()
