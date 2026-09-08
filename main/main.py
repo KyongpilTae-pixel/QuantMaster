@@ -1512,8 +1512,9 @@ class State(rx.State):
         self.pmom_results = sorted_rows
         self.pmom_col_labels = labels
 
+    @rx.event(background=True)
     async def do_load_pmom(self):
-        """기간 모멘텀 탭 진입 시 캐시 즉시 로드, 없으면 스캔 실행."""
+        """기간 모멘텀 탭 진입 시 캐시 즉시 로드, 없으면 스캔 실행 (background task)."""
         import asyncio as _aio
         import os as _os
         import threading
@@ -1523,31 +1524,36 @@ class State(rx.State):
             save_momentum_cache_all,
             scan_stock_momentum_all_periods,
             _momentum_all_cache_path,
+            apply_sort_and_cols,
         )
 
-        from utils.stock_scanner import apply_sort_and_cols
+        async with self:
+            if self.pmom_loading:
+                return
+            market = self.pmom_market
+            period = self.pmom_period
 
-        # 캐시 확인 → 즉시 반환
-        cached = load_momentum_cache_all(self.pmom_market)
+        # 캐시 확인 (스레드에서 로드)
+        cached = await _aio.to_thread(load_momentum_cache_all, market)
         if cached:
-            sorted_rows, labels = apply_sort_and_cols(list(cached), self.pmom_period, top_n=30)
-            self.pmom_results = sorted_rows
-            self.pmom_col_labels = labels
-            self.pmom_from_cache = True
+            sorted_rows, labels = apply_sort_and_cols(list(cached), period, top_n=30)
             try:
-                mtime = _os.path.getmtime(_momentum_all_cache_path(self.pmom_market))
-                self.pmom_cache_time = _dt.fromtimestamp(mtime).strftime("%H:%M")
+                mtime = _os.path.getmtime(_momentum_all_cache_path(market))
+                cache_time = _dt.fromtimestamp(mtime).strftime("%H:%M")
             except Exception:
-                self.pmom_cache_time = ""
+                cache_time = ""
+            async with self:
+                self.pmom_results = sorted_rows
+                self.pmom_col_labels = labels
+                self.pmom_from_cache = True
+                self.pmom_cache_time = cache_time
             return
 
         # 캐시 없음 → 스캔
-        if self.pmom_loading:
-            return
-        self.pmom_loading = True
-        self.pmom_error = ""
-        self.pmom_scan_progress = ""
-        yield
+        async with self:
+            self.pmom_loading = True
+            self.pmom_error = ""
+            self.pmom_scan_progress = ""
 
         _prog: dict = {"current": 0, "total": 0}
         _lock = threading.Lock()
@@ -1561,42 +1567,36 @@ class State(rx.State):
             task = _aio.create_task(
                 _aio.to_thread(
                     scan_stock_momentum_all_periods,
-                    self.pmom_market, 1_000, 30, 150, 90, _on_progress,
+                    market, 1_000, 30, 150, 90, _on_progress,
                 )
             )
             while not task.done():
-                try:
-                    data_all_inner = await _aio.wait_for(_aio.shield(task), timeout=0.5)
-                    break
-                except _aio.TimeoutError:
-                    with _lock:
-                        curr, tot = _prog["current"], _prog["total"]
-                    if tot > 0:
+                await _aio.sleep(0.5)
+                with _lock:
+                    curr, tot = _prog["current"], _prog["total"]
+                if tot > 0:
+                    async with self:
                         self.pmom_scan_progress = f"{curr}/{tot}개 종목 처리 중..."
-                    yield
-            else:
-                data_all_inner = task.result()
 
-            data_all = data_all_inner
-            self.pmom_scan_progress = ""
+            data_all = task.result()  # 예외 발생 시 여기서 raise
+            async with self:
+                self.pmom_scan_progress = ""
+
             if data_all:
-                _save_task = _aio.create_task(_aio.to_thread(save_momentum_cache_all, self.pmom_market, data_all))
-                while not _save_task.done():
-                    try:
-                        await _aio.wait_for(_aio.shield(_save_task), timeout=0.5)
-                        break
-                    except _aio.TimeoutError:
-                        yield
-                self._refresh_momentum_cache_status()
-                sorted_rows, labels = apply_sort_and_cols(list(data_all), self.pmom_period, top_n=30)
-                self.pmom_results = sorted_rows
-                self.pmom_col_labels = labels
-                self.pmom_from_cache = False
+                await _aio.to_thread(save_momentum_cache_all, market, data_all)
+                sorted_rows, labels = apply_sort_and_cols(list(data_all), period, top_n=30)
+                async with self:
+                    self.pmom_results = sorted_rows
+                    self.pmom_col_labels = labels
+                    self.pmom_from_cache = False
+                    self._refresh_momentum_cache_status()
         except Exception as e:
-            self.pmom_error = str(e)
-            self.pmom_scan_progress = ""
+            async with self:
+                self.pmom_error = str(e)
+                self.pmom_scan_progress = ""
         finally:
-            self.pmom_loading = False
+            async with self:
+                self.pmom_loading = False
 
     async def do_refresh_leaders_quick(self):
         """기간 모멘텀 결과의 기존 30종목 가격만 재조회 (빠른 갱신).
