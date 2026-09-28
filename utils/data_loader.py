@@ -300,25 +300,76 @@ class QuantDataLoader:
         return df
 
     def _get_kr_snapshot(self, market: str, max_pages: int) -> pd.DataFrame:
-        sosok = _MARKET_CODE.get(market, "0")
-        session = self._get_session()
+        _empty = pd.DataFrame(
+            columns=["Symbol", "Name", "Close", "PBR", "PER", "ROE", "MarketCap", "GPA_Score"]
+        )
 
-        all_records: list[dict] = []
-        for page in range(1, max_pages + 1):
+        # 1. FDR StockListing으로 종목 코드 목록 조회 (발행주식수 기준 정렬 → 시총 프록시)
+        try:
+            listing = _fdr_listing_bounded(market, timeout=20.0)
+            if listing is None or listing.empty:
+                return _empty
+            code_col   = next((c for c in listing.columns if c in ("Code", "Symbol")), None)
+            name_col   = next((c for c in listing.columns if c in ("Name", "회사명", "종목명")), None)
+            stocks_col = next((c for c in listing.columns if "Stock" in str(c) or "stock" in str(c)), None)
+            if code_col is None:
+                return _empty
+            if stocks_col:
+                listing = listing.copy()
+                listing[stocks_col] = pd.to_numeric(listing[stocks_col], errors="coerce").fillna(0)
+                listing = listing.sort_values(stocks_col, ascending=False)
+            codes  = listing[code_col].dropna().astype(str).str.zfill(6).tolist()
+            names  = listing[name_col].astype(str).tolist() if name_col else [""] * len(codes)
+        except Exception as e:
+            print(f"[DataLoader] {market} 목록 조회 실패: {e}")
+            return _empty
+
+        # 2. NAVER polling API로 펀더멘털 병렬 조회 (max_pages × 50)
+        max_stocks = max_pages * 50
+        target_codes = codes[:max_stocks]
+        name_map = {codes[i]: names[i] for i in range(len(codes))}
+
+        def _fetch_one(code: str) -> dict | None:
+            item = _fetch_kr_naver_fundamentals(code)
+            if not item:
+                return None
             try:
-                records = _parse_page(session, sosok, page)
-                all_records.extend(records)
-                time.sleep(0.3)
-            except Exception as e:
-                print(f"[DataLoader] page {page} 오류: {e}")
-                break
+                nv     = float(item.get("nv") or item.get("sv") or 0)
+                bps    = float(item.get("bps") or 0)
+                eps    = float(item.get("eps") or 0)
+                shares = float(item.get("countOfListedStock") or 0)
+                if nv <= 0 or bps <= 0:
+                    return None
+                pbr    = round(nv / bps, 2)
+                per    = round(nv / eps, 2) if eps > 0 else np.nan
+                # ROE = EPS / BPS (수익률 = 주당순이익 / 주당순자산) × 100
+                roe    = round(eps / bps * 100, 2) if bps > 0 and eps > 0 else np.nan
+                mktcap = round(nv * shares / 1e8, 0) if shares > 0 else np.nan  # 억원
+                nm     = item.get("nm") or name_map.get(code, code)
+                return {
+                    "Symbol":    code,
+                    "Name":      nm,
+                    "Close":     nv,
+                    "PBR":       pbr,
+                    "PER":       per,
+                    "ROE":       roe,
+                    "MarketCap": mktcap,
+                }
+            except Exception:
+                return None
 
-        if not all_records:
-            return pd.DataFrame(
-                columns=["Symbol", "Name", "Close", "PBR", "PER", "ROE", "MarketCap", "GPA_Score"]
-            )
+        records: list[dict] = []
+        with ThreadPoolExecutor(max_workers=10) as ex:
+            futures = {ex.submit(_fetch_one, code): code for code in target_codes}
+            for future in as_completed(futures):
+                result = future.result()
+                if result and result.get("PBR", 0) > 0:
+                    records.append(result)
 
-        df = pd.DataFrame(all_records)
+        if not records:
+            return _empty
+
+        df = pd.DataFrame(records)
         df["GPA_Score"] = df["ROE"].rank(pct=True)
         return df.reset_index(drop=True)
 
