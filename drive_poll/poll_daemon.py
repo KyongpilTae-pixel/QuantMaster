@@ -21,7 +21,7 @@ COMMS_FOLDER_ID    = "1MvjWh0HYM0QlDHKh_uyqKrCtkUHBWlSp"  # Shared Drive _comms/
 SERVICE_ACCOUNT_FILE = Path(__file__).parent / "service_account.json"
 STATE_FILE         = Path(__file__).parent / "poll_state.json"
 LOG_FILE           = Path(__file__).parent / "poll_daemon.log"
-CLAUDE_CMD         = "claude"
+CLAUDE_CMD         = r"C:\Users\Administrator\.local\bin\claude.exe"
 
 # v1.4 헬스체크 파라미터
 POLL_INTERVAL_MIN  = 30          # 로컬 폴링 간격(분)
@@ -99,14 +99,14 @@ def save_state(state):
 
 # ── Drive 파일 조작 ────────────────────────────────────────────────────────────
 def list_new_cloud_files(service, last_check_utc):
-    """parentId 직접 조회 (v1.4 §1 — list_recent_files 금지)."""
+    """parentId 직접 조회 (v1.4 §1 — list_recent_files 금지).
+    createdTime 필터 대신 processed_ids로 중복 제거 — 클로드 실패 후 last_check_utc
+    갱신으로 미처리 메시지가 영구 누락되는 버그 방지.
+    """
     q_parts = [
         f"'{COMMS_FOLDER_ID}' in parents",
-        "trashed = false",
         "name contains 'cloud-to-local'",
     ]
-    if last_check_utc:
-        q_parts.append(f"createdTime > '{last_check_utc}'")
 
     result = service.files().list(
         q=" and ".join(q_parts),
