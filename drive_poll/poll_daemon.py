@@ -1,8 +1,12 @@
 """
-QuantMaster Drive Poll Daemon — v1.4
+QuantMaster Drive Poll Daemon — v2.0
 _comms/ 폴더를 주기적으로 폴링하여 cloud 메시지를 감지하고
 Claude Code CLI로 처리 프롬프트를 전달한다.
-프로토콜 v1.4: 상호 헬스체크(STATE 파일 + 3대 점검 + ALERT) 적용.
+프로토콜 v1.4 + v2.0 규격(cloud-034 SPEC):
+- last_seen_cloud_id: 실제 cloud-NNN id 저장 (kind 단어 금지)
+- open_waits 있으면 activity IDLE 금지
+- REQUEST/NOTE/SPEC 타입별 처리
+- 실패 시 조용한 IDLE 금지 → STATUS 게시
 
 인증: Google Service Account (JSON 키)
 실행: python poll_daemon.py [--once] [--interval 1800]
@@ -10,6 +14,7 @@ Claude Code CLI로 처리 프롬프트를 전달한다.
 import argparse
 import json
 import logging
+import re
 import subprocess
 import sys
 import time
@@ -28,20 +33,22 @@ POLL_INTERVAL_MIN  = 30          # 로컬 폴링 간격(분)
 LIVENESS_GRACE_MIN = 60          # 상대 무응답 임계: poll_interval × 2
 DELIVERY_GRACE_CYCLES = 2        # 전달갭 유예 주기
 
-PROCESS_PROMPT = """Google Drive _comms/ 폴더(parentId={comms_id})에서 cloud-to-local 메시지를 확인하고 프로토콜 v1.4에 따라 처리한다.
+PROCESS_PROMPT = """Google Drive _comms/ 폴더(parentId={comms_id})에서 cloud-to-local 메시지를 확인하고 프로토콜 v2.0(cloud-034 SPEC)에 따라 처리한다.
 
 새로 감지된 파일:
 {new_files}
 
-처리 순서:
-1. 각 메시지를 읽는다 (mcp__claude_ai_Google_Drive__read_file_content)
-2. type이 REQUEST 또는 NOTE이고 open인 건에 대해:
-   a. 즉시 접수 ACK 발행: MSG_<UTC시각Z>_local-to-cloud_ACK_<ref>.md → _comms/
-   b. 요청 처리 (분석·계산 등)
-   c. 완료 REPLY 발행: MSG_<UTC시각Z>_local-to-cloud_REPLY_<topic>.md → _comms/
+처리 규칙 (v2.0):
+1. 각 파일을 읽는다 (mcp__claude_ai_Google_Drive__read_file_content).
+2. 타입별 처리:
+   - REQUEST: open_waits에 추가 → ACK 발행 → 실제 작업 실행(분석·계산·백테스트 등) → REPLY 발행 → open_waits 제거.
+   - NOTE(EXECUTE류): 참조된 REQUEST를 찾아 실행 → REPLY 발행.
+   - SPEC: 지정된 코드 변경(poll_daemon.py 등)을 즉시 적용 → STATUS 게시.
+   - ACK/REPLY/STATE(cloud): last_seen_cloud_id만 갱신, 추가 처리 없음.
 3. 파일명 규칙: MSG_<UTC시각Z>_local-to-cloud_<TYPE>[_topic].md
-4. contentMimeType: text/plain, doc_version: 1.4 헤더 포함
-5. 처리 완료 후 STATE_local.md를 갱신(open_waits 반영)
+4. contentMimeType: text/plain, doc_version: 1.4 헤더 포함.
+5. STATE_local.md 갱신: last_seen_peer_id에 실제 cloud-NNN id 기록, open_waits 있으면 activity IDLE 금지.
+6. 실행 불가(에러·데이터 없음)면 STATUS 파일 게시(사유 포함). 조용한 IDLE 금지.
 
 완료 후 처리 결과를 간략히 보고한다.
 """.strip()
@@ -56,6 +63,13 @@ logging.basicConfig(
     ],
 )
 log = logging.getLogger(__name__)
+
+
+# ── 유틸 ──────────────────────────────────────────────────────────────────────
+def extract_cloud_id(filename: str):
+    """파일명에서 cloud-NNN id 추출. 예: 'REQUEST_cloud-032_...' → 'cloud-032'."""
+    m = re.search(r'(cloud-\d+)', filename)
+    return m.group(1) if m else None
 
 
 # ── Drive 서비스 ───────────────────────────────────────────────────────────────
@@ -258,6 +272,27 @@ def check_health(service, state, cloud_state):
         log.info("헬스체크 정상")
 
 
+def _post_status(service, message: str):
+    """처리 실패·에러 시 STATUS 파일 게시 (v2.0 §5 — 조용한 IDLE 금지)."""
+    now = datetime.now(timezone.utc)
+    content = f"""---
+doc_version: 1.4
+from: local
+kind: STATUS
+ts: {now.isoformat()}
+---
+
+# STATUS — 처리 실패 또는 에러
+
+{message}
+
+— local (자동 게시)
+"""
+    fname = f"STATUS_local_{now.strftime('%Y%m%dT%H%MZ')}.md"
+    write_drive_file(service, fname, content)
+    log.warning(f"STATUS 게시: {fname}")
+
+
 def post_alert(service, alerts):
     """ALERT_local.md 게시 (v1.4 §4)."""
     now = datetime.now(timezone.utc)
@@ -323,13 +358,29 @@ def poll_once(service, state, interval_min=POLL_INTERVAL_MIN):
 
     if new:
         log.info(f"새 메시지 {len(new)}개: {[f['name'] for f in new]}")
-        # 마지막으로 본 cloud 메시지 ID 갱신
-        state["last_seen_cloud_id"] = new[-1]["name"].split("_")[0] if new else state.get("last_seen_cloud_id")
+        # 마지막으로 본 cloud id 갱신 (실제 cloud-NNN, kind 단어 금지)
+        cloud_id = extract_cloud_id(new[-1]["name"])
+        if cloud_id:
+            state["last_seen_cloud_id"] = cloud_id
+        # open_waits: REQUEST 파일 id 추가 (ACK 없이 REPLY 없는 건 미처리로 유지)
+        for f in new:
+            fname = f["name"]
+            if fname.startswith("REQUEST_") or fname.startswith("NOTE_"):
+                cid = extract_cloud_id(fname)
+                if cid and cid not in state.get("open_waits", []):
+                    state.setdefault("open_waits", []).append(cid)
+        # STATE: 처리 중 표시 (IDLE 금지)
+        processing_ids = [extract_cloud_id(f["name"]) or f["id"] for f in new]
+        write_state_local(service, state,
+                          activity=f"처리 중 — {','.join(str(x) for x in processing_ids)}",
+                          open_waits=state.get("open_waits", []))
         success = trigger_claude(new)
         if success:
             processed.update(f["id"] for f in new)
         else:
+            # 실패: STATUS 게시 후 미처리 유지
             log.warning("Claude 실패 — 파일 ID를 미처리로 유지(재시도)")
+            _post_status(service, f"Claude CLI 실행 실패 — 미처리 파일: {[f['name'] for f in new]}")
     else:
         log.info("새 메시지 없음")
 
@@ -337,8 +388,11 @@ def poll_once(service, state, interval_min=POLL_INTERVAL_MIN):
     cloud_state = read_state_cloud(service)
     check_health(service, state, cloud_state)
 
-    # 4. STATE_local.md 완료 상태로 업데이트
-    write_state_local(service, state, activity="IDLE — 다음 폴링 대기")
+    # 4. STATE_local.md 완료 상태로 업데이트 (open_waits 있으면 IDLE 금지)
+    open_waits = state.get("open_waits", [])
+    final_activity = (f"PENDING — {','.join(open_waits)}" if open_waits
+                      else "IDLE — 다음 폴링 대기")
+    write_state_local(service, state, activity=final_activity)
 
     state["last_check_utc"] = now_utc
     state["processed_ids"] = list(processed)[-200:]
@@ -352,7 +406,7 @@ def main():
                         help=f"폴링 간격(초), 기본 {POLL_INTERVAL_MIN*60}")
     args = parser.parse_args()
 
-    log.info("=== Drive Poll Daemon v1.4 시작 ===")
+    log.info("=== Drive Poll Daemon v2.0 시작 ===")
     log.info(f"_comms/ folder: {COMMS_FOLDER_ID}")
     log.info(f"폴링 간격: {args.interval}초" if not args.once else "1회 실행 모드")
 
