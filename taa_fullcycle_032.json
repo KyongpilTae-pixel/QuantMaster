@@ -1,0 +1,1606 @@
+{
+  "generated_at": "2026-09-30T09:47Z",
+  "period": "2020-01-02 ~ 2026-09-26",
+  "n_months": 80,
+  "assets": [
+    "EWY",
+    "SPY",
+    "AGG",
+    "GLD",
+    "BIL"
+  ],
+  "tc": 0.001,
+  "summary": [
+    {
+      "strategy": "BASE",
+      "cagr": 15.73,
+      "sharpe": 1.077,
+      "mdd_pct": -13.23,
+      "calmar": 1.19,
+      "nav_final": 264.81,
+      "annual": {
+        "2020": 23.23,
+        "2021": 8.28,
+        "2022": -7.08,
+        "2023": -0.44,
+        "2024": 14.37,
+        "2025": 41.88,
+        "2026": 32.39
+      },
+      "beats_ew5_sharpe": true,
+      "beats_ew5_calmar": true
+    },
+    {
+      "strategy": "V1",
+      "cagr": 11.42,
+      "sharpe": 1.114,
+      "mdd_pct": -9.19,
+      "calmar": 1.24,
+      "nav_final": 205.63,
+      "annual": {
+        "2020": 18.69,
+        "2021": 3.43,
+        "2022": -3.95,
+        "2023": 2.19,
+        "2024": 10.19,
+        "2025": 30.15,
+        "2026": 19.14
+      },
+      "beats_ew5_sharpe": true,
+      "beats_ew5_calmar": true
+    },
+    {
+      "strategy": "V3",
+      "cagr": 12.7,
+      "sharpe": 1.102,
+      "mdd_pct": -10.06,
+      "calmar": 1.26,
+      "nav_final": 221.95,
+      "annual": {
+        "2020": 20.05,
+        "2021": 4.46,
+        "2022": -5.0,
+        "2023": 0.83,
+        "2024": 11.61,
+        "2025": 32.88,
+        "2026": 24.74
+      },
+      "beats_ew5_sharpe": true,
+      "beats_ew5_calmar": true
+    },
+    {
+      "strategy": "V4",
+      "cagr": 13.97,
+      "sharpe": 1.112,
+      "mdd_pct": -12.91,
+      "calmar": 1.08,
+      "nav_final": 239.18,
+      "annual": {
+        "2020": 20.98,
+        "2021": 5.45,
+        "2022": -8.97,
+        "2023": 6.66,
+        "2024": 10.43,
+        "2025": 38.23,
+        "2026": 26.67
+      },
+      "beats_ew5_sharpe": true,
+      "beats_ew5_calmar": true
+    },
+    {
+      "strategy": "EW5",
+      "cagr": 12.02,
+      "sharpe": 1.023,
+      "mdd_pct": -18.52,
+      "calmar": 0.65,
+      "nav_final": 213.18,
+      "annual": {
+        "2020": 18.63,
+        "2021": 2.66,
+        "2022": -11.19,
+        "2023": 14.03,
+        "2024": 6.59,
+        "2025": 34.55,
+        "2026": 20.65
+      },
+      "beats_ew5_sharpe": false,
+      "beats_ew5_calmar": false
+    },
+    {
+      "strategy": "SPY",
+      "cagr": 15.51,
+      "sharpe": 0.946,
+      "mdd_pct": -23.93,
+      "calmar": 0.65,
+      "nav_final": 261.56,
+      "annual": {
+        "2020": 18.33,
+        "2021": 28.73,
+        "2022": -18.18,
+        "2023": 26.18,
+        "2024": 24.89,
+        "2025": 17.72,
+        "2026": 13.15
+      },
+      "beats_ew5_sharpe": false,
+      "beats_ew5_calmar": false
+    }
+  ],
+  "annual_table": {
+    "BASE": {
+      "2020": 23.23,
+      "2021": 8.28,
+      "2022": -7.08,
+      "2023": -0.44,
+      "2024": 14.37,
+      "2025": 41.88,
+      "2026": 32.39
+    },
+    "V1": {
+      "2020": 18.69,
+      "2021": 3.43,
+      "2022": -3.95,
+      "2023": 2.19,
+      "2024": 10.19,
+      "2025": 30.15,
+      "2026": 19.14
+    },
+    "V3": {
+      "2020": 20.05,
+      "2021": 4.46,
+      "2022": -5.0,
+      "2023": 0.83,
+      "2024": 11.61,
+      "2025": 32.88,
+      "2026": 24.74
+    },
+    "V4": {
+      "2020": 20.98,
+      "2021": 5.45,
+      "2022": -8.97,
+      "2023": 6.66,
+      "2024": 10.43,
+      "2025": 38.23,
+      "2026": 26.67
+    },
+    "EW5": {
+      "2020": 18.63,
+      "2021": 2.66,
+      "2022": -11.19,
+      "2023": 14.03,
+      "2024": 6.59,
+      "2025": 34.55,
+      "2026": 20.65
+    },
+    "SPY": {
+      "2020": 18.33,
+      "2021": 28.73,
+      "2022": -18.18,
+      "2023": 26.18,
+      "2024": 24.89,
+      "2025": 17.72,
+      "2026": 13.15
+    }
+  },
+  "year_2022_focus": {
+    "BASE": {
+      "annual_ret": -7.08,
+      "mdd": -8.29
+    },
+    "V1": {
+      "annual_ret": -3.95,
+      "mdd": -5.22
+    },
+    "V3": {
+      "annual_ret": -5.0,
+      "mdd": -6.25
+    },
+    "V4": {
+      "annual_ret": -8.97,
+      "mdd": -12.91
+    },
+    "EW5": {
+      "annual_ret": -11.19,
+      "mdd": -17.9
+    },
+    "SPY": {
+      "annual_ret": -18.18,
+      "mdd": null
+    }
+  },
+  "best_variant": "V3",
+  "best_variant_monthly": [
+    {
+      "month": "2020-01",
+      "year": 2020,
+      "weights": {
+        "EWY": 10.0,
+        "SPY": 30.0,
+        "AGG": 30.0,
+        "GLD": 30.0,
+        "BIL": 0.0
+      },
+      "eligible": [
+        "EWY",
+        "SPY",
+        "AGG",
+        "GLD"
+      ],
+      "ret": 1.22,
+      "nav": 101.1153
+    },
+    {
+      "month": "2020-02",
+      "year": 2020,
+      "weights": {
+        "EWY": 0.0,
+        "SPY": 30.0,
+        "AGG": 30.0,
+        "GLD": 30.0,
+        "BIL": 10.0
+      },
+      "eligible": [
+        "SPY",
+        "AGG",
+        "GLD"
+      ],
+      "ret": -2.08,
+      "nav": 99.0036
+    },
+    {
+      "month": "2020-03",
+      "year": 2020,
+      "weights": {
+        "EWY": 0.0,
+        "SPY": 0.0,
+        "AGG": 30.0,
+        "GLD": 30.0,
+        "BIL": 40.0
+      },
+      "eligible": [
+        "AGG",
+        "GLD"
+      ],
+      "ret": -0.14,
+      "nav": 98.8324
+    },
+    {
+      "month": "2020-04",
+      "year": 2020,
+      "weights": {
+        "EWY": 0.0,
+        "SPY": 0.0,
+        "AGG": 30.0,
+        "GLD": 30.0,
+        "BIL": 40.0
+      },
+      "eligible": [
+        "AGG",
+        "GLD"
+      ],
+      "ret": 2.69,
+      "nav": 101.4872
+    },
+    {
+      "month": "2020-05",
+      "year": 2020,
+      "weights": {
+        "EWY": 0.0,
+        "SPY": 0.0,
+        "AGG": 30.0,
+        "GLD": 30.0,
+        "BIL": 40.0
+      },
+      "eligible": [
+        "AGG",
+        "GLD"
+      ],
+      "ret": 0.97,
+      "nav": 102.4729
+    },
+    {
+      "month": "2020-06",
+      "year": 2020,
+      "weights": {
+        "EWY": 0.0,
+        "SPY": 30.0,
+        "AGG": 30.0,
+        "GLD": 30.0,
+        "BIL": 10.0
+      },
+      "eligible": [
+        "SPY",
+        "AGG",
+        "GLD"
+      ],
+      "ret": 1.55,
+      "nav": 104.0311
+    },
+    {
+      "month": "2020-07",
+      "year": 2020,
+      "weights": {
+        "EWY": 0.0,
+        "SPY": 30.0,
+        "AGG": 30.0,
+        "GLD": 30.0,
+        "BIL": 10.0
+      },
+      "eligible": [
+        "SPY",
+        "AGG",
+        "GLD"
+      ],
+      "ret": 5.4,
+      "nav": 109.6539
+    },
+    {
+      "month": "2020-08",
+      "year": 2020,
+      "weights": {
+        "EWY": 16.7,
+        "SPY": 23.3,
+        "AGG": 30.0,
+        "GLD": 30.0,
+        "BIL": 0.0
+      },
+      "eligible": [
+        "EWY",
+        "SPY",
+        "AGG",
+        "GLD"
+      ],
+      "ret": 2.06,
+      "nav": 111.8944
+    },
+    {
+      "month": "2020-09",
+      "year": 2020,
+      "weights": {
+        "EWY": 16.5,
+        "SPY": 25.0,
+        "AGG": 30.0,
+        "GLD": 28.5,
+        "BIL": 0.0
+      },
+      "eligible": [
+        "EWY",
+        "SPY",
+        "AGG",
+        "GLD"
+      ],
+      "ret": -1.56,
+      "nav": 110.1438
+    },
+    {
+      "month": "2020-10",
+      "year": 2020,
+      "weights": {
+        "EWY": 19.7,
+        "SPY": 20.3,
+        "AGG": 30.0,
+        "GLD": 30.0,
+        "BIL": 0.0
+      },
+      "eligible": [
+        "EWY",
+        "SPY",
+        "AGG",
+        "GLD"
+      ],
+      "ret": -0.96,
+      "nav": 109.0787
+    },
+    {
+      "month": "2020-11",
+      "year": 2020,
+      "weights": {
+        "EWY": 21.4,
+        "SPY": 18.6,
+        "AGG": 30.0,
+        "GLD": 30.0,
+        "BIL": 0.0
+      },
+      "eligible": [
+        "EWY",
+        "SPY",
+        "AGG",
+        "GLD"
+      ],
+      "ret": 4.56,
+      "nav": 114.054
+    },
+    {
+      "month": "2020-12",
+      "year": 2020,
+      "weights": {
+        "EWY": 30.0,
+        "SPY": 30.0,
+        "AGG": 30.0,
+        "GLD": 0.0,
+        "BIL": 10.0
+      },
+      "eligible": [
+        "EWY",
+        "SPY",
+        "AGG"
+      ],
+      "ret": 5.18,
+      "nav": 119.9238
+    },
+    {
+      "month": "2021-01",
+      "year": 2021,
+      "weights": {
+        "EWY": 28.9,
+        "SPY": 17.5,
+        "AGG": 30.0,
+        "GLD": 23.6,
+        "BIL": 0.0
+      },
+      "eligible": [
+        "EWY",
+        "SPY",
+        "AGG",
+        "GLD"
+      ],
+      "ret": -0.47,
+      "nav": 119.3272
+    },
+    {
+      "month": "2021-02",
+      "year": 2021,
+      "weights": {
+        "EWY": 30.0,
+        "SPY": 30.0,
+        "AGG": 30.0,
+        "GLD": 0.0,
+        "BIL": 10.0
+      },
+      "eligible": [
+        "EWY",
+        "SPY",
+        "AGG"
+      ],
+      "ret": 0.33,
+      "nav": 119.6967
+    },
+    {
+      "month": "2021-03",
+      "year": 2021,
+      "weights": {
+        "EWY": 30.0,
+        "SPY": 30.0,
+        "AGG": 0.0,
+        "GLD": 0.0,
+        "BIL": 40.0
+      },
+      "eligible": [
+        "EWY",
+        "SPY"
+      ],
+      "ret": 1.95,
+      "nav": 121.9913
+    },
+    {
+      "month": "2021-04",
+      "year": 2021,
+      "weights": {
+        "EWY": 30.0,
+        "SPY": 30.0,
+        "AGG": 0.0,
+        "GLD": 0.0,
+        "BIL": 40.0
+      },
+      "eligible": [
+        "EWY",
+        "SPY"
+      ],
+      "ret": 1.87,
+      "nav": 124.2785
+    },
+    {
+      "month": "2021-05",
+      "year": 2021,
+      "weights": {
+        "EWY": 30.0,
+        "SPY": 30.0,
+        "AGG": 0.0,
+        "GLD": 0.0,
+        "BIL": 40.0
+      },
+      "eligible": [
+        "EWY",
+        "SPY"
+      ],
+      "ret": 0.68,
+      "nav": 125.1231
+    },
+    {
+      "month": "2021-06",
+      "year": 2021,
+      "weights": {
+        "EWY": 30.0,
+        "SPY": 30.0,
+        "AGG": 0.0,
+        "GLD": 30.0,
+        "BIL": 10.0
+      },
+      "eligible": [
+        "EWY",
+        "SPY",
+        "GLD"
+      ],
+      "ret": -1.1,
+      "nav": 123.7112
+    },
+    {
+      "month": "2021-07",
+      "year": 2021,
+      "weights": {
+        "EWY": 30.0,
+        "SPY": 30.0,
+        "AGG": 0.0,
+        "GLD": 0.0,
+        "BIL": 40.0
+      },
+      "eligible": [
+        "EWY",
+        "SPY"
+      ],
+      "ret": -0.7,
+      "nav": 122.8105
+    },
+    {
+      "month": "2021-08",
+      "year": 2021,
+      "weights": {
+        "EWY": 30.0,
+        "SPY": 30.0,
+        "AGG": 0.0,
+        "GLD": 0.0,
+        "BIL": 40.0
+      },
+      "eligible": [
+        "EWY",
+        "SPY"
+      ],
+      "ret": 0.19,
+      "nav": 123.0464
+    },
+    {
+      "month": "2021-09",
+      "year": 2021,
+      "weights": {
+        "EWY": 0.0,
+        "SPY": 30.0,
+        "AGG": 0.0,
+        "GLD": 0.0,
+        "BIL": 70.0
+      },
+      "eligible": [
+        "SPY"
+      ],
+      "ret": -1.39,
+      "nav": 121.299
+    },
+    {
+      "month": "2021-10",
+      "year": 2021,
+      "weights": {
+        "EWY": 0.0,
+        "SPY": 30.0,
+        "AGG": 0.0,
+        "GLD": 0.0,
+        "BIL": 70.0
+      },
+      "eligible": [
+        "SPY"
+      ],
+      "ret": 2.1,
+      "nav": 123.843
+    },
+    {
+      "month": "2021-11",
+      "year": 2021,
+      "weights": {
+        "EWY": 0.0,
+        "SPY": 30.0,
+        "AGG": 0.0,
+        "GLD": 0.0,
+        "BIL": 70.0
+      },
+      "eligible": [
+        "SPY"
+      ],
+      "ret": -0.26,
+      "nav": 123.5255
+    },
+    {
+      "month": "2021-12",
+      "year": 2021,
+      "weights": {
+        "EWY": 0.0,
+        "SPY": 30.0,
+        "AGG": 0.0,
+        "GLD": 0.0,
+        "BIL": 70.0
+      },
+      "eligible": [
+        "SPY"
+      ],
+      "ret": 1.39,
+      "nav": 125.2393
+    },
+    {
+      "month": "2022-01",
+      "year": 2022,
+      "weights": {
+        "EWY": 0.0,
+        "SPY": 30.0,
+        "AGG": 0.0,
+        "GLD": 0.0,
+        "BIL": 70.0
+      },
+      "eligible": [
+        "SPY"
+      ],
+      "ret": -1.58,
+      "nav": 123.2577
+    },
+    {
+      "month": "2022-02",
+      "year": 2022,
+      "weights": {
+        "EWY": 0.0,
+        "SPY": 30.0,
+        "AGG": 0.0,
+        "GLD": 0.0,
+        "BIL": 70.0
+      },
+      "eligible": [
+        "SPY"
+      ],
+      "ret": -0.9,
+      "nav": 122.1474
+    },
+    {
+      "month": "2022-03",
+      "year": 2022,
+      "weights": {
+        "EWY": 0.0,
+        "SPY": 0.0,
+        "AGG": 0.0,
+        "GLD": 30.0,
+        "BIL": 70.0
+      },
+      "eligible": [
+        "GLD"
+      ],
+      "ret": 0.41,
+      "nav": 122.6162
+    },
+    {
+      "month": "2022-04",
+      "year": 2022,
+      "weights": {
+        "EWY": 0.0,
+        "SPY": 30.0,
+        "AGG": 0.0,
+        "GLD": 30.0,
+        "BIL": 40.0
+      },
+      "eligible": [
+        "SPY",
+        "GLD"
+      ],
+      "ret": -3.26,
+      "nav": 118.5851
+    },
+    {
+      "month": "2022-05",
+      "year": 2022,
+      "weights": {
+        "EWY": 0.0,
+        "SPY": 0.0,
+        "AGG": 0.0,
+        "GLD": 30.0,
+        "BIL": 70.0
+      },
+      "eligible": [
+        "GLD"
+      ],
+      "ret": -0.96,
+      "nav": 117.4168
+    },
+    {
+      "month": "2022-06",
+      "year": 2022,
+      "weights": {
+        "EWY": 0.0,
+        "SPY": 0.0,
+        "AGG": 0.0,
+        "GLD": 0.0,
+        "BIL": 100.0
+      },
+      "eligible": [],
+      "ret": 0.08,
+      "nav": 117.4727
+    },
+    {
+      "month": "2022-07",
+      "year": 2022,
+      "weights": {
+        "EWY": 0.0,
+        "SPY": 0.0,
+        "AGG": 0.0,
+        "GLD": 0.0,
+        "BIL": 100.0
+      },
+      "eligible": [],
+      "ret": 0.04,
+      "nav": 117.5151
+    },
+    {
+      "month": "2022-08",
+      "year": 2022,
+      "weights": {
+        "EWY": 0.0,
+        "SPY": 0.0,
+        "AGG": 0.0,
+        "GLD": 0.0,
+        "BIL": 100.0
+      },
+      "eligible": [],
+      "ret": 0.19,
+      "nav": 117.7428
+    },
+    {
+      "month": "2022-09",
+      "year": 2022,
+      "weights": {
+        "EWY": 0.0,
+        "SPY": 0.0,
+        "AGG": 0.0,
+        "GLD": 0.0,
+        "BIL": 100.0
+      },
+      "eligible": [],
+      "ret": 0.21,
+      "nav": 117.9863
+    },
+    {
+      "month": "2022-10",
+      "year": 2022,
+      "weights": {
+        "EWY": 0.0,
+        "SPY": 0.0,
+        "AGG": 0.0,
+        "GLD": 0.0,
+        "BIL": 100.0
+      },
+      "eligible": [],
+      "ret": 0.16,
+      "nav": 118.1733
+    },
+    {
+      "month": "2022-11",
+      "year": 2022,
+      "weights": {
+        "EWY": 0.0,
+        "SPY": 0.0,
+        "AGG": 0.0,
+        "GLD": 0.0,
+        "BIL": 100.0
+      },
+      "eligible": [],
+      "ret": 0.32,
+      "nav": 118.5457
+    },
+    {
+      "month": "2022-12",
+      "year": 2022,
+      "weights": {
+        "EWY": 0.0,
+        "SPY": 0.0,
+        "AGG": 0.0,
+        "GLD": 0.0,
+        "BIL": 100.0
+      },
+      "eligible": [],
+      "ret": 0.36,
+      "nav": 118.9756
+    },
+    {
+      "month": "2023-01",
+      "year": 2023,
+      "weights": {
+        "EWY": 0.0,
+        "SPY": 0.0,
+        "AGG": 0.0,
+        "GLD": 0.0,
+        "BIL": 100.0
+      },
+      "eligible": [],
+      "ret": 0.28,
+      "nav": 119.3137
+    },
+    {
+      "month": "2023-02",
+      "year": 2023,
+      "weights": {
+        "EWY": 0.0,
+        "SPY": 0.0,
+        "AGG": 0.0,
+        "GLD": 30.0,
+        "BIL": 70.0
+      },
+      "eligible": [
+        "GLD"
+      ],
+      "ret": -1.37,
+      "nav": 117.6459
+    },
+    {
+      "month": "2023-03",
+      "year": 2023,
+      "weights": {
+        "EWY": 0.0,
+        "SPY": 0.0,
+        "AGG": 0.0,
+        "GLD": 0.0,
+        "BIL": 100.0
+      },
+      "eligible": [],
+      "ret": 0.4,
+      "nav": 118.0801
+    },
+    {
+      "month": "2023-04",
+      "year": 2023,
+      "weights": {
+        "EWY": 0.0,
+        "SPY": 0.0,
+        "AGG": 0.0,
+        "GLD": 30.0,
+        "BIL": 70.0
+      },
+      "eligible": [
+        "GLD"
+      ],
+      "ret": 0.51,
+      "nav": 118.65
+    },
+    {
+      "month": "2023-05",
+      "year": 2023,
+      "weights": {
+        "EWY": 0.0,
+        "SPY": 30.0,
+        "AGG": 30.0,
+        "GLD": 30.0,
+        "BIL": 10.0
+      },
+      "eligible": [
+        "SPY",
+        "AGG",
+        "GLD"
+      ],
+      "ret": -0.57,
+      "nav": 117.9031
+    },
+    {
+      "month": "2023-06",
+      "year": 2023,
+      "weights": {
+        "EWY": 0.0,
+        "SPY": 30.0,
+        "AGG": 0.0,
+        "GLD": 30.0,
+        "BIL": 40.0
+      },
+      "eligible": [
+        "SPY",
+        "GLD"
+      ],
+      "ret": 1.46,
+      "nav": 119.5907
+    },
+    {
+      "month": "2023-07",
+      "year": 2023,
+      "weights": {
+        "EWY": 30.0,
+        "SPY": 30.0,
+        "AGG": 0.0,
+        "GLD": 30.0,
+        "BIL": 10.0
+      },
+      "eligible": [
+        "EWY",
+        "SPY",
+        "GLD"
+      ],
+      "ret": 3.69,
+      "nav": 123.967
+    },
+    {
+      "month": "2023-08",
+      "year": 2023,
+      "weights": {
+        "EWY": 30.0,
+        "SPY": 30.0,
+        "AGG": 0.0,
+        "GLD": 30.0,
+        "BIL": 10.0
+      },
+      "eligible": [
+        "EWY",
+        "SPY",
+        "GLD"
+      ],
+      "ret": -3.09,
+      "nav": 120.1309
+    },
+    {
+      "month": "2023-09",
+      "year": 2023,
+      "weights": {
+        "EWY": 30.0,
+        "SPY": 30.0,
+        "AGG": 0.0,
+        "GLD": 30.0,
+        "BIL": 10.0
+      },
+      "eligible": [
+        "EWY",
+        "SPY",
+        "GLD"
+      ],
+      "ret": -4.5,
+      "nav": 114.7281
+    },
+    {
+      "month": "2023-10",
+      "year": 2023,
+      "weights": {
+        "EWY": 0.0,
+        "SPY": 30.0,
+        "AGG": 0.0,
+        "GLD": 0.0,
+        "BIL": 70.0
+      },
+      "eligible": [
+        "SPY"
+      ],
+      "ret": -0.35,
+      "nav": 114.2584
+    },
+    {
+      "month": "2023-11",
+      "year": 2023,
+      "weights": {
+        "EWY": 0.0,
+        "SPY": 0.0,
+        "AGG": 0.0,
+        "GLD": 30.0,
+        "BIL": 70.0
+      },
+      "eligible": [
+        "GLD"
+      ],
+      "ret": 1.09,
+      "nav": 115.466
+    },
+    {
+      "month": "2023-12",
+      "year": 2023,
+      "weights": {
+        "EWY": 25.1,
+        "SPY": 30.0,
+        "AGG": 14.9,
+        "GLD": 30.0,
+        "BIL": 0.0
+      },
+      "eligible": [
+        "EWY",
+        "SPY",
+        "AGG",
+        "GLD"
+      ],
+      "ret": 3.98,
+      "nav": 119.9733
+    },
+    {
+      "month": "2024-01",
+      "year": 2024,
+      "weights": {
+        "EWY": 27.3,
+        "SPY": 30.0,
+        "AGG": 17.9,
+        "GLD": 24.7,
+        "BIL": 0.0
+      },
+      "eligible": [
+        "EWY",
+        "SPY",
+        "AGG",
+        "GLD"
+      ],
+      "ret": -2.43,
+      "nav": 117.0527
+    },
+    {
+      "month": "2024-02",
+      "year": 2024,
+      "weights": {
+        "EWY": 0.0,
+        "SPY": 30.0,
+        "AGG": 30.0,
+        "GLD": 30.0,
+        "BIL": 10.0
+      },
+      "eligible": [
+        "SPY",
+        "AGG",
+        "GLD"
+      ],
+      "ret": 1.3,
+      "nav": 118.5473
+    },
+    {
+      "month": "2024-03",
+      "year": 2024,
+      "weights": {
+        "EWY": 22.1,
+        "SPY": 30.0,
+        "AGG": 17.9,
+        "GLD": 30.0,
+        "BIL": 0.0
+      },
+      "eligible": [
+        "EWY",
+        "SPY",
+        "AGG",
+        "GLD"
+      ],
+      "ret": 4.78,
+      "nav": 124.1844
+    },
+    {
+      "month": "2024-04",
+      "year": 2024,
+      "weights": {
+        "EWY": 27.1,
+        "SPY": 30.0,
+        "AGG": 12.9,
+        "GLD": 30.0,
+        "BIL": 0.0
+      },
+      "eligible": [
+        "EWY",
+        "SPY",
+        "AGG",
+        "GLD"
+      ],
+      "ret": -2.27,
+      "nav": 121.3581
+    },
+    {
+      "month": "2024-05",
+      "year": 2024,
+      "weights": {
+        "EWY": 30.0,
+        "SPY": 30.0,
+        "AGG": 0.0,
+        "GLD": 30.0,
+        "BIL": 10.0
+      },
+      "eligible": [
+        "EWY",
+        "SPY",
+        "GLD"
+      ],
+      "ret": 1.63,
+      "nav": 123.3262
+    },
+    {
+      "month": "2024-06",
+      "year": 2024,
+      "weights": {
+        "EWY": 10.0,
+        "SPY": 30.0,
+        "AGG": 30.0,
+        "GLD": 30.0,
+        "BIL": 0.0
+      },
+      "eligible": [
+        "EWY",
+        "SPY",
+        "AGG",
+        "GLD"
+      ],
+      "ret": 1.91,
+      "nav": 125.6493
+    },
+    {
+      "month": "2024-07",
+      "year": 2024,
+      "weights": {
+        "EWY": 17.9,
+        "SPY": 30.0,
+        "AGG": 22.1,
+        "GLD": 30.0,
+        "BIL": 0.0
+      },
+      "eligible": [
+        "EWY",
+        "SPY",
+        "AGG",
+        "GLD"
+      ],
+      "ret": 2.63,
+      "nav": 128.9472
+    },
+    {
+      "month": "2024-08",
+      "year": 2024,
+      "weights": {
+        "EWY": 10.0,
+        "SPY": 30.0,
+        "AGG": 30.0,
+        "GLD": 30.0,
+        "BIL": 0.0
+      },
+      "eligible": [
+        "EWY",
+        "SPY",
+        "AGG",
+        "GLD"
+      ],
+      "ret": 1.61,
+      "nav": 131.012
+    },
+    {
+      "month": "2024-09",
+      "year": 2024,
+      "weights": {
+        "EWY": 10.0,
+        "SPY": 30.0,
+        "AGG": 30.0,
+        "GLD": 30.0,
+        "BIL": 0.0
+      },
+      "eligible": [
+        "EWY",
+        "SPY",
+        "AGG",
+        "GLD"
+      ],
+      "ret": 2.32,
+      "nav": 134.0534
+    },
+    {
+      "month": "2024-10",
+      "year": 2024,
+      "weights": {
+        "EWY": 0.0,
+        "SPY": 30.0,
+        "AGG": 30.0,
+        "GLD": 30.0,
+        "BIL": 10.0
+      },
+      "eligible": [
+        "SPY",
+        "AGG",
+        "GLD"
+      ],
+      "ret": 0.31,
+      "nav": 134.4501
+    },
+    {
+      "month": "2024-11",
+      "year": 2024,
+      "weights": {
+        "EWY": 0.0,
+        "SPY": 30.0,
+        "AGG": 30.0,
+        "GLD": 30.0,
+        "BIL": 10.0
+      },
+      "eligible": [
+        "SPY",
+        "AGG",
+        "GLD"
+      ],
+      "ret": 1.22,
+      "nav": 136.0933
+    },
+    {
+      "month": "2024-12",
+      "year": 2024,
+      "weights": {
+        "EWY": 0.0,
+        "SPY": 30.0,
+        "AGG": 30.0,
+        "GLD": 30.0,
+        "BIL": 10.0
+      },
+      "eligible": [
+        "SPY",
+        "AGG",
+        "GLD"
+      ],
+      "ret": -1.61,
+      "nav": 133.8992
+    },
+    {
+      "month": "2025-01",
+      "year": 2025,
+      "weights": {
+        "EWY": 0.0,
+        "SPY": 30.0,
+        "AGG": 30.0,
+        "GLD": 30.0,
+        "BIL": 10.0
+      },
+      "eligible": [
+        "SPY",
+        "AGG",
+        "GLD"
+      ],
+      "ret": 3.03,
+      "nav": 137.958
+    },
+    {
+      "month": "2025-02",
+      "year": 2025,
+      "weights": {
+        "EWY": 0.0,
+        "SPY": 30.0,
+        "AGG": 30.0,
+        "GLD": 30.0,
+        "BIL": 10.0
+      },
+      "eligible": [
+        "SPY",
+        "AGG",
+        "GLD"
+      ],
+      "ret": 0.87,
+      "nav": 139.1571
+    },
+    {
+      "month": "2025-03",
+      "year": 2025,
+      "weights": {
+        "EWY": 0.0,
+        "SPY": 30.0,
+        "AGG": 30.0,
+        "GLD": 30.0,
+        "BIL": 10.0
+      },
+      "eligible": [
+        "SPY",
+        "AGG",
+        "GLD"
+      ],
+      "ret": 1.19,
+      "nav": 140.8092
+    },
+    {
+      "month": "2025-04",
+      "year": 2025,
+      "weights": {
+        "EWY": 0.0,
+        "SPY": 0.0,
+        "AGG": 30.0,
+        "GLD": 30.0,
+        "BIL": 40.0
+      },
+      "eligible": [
+        "AGG",
+        "GLD"
+      ],
+      "ret": 1.89,
+      "nav": 143.4313
+    },
+    {
+      "month": "2025-05",
+      "year": 2025,
+      "weights": {
+        "EWY": 0.0,
+        "SPY": 0.0,
+        "AGG": 30.0,
+        "GLD": 30.0,
+        "BIL": 40.0
+      },
+      "eligible": [
+        "AGG",
+        "GLD"
+      ],
+      "ret": -0.05,
+      "nav": 143.3545
+    },
+    {
+      "month": "2025-06",
+      "year": 2025,
+      "weights": {
+        "EWY": 0.0,
+        "SPY": 30.0,
+        "AGG": 30.0,
+        "GLD": 30.0,
+        "BIL": 10.0
+      },
+      "eligible": [
+        "SPY",
+        "AGG",
+        "GLD"
+      ],
+      "ret": 2.13,
+      "nav": 146.3686
+    },
+    {
+      "month": "2025-07",
+      "year": 2025,
+      "weights": {
+        "EWY": 17.3,
+        "SPY": 22.7,
+        "AGG": 30.0,
+        "GLD": 30.0,
+        "BIL": 0.0
+      },
+      "eligible": [
+        "EWY",
+        "SPY",
+        "AGG",
+        "GLD"
+      ],
+      "ret": 0.51,
+      "nav": 147.087
+    },
+    {
+      "month": "2025-08",
+      "year": 2025,
+      "weights": {
+        "EWY": 16.5,
+        "SPY": 30.0,
+        "AGG": 23.5,
+        "GLD": 30.0,
+        "BIL": 0.0
+      },
+      "eligible": [
+        "EWY",
+        "SPY",
+        "AGG",
+        "GLD"
+      ],
+      "ret": 2.26,
+      "nav": 150.4041
+    },
+    {
+      "month": "2025-09",
+      "year": 2025,
+      "weights": {
+        "EWY": 21.1,
+        "SPY": 30.0,
+        "AGG": 18.9,
+        "GLD": 30.0,
+        "BIL": 0.0
+      },
+      "eligible": [
+        "EWY",
+        "SPY",
+        "AGG",
+        "GLD"
+      ],
+      "ret": 7.1,
+      "nav": 161.0785
+    },
+    {
+      "month": "2025-10",
+      "year": 2025,
+      "weights": {
+        "EWY": 25.8,
+        "SPY": 30.0,
+        "AGG": 14.2,
+        "GLD": 30.0,
+        "BIL": 0.0
+      },
+      "eligible": [
+        "EWY",
+        "SPY",
+        "AGG",
+        "GLD"
+      ],
+      "ret": 7.31,
+      "nav": 172.8446
+    },
+    {
+      "month": "2025-11",
+      "year": 2025,
+      "weights": {
+        "EWY": 30.0,
+        "SPY": 24.1,
+        "AGG": 21.9,
+        "GLD": 24.0,
+        "BIL": 0.0
+      },
+      "eligible": [
+        "EWY",
+        "SPY",
+        "AGG",
+        "GLD"
+      ],
+      "ret": -0.43,
+      "nav": 172.081
+    },
+    {
+      "month": "2025-12",
+      "year": 2025,
+      "weights": {
+        "EWY": 29.9,
+        "SPY": 16.1,
+        "AGG": 24.0,
+        "GLD": 30.0,
+        "BIL": 0.0
+      },
+      "eligible": [
+        "EWY",
+        "SPY",
+        "AGG",
+        "GLD"
+      ],
+      "ret": 3.41,
+      "nav": 177.9308
+    },
+    {
+      "month": "2026-01",
+      "year": 2026,
+      "weights": {
+        "EWY": 30.0,
+        "SPY": 15.4,
+        "AGG": 26.3,
+        "GLD": 28.3,
+        "BIL": 0.0
+      },
+      "eligible": [
+        "EWY",
+        "SPY",
+        "AGG",
+        "GLD"
+      ],
+      "ret": 11.53,
+      "nav": 198.4492
+    },
+    {
+      "month": "2026-02",
+      "year": 2026,
+      "weights": {
+        "EWY": 30.0,
+        "SPY": 15.8,
+        "AGG": 27.3,
+        "GLD": 26.8,
+        "BIL": 0.0
+      },
+      "eligible": [
+        "EWY",
+        "SPY",
+        "AGG",
+        "GLD"
+      ],
+      "ret": 9.74,
+      "nav": 217.7711
+    },
+    {
+      "month": "2026-03",
+      "year": 2026,
+      "weights": {
+        "EWY": 30.0,
+        "SPY": 18.3,
+        "AGG": 24.9,
+        "GLD": 26.9,
+        "BIL": 0.0
+      },
+      "eligible": [
+        "EWY",
+        "SPY",
+        "AGG",
+        "GLD"
+      ],
+      "ret": -9.94,
+      "nav": 196.1226
+    },
+    {
+      "month": "2026-04",
+      "year": 2026,
+      "weights": {
+        "EWY": 30.0,
+        "SPY": 0.0,
+        "AGG": 30.0,
+        "GLD": 30.0,
+        "BIL": 10.0
+      },
+      "eligible": [
+        "EWY",
+        "AGG",
+        "GLD"
+      ],
+      "ret": 8.82,
+      "nav": 213.3892
+    },
+    {
+      "month": "2026-05",
+      "year": 2026,
+      "weights": {
+        "EWY": 30.0,
+        "SPY": 30.0,
+        "AGG": 19.6,
+        "GLD": 20.4,
+        "BIL": 0.0
+      },
+      "eligible": [
+        "EWY",
+        "SPY",
+        "AGG",
+        "GLD"
+      ],
+      "ret": 9.73,
+      "nav": 234.0853
+    },
+    {
+      "month": "2026-06",
+      "year": 2026,
+      "weights": {
+        "EWY": 30.0,
+        "SPY": 30.0,
+        "AGG": 19.2,
+        "GLD": 20.8,
+        "BIL": 0.0
+      },
+      "eligible": [
+        "EWY",
+        "SPY",
+        "AGG",
+        "GLD"
+      ],
+      "ret": -3.27,
+      "nav": 226.4349
+    },
+    {
+      "month": "2026-07",
+      "year": 2026,
+      "weights": {
+        "EWY": 30.0,
+        "SPY": 30.0,
+        "AGG": 30.0,
+        "GLD": 0.0,
+        "BIL": 10.0
+      },
+      "eligible": [
+        "EWY",
+        "SPY",
+        "AGG"
+      ],
+      "ret": -7.0,
+      "nav": 210.5371
+    },
+    {
+      "month": "2026-08",
+      "year": 2026,
+      "weights": {
+        "EWY": 30.0,
+        "SPY": 30.0,
+        "AGG": 0.0,
+        "GLD": 0.0,
+        "BIL": 40.0
+      },
+      "eligible": [
+        "EWY",
+        "SPY"
+      ],
+      "ret": 5.45,
+      "nav": 221.9488
+    }
+  ]
+}
