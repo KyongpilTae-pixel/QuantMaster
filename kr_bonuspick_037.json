@@ -1,0 +1,712 @@
+{
+  "generated_at": "2026-10-06T04:19Z",
+  "re": "cloud-037",
+  "description": "한국 개별종목 보너스픽 (12M모멘텀+MA200, TOP15, -10%손절)",
+  "universe": "KOSPI 시총 상위 200 (현재 구성 = 생존편향 있음). 유효 데이터: 200종목",
+  "period": "2020-01-01 ~ 2026-09-30",
+  "n_months": 81,
+  "parameters": {
+    "top_n": 15,
+    "stop_loss_pct": -10,
+    "cooldown_months": 3,
+    "tc_pct": 0.3
+  },
+  "strategy_stats": {
+    "cagr": 64.47,
+    "sharpe": 1.654,
+    "mdd": -14.13,
+    "calmar": 4.56,
+    "nav_final": 2874.28
+  },
+  "ew_stats": {
+    "cagr": 12.24,
+    "sharpe": 0.634,
+    "mdd": -28.51,
+    "calmar": 0.43,
+    "nav_final": 218.02
+  },
+  "kospi_stats": {
+    "cagr": 18.91,
+    "sharpe": 0.717,
+    "mdd": -34.62
+  },
+  "beats_ew_sharpe": true,
+  "beats_ew_calmar": true,
+  "beats_kospi_sharpe": true,
+  "signal_stats": {
+    "avg_signals_per_month": 62.0,
+    "monthly_win_rate_pct": 64.2,
+    "avg_monthly_ret_pct": 4.65,
+    "stoploss_triggers": 285
+  },
+  "annual": {
+    "KR_bonuspick": {
+      "2020": 98.93,
+      "2021": 30.5,
+      "2022": 11.74,
+      "2023": 30.6,
+      "2024": 68.17,
+      "2025": 109.49,
+      "2026": 115.37
+    },
+    "EW_universe": {
+      "2020": 38.52,
+      "2021": 22.34,
+      "2022": -17.79,
+      "2023": 12.15,
+      "2024": -4.45,
+      "2025": 30.6,
+      "2026": 11.83
+    }
+  },
+  "monthly": [
+    {
+      "month": "2020-01",
+      "nav": 100.0,
+      "ret": 0.0,
+      "n_stocks": 15,
+      "n_signals": 29,
+      "stoploss_triggered": 0
+    },
+    {
+      "month": "2020-02",
+      "nav": 94.04,
+      "ret": -5.96,
+      "n_stocks": 15,
+      "n_signals": 17,
+      "stoploss_triggered": 4
+    },
+    {
+      "month": "2020-03",
+      "nav": 86.95,
+      "ret": -7.54,
+      "n_stocks": 15,
+      "n_signals": 7,
+      "stoploss_triggered": 8
+    },
+    {
+      "month": "2020-04",
+      "nav": 94.14,
+      "ret": 8.27,
+      "n_stocks": 7,
+      "n_signals": 10,
+      "stoploss_triggered": 0
+    },
+    {
+      "month": "2020-05",
+      "nav": 99.4,
+      "ret": 5.59,
+      "n_stocks": 10,
+      "n_signals": 28,
+      "stoploss_triggered": 1
+    },
+    {
+      "month": "2020-06",
+      "nav": 119.41,
+      "ret": 20.13,
+      "n_stocks": 15,
+      "n_signals": 35,
+      "stoploss_triggered": 3
+    },
+    {
+      "month": "2020-07",
+      "nav": 146.53,
+      "ret": 22.71,
+      "n_stocks": 15,
+      "n_signals": 59,
+      "stoploss_triggered": 3
+    },
+    {
+      "month": "2020-08",
+      "nav": 178.16,
+      "ret": 21.59,
+      "n_stocks": 15,
+      "n_signals": 63,
+      "stoploss_triggered": 1
+    },
+    {
+      "month": "2020-09",
+      "nav": 174.82,
+      "ret": -1.87,
+      "n_stocks": 15,
+      "n_signals": 59,
+      "stoploss_triggered": 9
+    },
+    {
+      "month": "2020-10",
+      "nav": 170.25,
+      "ret": -2.62,
+      "n_stocks": 15,
+      "n_signals": 59,
+      "stoploss_triggered": 6
+    },
+    {
+      "month": "2020-11",
+      "nav": 193.57,
+      "ret": 13.7,
+      "n_stocks": 15,
+      "n_signals": 87,
+      "stoploss_triggered": 1
+    },
+    {
+      "month": "2020-12",
+      "nav": 198.93,
+      "ret": 2.77,
+      "n_stocks": 15,
+      "n_signals": 95,
+      "stoploss_triggered": 3
+    },
+    {
+      "month": "2021-01",
+      "nav": 206.76,
+      "ret": 3.94,
+      "n_stocks": 15,
+      "n_signals": 116,
+      "stoploss_triggered": 1
+    },
+    {
+      "month": "2021-02",
+      "nav": 205.6,
+      "ret": -0.56,
+      "n_stocks": 15,
+      "n_signals": 129,
+      "stoploss_triggered": 4
+    },
+    {
+      "month": "2021-03",
+      "nav": 212.57,
+      "ret": 3.39,
+      "n_stocks": 15,
+      "n_signals": 147,
+      "stoploss_triggered": 5
+    },
+    {
+      "month": "2021-04",
+      "nav": 229.75,
+      "ret": 8.08,
+      "n_stocks": 15,
+      "n_signals": 139,
+      "stoploss_triggered": 1
+    },
+    {
+      "month": "2021-05",
+      "nav": 228.98,
+      "ret": -0.34,
+      "n_stocks": 15,
+      "n_signals": 146,
+      "stoploss_triggered": 3
+    },
+    {
+      "month": "2021-06",
+      "nav": 233.29,
+      "ret": 1.88,
+      "n_stocks": 15,
+      "n_signals": 147,
+      "stoploss_triggered": 0
+    },
+    {
+      "month": "2021-07",
+      "nav": 239.34,
+      "ret": 2.59,
+      "n_stocks": 15,
+      "n_signals": 132,
+      "stoploss_triggered": 3
+    },
+    {
+      "month": "2021-08",
+      "nav": 234.02,
+      "ret": -2.22,
+      "n_stocks": 15,
+      "n_signals": 102,
+      "stoploss_triggered": 4
+    },
+    {
+      "month": "2021-09",
+      "nav": 240.49,
+      "ret": 2.76,
+      "n_stocks": 15,
+      "n_signals": 83,
+      "stoploss_triggered": 5
+    },
+    {
+      "month": "2021-10",
+      "nav": 230.05,
+      "ret": -4.34,
+      "n_stocks": 15,
+      "n_signals": 70,
+      "stoploss_triggered": 7
+    },
+    {
+      "month": "2021-11",
+      "nav": 223.94,
+      "ret": -2.65,
+      "n_stocks": 15,
+      "n_signals": 21,
+      "stoploss_triggered": 9
+    },
+    {
+      "month": "2021-12",
+      "nav": 259.6,
+      "ret": 15.92,
+      "n_stocks": 15,
+      "n_signals": 27,
+      "stoploss_triggered": 1
+    },
+    {
+      "month": "2022-01",
+      "nav": 244.84,
+      "ret": -5.68,
+      "n_stocks": 15,
+      "n_signals": 17,
+      "stoploss_triggered": 7
+    },
+    {
+      "month": "2022-02",
+      "nav": 248.38,
+      "ret": 1.44,
+      "n_stocks": 15,
+      "n_signals": 26,
+      "stoploss_triggered": 1
+    },
+    {
+      "month": "2022-03",
+      "nav": 261.87,
+      "ret": 5.43,
+      "n_stocks": 15,
+      "n_signals": 50,
+      "stoploss_triggered": 1
+    },
+    {
+      "month": "2022-04",
+      "nav": 283.43,
+      "ret": 8.23,
+      "n_stocks": 15,
+      "n_signals": 52,
+      "stoploss_triggered": 1
+    },
+    {
+      "month": "2022-05",
+      "nav": 277.64,
+      "ret": -2.04,
+      "n_stocks": 15,
+      "n_signals": 41,
+      "stoploss_triggered": 6
+    },
+    {
+      "month": "2022-06",
+      "nav": 254.22,
+      "ret": -8.44,
+      "n_stocks": 15,
+      "n_signals": 16,
+      "stoploss_triggered": 10
+    },
+    {
+      "month": "2022-07",
+      "nav": 272.25,
+      "ret": 7.09,
+      "n_stocks": 15,
+      "n_signals": 14,
+      "stoploss_triggered": 1
+    },
+    {
+      "month": "2022-08",
+      "nav": 297.81,
+      "ret": 9.39,
+      "n_stocks": 14,
+      "n_signals": 23,
+      "stoploss_triggered": 1
+    },
+    {
+      "month": "2022-09",
+      "nav": 271.38,
+      "ret": -8.88,
+      "n_stocks": 15,
+      "n_signals": 11,
+      "stoploss_triggered": 12
+    },
+    {
+      "month": "2022-10",
+      "nav": 273.31,
+      "ret": 0.71,
+      "n_stocks": 11,
+      "n_signals": 9,
+      "stoploss_triggered": 2
+    },
+    {
+      "month": "2022-11",
+      "nav": 303.72,
+      "ret": 11.13,
+      "n_stocks": 9,
+      "n_signals": 37,
+      "stoploss_triggered": 0
+    },
+    {
+      "month": "2022-12",
+      "nav": 290.08,
+      "ret": -4.49,
+      "n_stocks": 15,
+      "n_signals": 17,
+      "stoploss_triggered": 5
+    },
+    {
+      "month": "2023-01",
+      "nav": 289.52,
+      "ret": -0.19,
+      "n_stocks": 15,
+      "n_signals": 40,
+      "stoploss_triggered": 2
+    },
+    {
+      "month": "2023-02",
+      "nav": 299.48,
+      "ret": 3.44,
+      "n_stocks": 15,
+      "n_signals": 32,
+      "stoploss_triggered": 2
+    },
+    {
+      "month": "2023-03",
+      "nav": 313.46,
+      "ret": 4.67,
+      "n_stocks": 15,
+      "n_signals": 31,
+      "stoploss_triggered": 3
+    },
+    {
+      "month": "2023-04",
+      "nav": 352.45,
+      "ret": 12.44,
+      "n_stocks": 15,
+      "n_signals": 30,
+      "stoploss_triggered": 1
+    },
+    {
+      "month": "2023-05",
+      "nav": 348.46,
+      "ret": -1.13,
+      "n_stocks": 15,
+      "n_signals": 35,
+      "stoploss_triggered": 4
+    },
+    {
+      "month": "2023-06",
+      "nav": 386.61,
+      "ret": 10.95,
+      "n_stocks": 15,
+      "n_signals": 66,
+      "stoploss_triggered": 2
+    },
+    {
+      "month": "2023-07",
+      "nav": 395.57,
+      "ret": 2.32,
+      "n_stocks": 15,
+      "n_signals": 51,
+      "stoploss_triggered": 6
+    },
+    {
+      "month": "2023-08",
+      "nav": 387.7,
+      "ret": -1.99,
+      "n_stocks": 15,
+      "n_signals": 51,
+      "stoploss_triggered": 6
+    },
+    {
+      "month": "2023-09",
+      "nav": 363.56,
+      "ret": -6.23,
+      "n_stocks": 15,
+      "n_signals": 55,
+      "stoploss_triggered": 7
+    },
+    {
+      "month": "2023-10",
+      "nav": 345.92,
+      "ret": -4.85,
+      "n_stocks": 15,
+      "n_signals": 27,
+      "stoploss_triggered": 7
+    },
+    {
+      "month": "2023-11",
+      "nav": 373.62,
+      "ret": 8.01,
+      "n_stocks": 15,
+      "n_signals": 47,
+      "stoploss_triggered": 1
+    },
+    {
+      "month": "2023-12",
+      "nav": 378.84,
+      "ret": 1.4,
+      "n_stocks": 15,
+      "n_signals": 61,
+      "stoploss_triggered": 1
+    },
+    {
+      "month": "2024-01",
+      "nav": 380.18,
+      "ret": 0.35,
+      "n_stocks": 15,
+      "n_signals": 49,
+      "stoploss_triggered": 2
+    },
+    {
+      "month": "2024-02",
+      "nav": 404.75,
+      "ret": 6.46,
+      "n_stocks": 15,
+      "n_signals": 61,
+      "stoploss_triggered": 0
+    },
+    {
+      "month": "2024-03",
+      "nav": 426.27,
+      "ret": 5.32,
+      "n_stocks": 15,
+      "n_signals": 69,
+      "stoploss_triggered": 1
+    },
+    {
+      "month": "2024-04",
+      "nav": 503.63,
+      "ret": 18.15,
+      "n_stocks": 15,
+      "n_signals": 62,
+      "stoploss_triggered": 0
+    },
+    {
+      "month": "2024-05",
+      "nav": 542.34,
+      "ret": 7.69,
+      "n_stocks": 15,
+      "n_signals": 60,
+      "stoploss_triggered": 2
+    },
+    {
+      "month": "2024-06",
+      "nav": 586.07,
+      "ret": 8.06,
+      "n_stocks": 15,
+      "n_signals": 64,
+      "stoploss_triggered": 3
+    },
+    {
+      "month": "2024-07",
+      "nav": 579.16,
+      "ret": -1.18,
+      "n_stocks": 15,
+      "n_signals": 68,
+      "stoploss_triggered": 7
+    },
+    {
+      "month": "2024-08",
+      "nav": 556.33,
+      "ret": -3.94,
+      "n_stocks": 15,
+      "n_signals": 60,
+      "stoploss_triggered": 4
+    },
+    {
+      "month": "2024-09",
+      "nav": 559.67,
+      "ret": 0.6,
+      "n_stocks": 15,
+      "n_signals": 60,
+      "stoploss_triggered": 3
+    },
+    {
+      "month": "2024-10",
+      "nav": 566.42,
+      "ret": 1.21,
+      "n_stocks": 15,
+      "n_signals": 48,
+      "stoploss_triggered": 3
+    },
+    {
+      "month": "2024-11",
+      "nav": 576.29,
+      "ret": 1.74,
+      "n_stocks": 15,
+      "n_signals": 42,
+      "stoploss_triggered": 5
+    },
+    {
+      "month": "2024-12",
+      "nav": 637.08,
+      "ret": 10.55,
+      "n_stocks": 15,
+      "n_signals": 33,
+      "stoploss_triggered": 3
+    },
+    {
+      "month": "2025-01",
+      "nav": 716.0,
+      "ret": 12.39,
+      "n_stocks": 15,
+      "n_signals": 38,
+      "stoploss_triggered": 0
+    },
+    {
+      "month": "2025-02",
+      "nav": 691.56,
+      "ret": -3.41,
+      "n_stocks": 15,
+      "n_signals": 51,
+      "stoploss_triggered": 5
+    },
+    {
+      "month": "2025-03",
+      "nav": 667.31,
+      "ret": -3.51,
+      "n_stocks": 15,
+      "n_signals": 36,
+      "stoploss_triggered": 5
+    },
+    {
+      "month": "2025-04",
+      "nav": 764.57,
+      "ret": 14.58,
+      "n_stocks": 15,
+      "n_signals": 53,
+      "stoploss_triggered": 1
+    },
+    {
+      "month": "2025-05",
+      "nav": 845.5,
+      "ret": 10.58,
+      "n_stocks": 15,
+      "n_signals": 78,
+      "stoploss_triggered": 1
+    },
+    {
+      "month": "2025-06",
+      "nav": 995.52,
+      "ret": 17.74,
+      "n_stocks": 15,
+      "n_signals": 99,
+      "stoploss_triggered": 0
+    },
+    {
+      "month": "2025-07",
+      "nav": 1062.83,
+      "ret": 6.76,
+      "n_stocks": 15,
+      "n_signals": 108,
+      "stoploss_triggered": 1
+    },
+    {
+      "month": "2025-08",
+      "nav": 1198.84,
+      "ret": 12.8,
+      "n_stocks": 15,
+      "n_signals": 101,
+      "stoploss_triggered": 1
+    },
+    {
+      "month": "2025-09",
+      "nav": 1221.41,
+      "ret": 1.88,
+      "n_stocks": 15,
+      "n_signals": 91,
+      "stoploss_triggered": 3
+    },
+    {
+      "month": "2025-10",
+      "nav": 1340.36,
+      "ret": 9.74,
+      "n_stocks": 15,
+      "n_signals": 99,
+      "stoploss_triggered": 3
+    },
+    {
+      "month": "2025-11",
+      "nav": 1259.56,
+      "ret": -6.03,
+      "n_stocks": 15,
+      "n_signals": 113,
+      "stoploss_triggered": 9
+    },
+    {
+      "month": "2025-12",
+      "nav": 1334.59,
+      "ret": 5.96,
+      "n_stocks": 15,
+      "n_signals": 108,
+      "stoploss_triggered": 0
+    },
+    {
+      "month": "2026-01",
+      "nav": 1608.06,
+      "ret": 20.49,
+      "n_stocks": 15,
+      "n_signals": 108,
+      "stoploss_triggered": 0
+    },
+    {
+      "month": "2026-02",
+      "nav": 1997.96,
+      "ret": 24.25,
+      "n_stocks": 15,
+      "n_signals": 144,
+      "stoploss_triggered": 0
+    },
+    {
+      "month": "2026-03",
+      "nav": 1855.68,
+      "ret": -7.12,
+      "n_stocks": 15,
+      "n_signals": 96,
+      "stoploss_triggered": 13
+    },
+    {
+      "month": "2026-04",
+      "nav": 2903.93,
+      "ret": 56.49,
+      "n_stocks": 15,
+      "n_signals": 130,
+      "stoploss_triggered": 0
+    },
+    {
+      "month": "2026-05",
+      "nav": 3074.28,
+      "ret": 5.87,
+      "n_stocks": 15,
+      "n_signals": 74,
+      "stoploss_triggered": 11
+    },
+    {
+      "month": "2026-06",
+      "nav": 2900.25,
+      "ret": -5.66,
+      "n_stocks": 15,
+      "n_signals": 42,
+      "stoploss_triggered": 12
+    },
+    {
+      "month": "2026-07",
+      "nav": 2639.83,
+      "ret": -8.98,
+      "n_stocks": 15,
+      "n_signals": 28,
+      "stoploss_triggered": 13
+    },
+    {
+      "month": "2026-08",
+      "nav": 2924.08,
+      "ret": 10.77,
+      "n_stocks": 15,
+      "n_signals": 44,
+      "stoploss_triggered": 0
+    },
+    {
+      "month": "2026-09",
+      "nav": 2874.28,
+      "ret": -1.7,
+      "n_stocks": 15,
+      "n_signals": 55,
+      "stoploss_triggered": 3
+    }
+  ]
+}

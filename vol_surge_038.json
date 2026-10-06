@@ -1,0 +1,121 @@
+{
+  "generated_at": "2026-10-06T04:23Z",
+  "re": "cloud-038+039",
+  "description": "거래량 급증(2~3배)+주가 정체(0~3%) 신호 — KR중소형/US소형/US대형 3축",
+  "signal_definition": {
+    "vol_ratio": "2.0~3.0 (21일/42일 거래량비)",
+    "price_ret_1m": "0%~3%",
+    "forward_periods": "1M/3M/6M"
+  },
+  "period": "2019-01-01 ~ 2025-12-31",
+  "axes": {
+    "KR_midsmall": {
+      "universe": "KOSPI+KOSDAQ 시총20~150위 (100종목, 생존편향)",
+      "signal_count": 710,
+      "edge": {
+        "1M": {
+          "signal_mean": -0.03,
+          "control_mean": 0.41,
+          "baseline_mean": 1.01,
+          "edge_vs_control": -0.44,
+          "edge_vs_baseline": -1.04,
+          "signal_winrate": 46.6,
+          "control_winrate": 42.6,
+          "signal_n": 699
+        },
+        "3M": {
+          "signal_mean": 5.42,
+          "control_mean": 1.55,
+          "baseline_mean": 2.99,
+          "edge_vs_control": 3.87,
+          "edge_vs_baseline": 2.43,
+          "signal_winrate": 49.1,
+          "control_winrate": 44.2,
+          "signal_n": 663
+        },
+        "6M": {
+          "signal_mean": 7.59,
+          "control_mean": 4.78,
+          "baseline_mean": 6.63,
+          "edge_vs_control": 2.81,
+          "edge_vs_baseline": 0.96,
+          "signal_winrate": 50.8,
+          "control_winrate": 45.1,
+          "signal_n": 626
+        }
+      }
+    },
+    "US_small": {
+      "universe": "Russell2000 대표 100종목 샘플",
+      "signal_count": 0,
+      "edge": {
+        "1M": {
+          "signal_mean": null,
+          "control_mean": null,
+          "baseline_mean": null,
+          "edge_vs_control": null,
+          "edge_vs_baseline": null,
+          "signal_winrate": null,
+          "control_winrate": null,
+          "signal_n": null
+        },
+        "3M": {
+          "signal_mean": null,
+          "control_mean": null,
+          "baseline_mean": null,
+          "edge_vs_control": null,
+          "edge_vs_baseline": null,
+          "signal_winrate": null,
+          "control_winrate": null,
+          "signal_n": null
+        },
+        "6M": {
+          "signal_mean": null,
+          "control_mean": null,
+          "baseline_mean": null,
+          "edge_vs_control": null,
+          "edge_vs_baseline": null,
+          "signal_winrate": null,
+          "control_winrate": null,
+          "signal_n": null
+        }
+      }
+    },
+    "US_large": {
+      "universe": "S&P500 50종목 샘플",
+      "signal_count": 0,
+      "edge": {
+        "1M": {
+          "signal_mean": null,
+          "control_mean": null,
+          "baseline_mean": null,
+          "edge_vs_control": null,
+          "edge_vs_baseline": null,
+          "signal_winrate": null,
+          "control_winrate": null,
+          "signal_n": null
+        },
+        "3M": {
+          "signal_mean": null,
+          "control_mean": null,
+          "baseline_mean": null,
+          "edge_vs_control": null,
+          "edge_vs_baseline": null,
+          "signal_winrate": null,
+          "control_winrate": null,
+          "signal_n": null
+        },
+        "6M": {
+          "signal_mean": null,
+          "control_mean": null,
+          "baseline_mean": null,
+          "edge_vs_control": null,
+          "edge_vs_baseline": null,
+          "signal_winrate": null,
+          "control_winrate": null,
+          "signal_n": null
+        }
+      }
+    }
+  }
+}

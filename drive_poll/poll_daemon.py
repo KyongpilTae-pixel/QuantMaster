@@ -362,25 +362,37 @@ def poll_once(service, state, interval_min=POLL_INTERVAL_MIN):
         cloud_id = extract_cloud_id(new[-1]["name"])
         if cloud_id:
             state["last_seen_cloud_id"] = cloud_id
-        # open_waits: REQUEST 파일 id 추가 (ACK 없이 REPLY 없는 건 미처리로 유지)
-        for f in new:
+
+        # 파일 타입 분류: ACK/REPLY/STATE/ALERT/STATUS는 Claude CLI 불필요 → 즉시 스킵
+        _skip_types = ("ACK", "REPLY", "STATE", "ALERT", "STATUS")
+        auto_skip = [f for f in new if f["name"].split("_")[0] in _skip_types]
+        need_claude = [f for f in new if f["name"].split("_")[0] not in _skip_types]
+
+        if auto_skip:
+            processed.update(f["id"] for f in auto_skip)
+            log.info(f"ACK/REPLY/STATE 자동 스킵 {len(auto_skip)}개: {[f['name'] for f in auto_skip]}")
+
+        # open_waits: REQUEST/NOTE 파일 id 추가
+        for f in need_claude:
             fname = f["name"]
             if fname.startswith("REQUEST_") or fname.startswith("NOTE_"):
                 cid = extract_cloud_id(fname)
                 if cid and cid not in state.get("open_waits", []):
                     state.setdefault("open_waits", []).append(cid)
-        # STATE: 처리 중 표시 (IDLE 금지)
-        processing_ids = [extract_cloud_id(f["name"]) or f["id"] for f in new]
-        write_state_local(service, state,
-                          activity=f"처리 중 — {','.join(str(x) for x in processing_ids)}",
-                          open_waits=state.get("open_waits", []))
-        success = trigger_claude(new)
-        if success:
-            processed.update(f["id"] for f in new)
-        else:
-            # 실패: STATUS 게시 후 미처리 유지
-            log.warning("Claude 실패 — 파일 ID를 미처리로 유지(재시도)")
-            _post_status(service, f"Claude CLI 실행 실패 — 미처리 파일: {[f['name'] for f in new]}")
+
+        if need_claude:
+            # STATE: 처리 중 표시 (IDLE 금지)
+            processing_ids = [extract_cloud_id(f["name"]) or f["id"] for f in need_claude]
+            write_state_local(service, state,
+                              activity=f"처리 중 — {','.join(str(x) for x in processing_ids)}",
+                              open_waits=state.get("open_waits", []))
+            success = trigger_claude(need_claude)
+            if success:
+                processed.update(f["id"] for f in need_claude)
+            else:
+                # 실패: STATUS 게시 후 미처리 유지
+                log.warning("Claude 실패 — 파일 ID를 미처리로 유지(재시도)")
+                _post_status(service, f"Claude CLI 실행 실패 — 미처리: {[f['name'] for f in need_claude]}")
     else:
         log.info("새 메시지 없음")
 
