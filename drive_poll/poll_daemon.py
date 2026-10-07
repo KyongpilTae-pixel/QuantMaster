@@ -1,11 +1,12 @@
 """
-QuantMaster Drive Poll Daemon — v2.0
+QuantMaster Drive Poll Daemon — v3.0
 _comms/ 폴더를 주기적으로 폴링하여 cloud 메시지를 감지하고
 Claude Code CLI로 처리 프롬프트를 전달한다.
-프로토콜 v1.4 + v2.0 규격(cloud-034 SPEC):
-- last_seen_cloud_id: 실제 cloud-NNN id 저장 (kind 단어 금지)
-- open_waits 있으면 activity IDLE 금지
-- REQUEST/NOTE/SPEC 타입별 처리
+프로토콜 v1.4 + v3.0 규격(local_polling_routine_v3):
+- 매 주기 무조건 Claude 깨우기 (신규 파일 없어도)
+- Claude 세션이 직접 Drive 스캔 + processed_ids.json 체크
+- STATE 쓰기는 마지막 단계에만 (하트비트만 쓰고 끝내기 금지)
+- processed_ids.json: C:\\project\\quant\\processed_ids.json (cloud-NNN 형식)
 - 실패 시 조용한 IDLE 금지 → STATUS 게시
 
 인증: Google Service Account (JSON 키)
@@ -33,24 +34,30 @@ POLL_INTERVAL_MIN  = 30          # 로컬 폴링 간격(분)
 LIVENESS_GRACE_MIN = 60          # 상대 무응답 임계: poll_interval × 2
 DELIVERY_GRACE_CYCLES = 2        # 전달갭 유예 주기
 
-PROCESS_PROMPT = """Google Drive _comms/ 폴더(parentId={comms_id})에서 cloud-to-local 메시지를 확인하고 프로토콜 v2.0(cloud-034 SPEC)에 따라 처리한다.
+PROCESS_PROMPT_V3 = """[로컬 폴링 v3 — 매 주기 실행 강제]
+너는 cloud와 공유 드라이브 _comms 폴더로 협업하는 local 세션이다.
+이번 깨우기에서 반드시 아래 순서를 "끝까지" 실행한다. 하트비트만 쓰고 끝내지 마라.
 
-새로 감지된 파일:
-{new_files}
-
-처리 규칙 (v2.0):
-1. 각 파일을 읽는다 (mcp__claude_ai_Google_Drive__read_file_content).
-2. 타입별 처리:
-   - REQUEST: open_waits에 추가 → ACK 발행 → 실제 작업 실행(분석·계산·백테스트 등) → REPLY 발행 → open_waits 제거.
-   - NOTE(EXECUTE류): 참조된 REQUEST를 찾아 실행 → REPLY 발행.
-   - SPEC: 지정된 코드 변경(poll_daemon.py 등)을 즉시 적용 → STATUS 게시.
-   - ACK/REPLY/STATE(cloud): last_seen_cloud_id만 갱신, 추가 처리 없음.
-3. 파일명 규칙: MSG_<UTC시각Z>_local-to-cloud_<TYPE>[_topic].md
-4. contentMimeType: text/plain, doc_version: 1.4 헤더 포함.
-5. STATE_local.md 갱신: last_seen_peer_id에 실제 cloud-NNN id 기록, open_waits 있으면 activity IDLE 금지.
-6. 실행 불가(에러·데이터 없음)면 STATUS 파일 게시(사유 포함). 조용한 IDLE 금지.
-
-완료 후 처리 결과를 간략히 보고한다.
+1) 스캔: search_files(parentId='1MvjWh0HYM0QlDHKh_uyqKrCtkUHBWlSp',
+   query="title contains 'cloud-to-local'") 로 전체 나열.
+2) 신규 선별: 로컬 파일 C:\\project\\quant\\processed_ids.json 를 읽어,
+   거기에 없는 메시지 id를 신규로 본다(ID 기준, 시간 커서 금지). 오래된 것부터 정렬.
+3) 각 신규 메시지 실행:
+   - kind=REQUEST 또는 "EXECUTE/실행" NOTE  → 접수 ACK 1줄 게시 →
+     실제 작업 수행(백테스트 등) → 결과를 REPLY 파일로 게시
+     (파일명 MSG_<UTCstamp>_local-to-cloud_REPLY_<id>.md, disableConversionToGoogleType=true) →
+     processed_ids.json 에 그 id 추가.
+   - kind=ACK/REPLY/STATE(cloud) → 실행 불필요, id만 processed_ids 에 추가.
+   - 실행 불가(데이터/에러) → STATUS 파일로 사유 게시(조용한 IDLE 금지) 후 id 기록.
+4) 자기검증: 나열된 cloud-to-local 중 processed_ids 에 없는 게 하나라도 남아 있으면
+   3)으로 돌아가 처리한다. 남은 게 0이 될 때까지 반복.
+5) 마지막에 STATE_local.md 를 "덮어쓰기"로 1개만 갱신:
+   last_seen_peer_id = 방금 처리한 "가장 최근 실제 메시지 id"(예: cloud-043),
+   open_waits = 아직 REPLY 못 낸 id 목록(없으면 []),
+   activity = (open_waits 비면 IDLE, 아니면 "RUNNING <id>"),
+   ts = 현재 UTC, poll_interval=30min, next_poll_eta=+30min.
+금지: (a) 1~4를 건너뛰고 STATE만 쓰기 (b) last_seen 에 cloud-015 같은 옛 id나
+   'REQUEST'/'REPLY' 같은 kind 단어 넣기 (c) STATE_local.md 사본을 새로 만들기(1개만 유지).
 """.strip()
 
 
@@ -314,20 +321,17 @@ ts: {now.isoformat()}
 
 
 # ── Claude CLI 트리거 ──────────────────────────────────────────────────────────
-def trigger_claude(new_files):
-    file_list = "\n".join(
-        f"- {f['name']} (id: {f['id']}, created: {f['createdTime']})" for f in new_files
-    )
-    prompt = PROCESS_PROMPT.format(comms_id=COMMS_FOLDER_ID, new_files=file_list)
-    log.info(f"Claude Code CLI 실행: {len(new_files)}개 파일 처리 요청")
+def trigger_claude():
+    """v3: 파일 목록 전달 없이 v3 프롬프트만 전달. Claude 세션이 직접 Drive 스캔."""
+    log.info("Claude Code CLI v3 깨우기 (스캔·실행 강제 프롬프트)")
     try:
         result = subprocess.run(
-            [CLAUDE_CMD, "--print", "-p", prompt],
+            [CLAUDE_CMD, "--print", "-p", PROCESS_PROMPT_V3],
             capture_output=True, text=True, encoding="utf-8",
             timeout=600, cwd=r"C:\project\quant",
         )
         if result.returncode == 0:
-            log.info("Claude 처리 완료")
+            log.info("Claude v3 처리 완료")
             if result.stdout:
                 log.info(f"결과:\n{result.stdout[:500]}")
             return True
@@ -344,57 +348,17 @@ def trigger_claude(new_files):
 
 # ── 메인 폴링 루프 ─────────────────────────────────────────────────────────────
 def poll_once(service, state, interval_min=POLL_INTERVAL_MIN):
+    """v3: 매 주기 무조건 Claude를 깨운다. Drive 스캔·실행은 Claude 세션에 위임."""
     now_utc = datetime.now(timezone.utc).isoformat()
-    last = state.get("last_check_utc")
-    processed = set(state.get("processed_ids", []))
+    log.info(f"폴링 시작 v3 (last_check: {state.get('last_check_utc') or '처음'})")
 
-    # 1. STATE_local.md 갱신 (매 wake 첫 작업)
-    write_state_local(service, state, activity="폴링 중")
+    # 1. STATE_local.md 폴링 시작 표시
+    write_state_local(service, state, activity="폴링 중 — Claude v3 깨우기")
 
-    # 2. cloud 신규 파일 확인
-    log.info(f"폴링 시작 (last_check: {last or '처음'})")
-    files = list_new_cloud_files(service, last)
-    new = [f for f in files if f["id"] not in processed]
-
-    if new:
-        log.info(f"새 메시지 {len(new)}개: {[f['name'] for f in new]}")
-        # 마지막으로 본 cloud id 갱신 (실제 cloud-NNN, kind 단어 금지)
-        cloud_id = extract_cloud_id(new[-1]["name"])
-        if cloud_id:
-            state["last_seen_cloud_id"] = cloud_id
-
-        # 파일 타입 분류: ACK/REPLY/STATE/ALERT/STATUS는 Claude CLI 불필요 → 즉시 스킵
-        _skip_types = ("ACK", "REPLY", "STATE", "ALERT", "STATUS")
-        auto_skip = [f for f in new if f["name"].split("_")[0] in _skip_types]
-        need_claude = [f for f in new if f["name"].split("_")[0] not in _skip_types]
-
-        if auto_skip:
-            processed.update(f["id"] for f in auto_skip)
-            log.info(f"ACK/REPLY/STATE 자동 스킵 {len(auto_skip)}개: {[f['name'] for f in auto_skip]}")
-
-        # open_waits: REQUEST/NOTE 파일 id 추가
-        for f in need_claude:
-            fname = f["name"]
-            if fname.startswith("REQUEST_") or fname.startswith("NOTE_"):
-                cid = extract_cloud_id(fname)
-                if cid and cid not in state.get("open_waits", []):
-                    state.setdefault("open_waits", []).append(cid)
-
-        if need_claude:
-            # STATE: 처리 중 표시 (IDLE 금지)
-            processing_ids = [extract_cloud_id(f["name"]) or f["id"] for f in need_claude]
-            write_state_local(service, state,
-                              activity=f"처리 중 — {','.join(str(x) for x in processing_ids)}",
-                              open_waits=state.get("open_waits", []))
-            success = trigger_claude(need_claude)
-            if success:
-                processed.update(f["id"] for f in need_claude)
-            else:
-                # 실패: STATUS 게시 후 미처리 유지
-                log.warning("Claude 실패 — 파일 ID를 미처리로 유지(재시도)")
-                _post_status(service, f"Claude CLI 실행 실패 — 미처리: {[f['name'] for f in need_claude]}")
-    else:
-        log.info("새 메시지 없음")
+    # 2. Claude v3 프롬프트 전달 (신규 파일 여부 무관, 무조건 실행)
+    success = trigger_claude()
+    if not success:
+        _post_status(service, "Claude CLI v3 실행 실패 — 다음 주기에 재시도")
 
     # 3. STATE_cloud.md 읽고 헬스체크
     cloud_state = read_state_cloud(service)
@@ -407,7 +371,6 @@ def poll_once(service, state, interval_min=POLL_INTERVAL_MIN):
     write_state_local(service, state, activity=final_activity)
 
     state["last_check_utc"] = now_utc
-    state["processed_ids"] = list(processed)[-200:]
     save_state(state)
 
 
@@ -418,7 +381,7 @@ def main():
                         help=f"폴링 간격(초), 기본 {POLL_INTERVAL_MIN*60}")
     args = parser.parse_args()
 
-    log.info("=== Drive Poll Daemon v2.0 시작 ===")
+    log.info("=== Drive Poll Daemon v3.0 시작 ===")
     log.info(f"_comms/ folder: {COMMS_FOLDER_ID}")
     log.info(f"폴링 간격: {args.interval}초" if not args.once else "1회 실행 모드")
 
