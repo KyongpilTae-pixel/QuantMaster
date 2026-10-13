@@ -15,6 +15,7 @@ Claude Code CLI로 처리 프롬프트를 전달한다.
 import argparse
 import json
 import logging
+import os
 import re
 import subprocess
 import sys
@@ -27,11 +28,12 @@ COMMS_FOLDER_ID    = "1MvjWh0HYM0QlDHKh_uyqKrCtkUHBWlSp"  # Shared Drive _comms/
 SERVICE_ACCOUNT_FILE = Path(__file__).parent / "service_account.json"
 STATE_FILE         = Path(__file__).parent / "poll_state.json"
 LOG_FILE           = Path(__file__).parent / "poll_daemon.log"
+LOCK_FILE          = Path(__file__).parent / "poll_daemon.lock"
 CLAUDE_CMD         = r"C:\Users\Administrator\.local\bin\claude.exe"
 
 # v1.4 헬스체크 파라미터
-POLL_INTERVAL_MIN  = 30          # 로컬 폴링 간격(분)
-LIVENESS_GRACE_MIN = 60          # 상대 무응답 임계: poll_interval × 2
+POLL_INTERVAL_MIN  = 5           # 로컬 폴링 간격(분) — Task Scheduler가 주기 담당, 내부 루프는 보조
+LIVENESS_GRACE_MIN = 60          # 상대 무응답 임계: 60분
 DELIVERY_GRACE_CYCLES = 2        # 전달갭 유예 주기
 
 PROCESS_PROMPT_V3 = """[로컬 폴링 v3 — 매 주기 실행 강제]
@@ -328,7 +330,7 @@ def trigger_claude():
         result = subprocess.run(
             [CLAUDE_CMD, "--print", "-p", PROCESS_PROMPT_V3],
             capture_output=True, text=True, encoding="utf-8",
-            timeout=600, cwd=r"C:\project\quant",
+            timeout=1800, cwd=r"C:\project\quant",
         )
         if result.returncode == 0:
             log.info("Claude v3 처리 완료")
@@ -339,7 +341,7 @@ def trigger_claude():
             log.error(f"Claude 오류 (exit {result.returncode}):\n{result.stderr[:300]}")
             return False
     except subprocess.TimeoutExpired:
-        log.error("Claude 실행 타임아웃 (10분)")
+        log.error("Claude 실행 타임아웃 (30분)")
         return False
     except FileNotFoundError:
         log.error(f"'{CLAUDE_CMD}' 명령을 찾을 수 없음. PATH를 확인하세요.")
@@ -360,6 +362,14 @@ def poll_once(service, state, interval_min=POLL_INTERVAL_MIN):
     if not success:
         _post_status(service, "Claude CLI v3 실행 실패 — 다음 주기에 재시도")
 
+    # 2-b. Claude 세션이 trigger 동안 poll_state.json(last_seen_cloud_id/open_waits/
+    #      processed_ids 등)을 직접 갱신했을 수 있다. 메모리의 state는 데몬 기동 시점
+    #      스냅샷이라 낡았으므로 디스크에서 재로드해 머지한다. 이 재로드가 없으면
+    #      마지막 write_state_local/save_state가 옛 값으로 덮어써 STATE_local.md의
+    #      last_seen_peer_id가 과거 id로 되돌아간다 (cloud-042 fix-state-last-seen /
+    #      cloud-049 writeback-probe 가 가리키는 revert 버그).
+    state.update(load_state())
+
     # 3. STATE_cloud.md 읽고 헬스체크
     cloud_state = read_state_cloud(service)
     check_health(service, state, cloud_state)
@@ -374,12 +384,36 @@ def poll_once(service, state, interval_min=POLL_INTERVAL_MIN):
     save_state(state)
 
 
+def _acquire_lock() -> bool:
+    """PID 락 파일로 중복 실행 방지. 이미 실행 중이면 False 반환."""
+    if LOCK_FILE.exists():
+        try:
+            old_pid = int(LOCK_FILE.read_text().strip())
+            os.kill(old_pid, 0)  # 프로세스 존재 확인 (signal 0)
+            return False          # 살아있음 → 이미 실행 중
+        except (ProcessLookupError, PermissionError, ValueError):
+            pass  # 프로세스 없음(stale lock) → 덮어쓰기
+    LOCK_FILE.write_text(str(os.getpid()))
+    return True
+
+
+def _release_lock():
+    try:
+        LOCK_FILE.unlink(missing_ok=True)
+    except Exception:
+        pass
+
+
 def main():
     parser = argparse.ArgumentParser(description="QuantMaster Drive Poll Daemon v1.4")
     parser.add_argument("--once", action="store_true", help="1회 실행 후 종료")
     parser.add_argument("--interval", type=int, default=POLL_INTERVAL_MIN * 60,
                         help=f"폴링 간격(초), 기본 {POLL_INTERVAL_MIN*60}")
     args = parser.parse_args()
+
+    if not _acquire_lock():
+        log.info("이미 실행 중인 인스턴스 감지 — 이번 주기 건너뜀")
+        return
 
     log.info("=== Drive Poll Daemon v3.0 시작 ===")
     log.info(f"_comms/ folder: {COMMS_FOLDER_ID}")
@@ -388,17 +422,20 @@ def main():
     service = build_drive_service()
     state = load_state()
 
-    if args.once:
-        poll_once(service, state, interval_min=args.interval // 60)
-        return
-
-    while True:
-        try:
+    try:
+        if args.once:
             poll_once(service, state, interval_min=args.interval // 60)
-        except Exception as e:
-            log.exception(f"폴링 오류: {e}")
-        log.info(f"다음 폴링까지 {args.interval}초 대기")
-        time.sleep(args.interval)
+            return
+
+        while True:
+            try:
+                poll_once(service, state, interval_min=args.interval // 60)
+            except Exception as e:
+                log.exception(f"폴링 오류: {e}")
+            log.info(f"다음 폴링까지 {args.interval}초 대기")
+            time.sleep(args.interval)
+    finally:
+        _release_lock()
 
 
 if __name__ == "__main__":
