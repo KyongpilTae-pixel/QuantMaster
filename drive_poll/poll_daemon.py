@@ -13,12 +13,14 @@ Claude Code CLI로 처리 프롬프트를 전달한다.
 실행: python poll_daemon.py [--once] [--interval 1800]
 """
 import argparse
+import ctypes
 import json
 import logging
 import os
 import re
 import subprocess
 import sys
+import threading
 import time
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -30,6 +32,7 @@ STATE_FILE         = Path(__file__).parent / "poll_state.json"
 LOG_FILE           = Path(__file__).parent / "poll_daemon.log"
 LOCK_FILE          = Path(__file__).parent / "poll_daemon.lock"
 CLAUDE_CMD         = r"C:\Users\Administrator\.local\bin\claude.exe"
+PROCESSED_IDS_FILE = Path(__file__).parent.parent / "processed_ids.json"  # cloud-NNN 처리 커서 (Claude 세션이 갱신)
 
 # v1.4 헬스체크 파라미터
 POLL_INTERVAL_MIN  = 5           # 로컬 폴링 간격(분) — Task Scheduler가 주기 담당, 내부 루프는 보조
@@ -79,6 +82,19 @@ def extract_cloud_id(filename: str):
     """파일명에서 cloud-NNN id 추출. 예: 'REQUEST_cloud-032_...' → 'cloud-032'."""
     m = re.search(r'(cloud-\d+)', filename)
     return m.group(1) if m else None
+
+
+def latest_processed_cloud_id():
+    """processed_ids.json에서 가장 큰 cloud-NNN 반환 (없으면 None).
+    데몬이 표시용 last_seen_cloud_id를 Claude 처리 커서에 맞춰 전진시키는 근거."""
+    try:
+        with open(PROCESSED_IDS_FILE, encoding="utf-8-sig") as f:
+            ids = json.load(f)
+    except (OSError, ValueError):
+        return None
+    nums = [(int(re.fullmatch("cloud-([0-9]+)", str(c)).group(1)), c)
+            for c in ids if re.fullmatch("cloud-([0-9]+)", str(c))]
+    return max(nums)[1] if nums else None
 
 
 # ── Drive 서비스 ───────────────────────────────────────────────────────────────
@@ -322,28 +338,70 @@ ts: {now.isoformat()}
     write_drive_file(service, fname, content)
 
 
+# ── 콘솔 화면 표시 ────────────────────────────────────────────────────────────
+def _set_title(title: str):
+    """Windows 콘솔 타이틀 변경."""
+    try:
+        ctypes.windll.kernel32.SetConsoleTitleW(title)
+    except Exception:
+        pass
+
+
+def _print_banner(msg: str):
+    """구분선 + 굵은 상태 메시지 출력."""
+    ts = datetime.now().strftime("%H:%M:%S")
+    line = "=" * 60
+    print(f"\n{line}", flush=True)
+    print(f"  {ts}  {msg}", flush=True)
+    print(f"{line}", flush=True)
+
+
+def _progress_printer(stop_event: threading.Event, start_time: float):
+    """Claude 실행 중 10초마다 경과 시간을 콘솔에 출력하는 백그라운드 스레드."""
+    while not stop_event.wait(10):
+        elapsed = int(time.time() - start_time)
+        m, s = divmod(elapsed, 60)
+        print(f"  ⏳ Claude 처리 중... (경과 {m}분 {s}초)", flush=True)
+
+
 # ── Claude CLI 트리거 ──────────────────────────────────────────────────────────
 def trigger_claude():
     """v3: 파일 목록 전달 없이 v3 프롬프트만 전달. Claude 세션이 직접 Drive 스캔."""
     log.info("Claude Code CLI v3 깨우기 (스캔·실행 강제 프롬프트)")
+    _set_title("QuantMaster Poll — Claude 처리 중 ▶")
+    _print_banner("Claude v3 실행 시작 — Drive 스캔 + 요청 처리")
+
+    stop_evt = threading.Event()
+    t = threading.Thread(target=_progress_printer, args=(stop_evt, time.time()), daemon=True)
+    t.start()
     try:
         result = subprocess.run(
             [CLAUDE_CMD, "--print", "-p", PROCESS_PROMPT_V3],
             capture_output=True, text=True, encoding="utf-8",
             timeout=1800, cwd=r"C:\project\quant",
         )
+        stop_evt.set()
         if result.returncode == 0:
+            _print_banner("✅ Claude v3 처리 완료")
+            _set_title("QuantMaster Poll — 대기 중 ✅")
             log.info("Claude v3 처리 완료")
             if result.stdout:
                 log.info(f"결과:\n{result.stdout[:500]}")
             return True
         else:
+            _print_banner(f"❌ Claude 오류 (exit {result.returncode})")
+            _set_title("QuantMaster Poll — 오류 ❌")
             log.error(f"Claude 오류 (exit {result.returncode}):\n{result.stderr[:300]}")
             return False
     except subprocess.TimeoutExpired:
+        stop_evt.set()
+        _print_banner("⏰ Claude 실행 타임아웃 (30분)")
+        _set_title("QuantMaster Poll — 타임아웃 ⏰")
         log.error("Claude 실행 타임아웃 (30분)")
         return False
     except FileNotFoundError:
+        stop_evt.set()
+        _set_title("QuantMaster Poll — 오류 ❌")
         log.error(f"'{CLAUDE_CMD}' 명령을 찾을 수 없음. PATH를 확인하세요.")
         return False
 
@@ -369,6 +427,15 @@ def poll_once(service, state, interval_min=POLL_INTERVAL_MIN):
     #      last_seen_peer_id가 과거 id로 되돌아간다 (cloud-042 fix-state-last-seen /
     #      cloud-049 writeback-probe 가 가리키는 revert 버그).
     state.update(load_state())
+
+    # 2-c. 표시용 last_seen 교정 (cloud-045 revert 루프 영구 해결):
+    #      poll_state.json의 last_seen_cloud_id는 데몬이 직접 전진시키지 않아
+    #      Claude가 처리한 최신 cloud-NNN과 어긋난다. processed_ids.json의
+    #      max(cloud-NNN)으로 끌어올려 마지막 write_state_local이 과거 id로
+    #      되돌리지 못하게 한다.
+    latest = latest_processed_cloud_id()
+    if latest:
+        state["last_seen_cloud_id"] = latest
 
     # 3. STATE_cloud.md 읽고 헬스체크
     cloud_state = read_state_cloud(service)
