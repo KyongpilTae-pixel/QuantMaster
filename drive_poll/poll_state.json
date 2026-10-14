@@ -1,5 +1,5 @@
 {
-  "last_check_utc": "2026-10-07T05:30:02.047542+00:00",
+  "last_check_utc": "2026-10-14T11:02:21.858799+00:00",
   "processed_ids": [
     "1-JogEUgFX7FtFR1Lce0oyRVhTFYnSvRL",
     "1HohclHmV792UQ29N9xaM1ucBI9OeDiat",
@@ -42,9 +42,12 @@
     "1C6IzTJ74YCUISqfm5KqIHPyN1wOeXc1S",
     "1qmLo2IsS97p45ga01KwCEJRCQH4_sMew",
     "1TSG5qk4FqJ9VMwl6AKIB930ggGwa2VrB",
-    "1mawHHSungutF_sv4678GPPD42FaREpmF"
+    "1mawHHSungutF_sv4678GPPD42FaREpmF",
+    "1CZArHG5TMQTOlIas0CR5r_ZJ3OeG1p6Z",
+    "1C5SGb3KwUHA82B2A6Pbm6aZicPNsc8ff",
+    "1NSIy6ymH3n5qBuFgLy-_27WsCshFxQI3"
   ],
-  "state_local_file_id": "17jr4jYRnlXL7K6yqv1IrxiElfJQ10h3S",
-  "last_seen_cloud_id": "cloud-040",
+  "state_local_file_id": "13Na4CbY3vJwPkYn9KuhrModNaGPEfVrV",
+  "last_seen_cloud_id": "cloud-052",
   "open_waits": []
 }
