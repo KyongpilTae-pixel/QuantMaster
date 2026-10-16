@@ -348,20 +348,19 @@ def _set_title(title: str):
 
 
 def _print_banner(msg: str):
-    """구분선 + 굵은 상태 메시지 출력."""
-    ts = datetime.now().strftime("%H:%M:%S")
+    """구분선 + 상태 메시지 — log.info()로 기록(로그파일+콘솔 동시 출력)."""
     line = "=" * 60
-    print(f"\n{line}", flush=True)
-    print(f"  {ts}  {msg}", flush=True)
-    print(f"{line}", flush=True)
+    log.info(line)
+    log.info(f"  {msg}")
+    log.info(line)
 
 
 def _progress_printer(stop_event: threading.Event, start_time: float):
-    """Claude 실행 중 10초마다 경과 시간을 콘솔에 출력하는 백그라운드 스레드."""
-    while not stop_event.wait(10):
+    """Claude 실행 중 30초마다 경과 시간을 log.info()로 출력하는 백그라운드 스레드."""
+    while not stop_event.wait(30):
         elapsed = int(time.time() - start_time)
         m, s = divmod(elapsed, 60)
-        print(f"  ⏳ Claude 처리 중... (경과 {m}분 {s}초)", flush=True)
+        log.info(f"  ⏳ Claude 처리 중... (경과 {m}분 {s}초)")
 
 
 # ── Claude CLI 트리거 ──────────────────────────────────────────────────────────
