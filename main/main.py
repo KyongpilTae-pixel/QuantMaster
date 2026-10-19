@@ -6685,7 +6685,7 @@ def _momentum_strategy_card(
 
 
 def momentum_tab() -> rx.Component:
-    """글로벌 시장 모멘텀 전략 탭 — 4가지 전략 비교."""
+    """글로벌 시장 모멘텀 탭 — 시장 판단 / 자산 배분 분리."""
 
     # ── 공통 헬퍼 ──────────────────────────────────────────────
     def ret_badge(ret_str, win_flag, pos_flag):
@@ -6704,10 +6704,10 @@ def momentum_tab() -> rx.Component:
             )
         )
 
-    # ── 단순 모멘텀 상세 테이블 ───────────────────────────────
-    def momentum_row(r):
+    # ── 섹션 A: 통합 랭킹 테이블 (시장 판단) ─────────────────
+    def rank_row(r):
         return rx.table.row(
-            name_cell(r, r["is_rec_momentum"]),
+            name_cell(r, r["is_rec_vaa"]),
             rx.cond(State.momentum_show_1m,
                 rx.table.cell(ret_badge(r["ret_1m_str"], r["win_1m"], r["pos_1m"])),
                 rx.fragment()),
@@ -6720,32 +6720,6 @@ def momentum_tab() -> rx.Component:
             rx.cond(State.momentum_show_12m,
                 rx.table.cell(ret_badge(r["ret_12m_str"], r["win_12m"], r["pos_12m"])),
                 rx.fragment()),
-        )
-
-    momentum_table = rx.table.root(
-        rx.table.header(rx.table.row(
-            rx.table.column_header_cell("자산"),
-            rx.cond(State.momentum_show_1m, rx.table.column_header_cell("1개월"), rx.fragment()),
-            rx.cond(State.momentum_show_3m, rx.table.column_header_cell("3개월"), rx.fragment()),
-            rx.cond(State.momentum_show_6m, rx.table.column_header_cell("6개월"), rx.fragment()),
-            rx.cond(State.momentum_show_12m, rx.table.column_header_cell("12개월"), rx.fragment()),
-        )),
-        rx.table.body(rx.foreach(State.momentum_rows, momentum_row)),
-        width="100%", variant="surface",
-    )
-
-    # ── VAA 상세 테이블 ────────────────────────────────────────
-    def vaa_row(r):
-        return rx.table.row(
-            name_cell(r, r["is_rec_vaa"]),
-            rx.table.cell(rx.badge(r["ret_1m_str"],
-                color_scheme=rx.cond(r["pos_1m"], "teal", "red"), variant="soft")),
-            rx.table.cell(rx.badge(r["ret_3m_str"],
-                color_scheme=rx.cond(r["pos_3m"], "teal", "red"), variant="soft")),
-            rx.table.cell(rx.badge(r["ret_6m_str"],
-                color_scheme=rx.cond(r["pos_6m"], "teal", "red"), variant="soft")),
-            rx.table.cell(rx.badge(r["ret_12m_str"],
-                color_scheme=rx.cond(r["pos_12m"], "teal", "red"), variant="soft")),
             rx.table.cell(
                 rx.badge(r["vaa_score_str"],
                     color_scheme=rx.cond(r["is_rec_vaa"], "green",
@@ -6754,28 +6728,83 @@ def momentum_tab() -> rx.Component:
                     weight="bold",
                 )
             ),
+            rx.table.cell(
+                rx.badge(r["ma_signal_str"],
+                    color_scheme=rx.cond(r["above_ma"], "green", "red"),
+                    variant="soft",
+                )
+            ),
         )
 
-    vaa_table = rx.vstack(
-        rx.text("점수 = 12×1M + 4×3M + 2×6M + 1×12M  |  최고 점수 자산 선택, 음수면 현금",
-            size="1", color="gray"),
+    ranking_table = rx.vstack(
+        rx.text(
+            "★ = VAA 1위  |  초록 solid = 해당 기간 1위  |  VAA = 12×1M+4×3M+2×6M+1×12M",
+            size="1", color="gray",
+        ),
+        rx.box(
+            rx.table.root(
+                rx.table.header(rx.table.row(
+                    rx.table.column_header_cell("자산"),
+                    rx.cond(State.momentum_show_1m, rx.table.column_header_cell("1M"), rx.fragment()),
+                    rx.cond(State.momentum_show_3m, rx.table.column_header_cell("3M"), rx.fragment()),
+                    rx.cond(State.momentum_show_6m, rx.table.column_header_cell("6M"), rx.fragment()),
+                    rx.cond(State.momentum_show_12m, rx.table.column_header_cell("12M"), rx.fragment()),
+                    rx.table.column_header_cell("VAA"),
+                    rx.table.column_header_cell("MA200"),
+                )),
+                rx.table.body(rx.foreach(State.momentum_rows, rank_row)),
+                width="100%", variant="surface",
+            ),
+            overflow_x="auto", width="100%",
+        ),
+        spacing="2", width="100%",
+    )
+
+    # ── 섹션 B: 자산 배분 통합 테이블 ────────────────────────
+    def alloc_row(r):
+        def weight_bar(weight_str, color):
+            return rx.hstack(
+                rx.box(
+                    background=color,
+                    height="8px",
+                    width=weight_str,
+                    border_radius="3px",
+                    min_width="4px",
+                ),
+                rx.text(weight_str, size="2"),
+                spacing="2", align="center",
+            )
+        return rx.table.row(
+            rx.table.cell(rx.text(r["name"], size="2")),
+            rx.table.cell(rx.text(r["vol_str"], size="2", color="gray")),
+            rx.table.cell(weight_bar(r["inv_vol_weight_str"], "var(--blue-8)")),
+            rx.table.cell(weight_bar(r["rp_weight_str"], "var(--violet-8)")),
+        )
+
+    alloc_table = rx.vstack(
+        rx.text(
+            "역변동성: 변동성 역수 비례 배분 (변동성 낮을수록 비중↑)  |  "
+            "Risk Parity: 공분산 기반 위험 균형 (scipy 미설치 시 역변동성 대체)",
+            size="1", color="gray",
+        ),
         rx.table.root(
             rx.table.header(rx.table.row(
                 rx.table.column_header_cell("자산"),
-                rx.table.column_header_cell("1개월"),
-                rx.table.column_header_cell("3개월"),
-                rx.table.column_header_cell("6개월"),
-                rx.table.column_header_cell("12개월"),
-                rx.table.column_header_cell("VAA 점수"),
+                rx.table.column_header_cell("변동성(연)"),
+                rx.table.column_header_cell("역변동성"),
+                rx.table.column_header_cell("Risk Parity"),
             )),
-            rx.table.body(rx.foreach(State.momentum_rows, vaa_row)),
+            rx.table.body(rx.foreach(State.momentum_rows, alloc_row)),
             width="100%", variant="surface",
         ),
         spacing="2", width="100%",
     )
 
-    # ── MA200 상세 테이블 ──────────────────────────────────────
-    def ma_row(r):
+    # (하위 호환 — momentum_detail 상태는 유지하되 테이블은 통합으로 대체)
+    # ── [삭제된 개별 테이블 자리표시자] ───────────────────────
+    # 아래는 ma_table 참조 제거 전 컴파일러 오류 방지용 dummy
+    # (실제 레이아웃에서는 사용되지 않음)
+    def _dummy_ma_row(r):
         return rx.table.row(
             name_cell(r, r["is_rec_ma"]),
             rx.table.cell(r["close_str"]),
@@ -6794,7 +6823,7 @@ def momentum_tab() -> rx.Component:
             ),
         )
 
-    ma_table = rx.vstack(
+    _ma_table_unused = rx.vstack(
         rx.text("현재가 > 200일 이동평균인 자산 중 12개월 수익률 1위 선택",
             size="1", color="gray"),
         rx.table.root(
@@ -6811,83 +6840,11 @@ def momentum_tab() -> rx.Component:
         spacing="2", width="100%",
     )
 
-    # ── 역변동성 상세 테이블 ───────────────────────────────────
-    def invvol_row(r):
-        return rx.table.row(
-            name_cell(r, r["is_rec_invvol"]),
-            rx.table.cell(r["vol_str"]),
-            rx.table.cell(
-                rx.hstack(
-                    rx.box(
-                        background="var(--blue-8)",
-                        height="10px",
-                        width=r["inv_vol_weight_str"],
-                        border_radius="3px",
-                        min_width="4px",
-                    ),
-                    rx.text(r["inv_vol_weight_str"], size="2"),
-                    spacing="2", align="center",
-                )
-            ),
-        )
-
-    invvol_table = rx.vstack(
-        rx.text("변동성(60일 연환산) 역수에 비례하여 비중 배분 — 변동성 낮을수록 더 많이 투자",
-            size="1", color="gray"),
-        rx.table.root(
-            rx.table.header(rx.table.row(
-                rx.table.column_header_cell("자산"),
-                rx.table.column_header_cell("변동성(연)"),
-                rx.table.column_header_cell("배분 비중"),
-            )),
-            rx.table.body(rx.foreach(State.momentum_rows, invvol_row)),
-            width="100%", variant="surface",
-        ),
-        spacing="2", width="100%",
-    )
-
-    # ── Risk Parity 상세 테이블 ────────────────────────────────
-    def rp_row(r):
-        return rx.table.row(
-            name_cell(r, r["is_rec_rp"]),
-            rx.table.cell(r["vol_str"]),
-            rx.table.cell(
-                rx.hstack(
-                    rx.box(
-                        background="var(--violet-8)",
-                        height="10px",
-                        width=r["rp_weight_str"],
-                        border_radius="3px",
-                        min_width="4px",
-                    ),
-                    rx.text(r["rp_weight_str"], size="2"),
-                    spacing="2", align="center",
-                )
-            ),
-        )
-
-    rp_table = rx.vstack(
-        rx.text(
-            "공분산 행렬 기반 Risk Parity — 각 자산의 위험 기여(Risk Contribution)가 동일하도록 비중 최적화 (scipy 미설치 시 역변동성으로 대체)",
-            size="1", color="gray",
-        ),
-        rx.table.root(
-            rx.table.header(rx.table.row(
-                rx.table.column_header_cell("자산"),
-                rx.table.column_header_cell("변동성(연)"),
-                rx.table.column_header_cell("Risk Parity 비중"),
-            )),
-            rx.table.body(rx.foreach(State.momentum_rows, rp_row)),
-            width="100%", variant="surface",
-        ),
-        spacing="2", width="100%",
-    )
-
     # ── 탭 레이아웃 조합 ───────────────────────────────────────
     return rx.vstack(
         # 컨트롤 바
         rx.hstack(
-            rx.text("기간 (단순모멘텀):", size="2", color="gray"),
+            rx.text("기간 표시:", size="2", color="gray"),
             rx.button("1M", size="1",
                 variant=rx.cond(State.momentum_show_1m, "solid", "soft"),
                 color_scheme="gray", on_click=State.toggle_momentum_1m),
@@ -6918,53 +6875,49 @@ def momentum_tab() -> rx.Component:
             State.momentum_error != "",
             rx.callout(State.momentum_error, color_scheme="red"),
         ),
-        # 4개 전략 추천 카드
         rx.cond(
             State.momentum_rows.length() > 0,
-            rx.grid(
-                _momentum_strategy_card(
-                    "단순 모멘텀", "3·6·12M 수익률 기반",
-                    State.momentum_recommendation, State.momentum_rec_reason,
-                    State.momentum_rec_key == "cash", "momentum",
+            rx.vstack(
+                # ── 섹션 A: 시장 판단 ──────────────────────────────
+                rx.hstack(
+                    rx.heading("시장 판단", size="3"),
+                    rx.text("어느 시장이 강한가?", size="2", color="gray"),
+                    spacing="3", align="center",
                 ),
-                _momentum_strategy_card(
-                    "VAA 모멘텀", "12×1M + 4×3M + 2×6M + 1×12M",
-                    State.momentum_vaa_rec_name, State.momentum_vaa_rec_desc,
-                    State.momentum_vaa_rec_key == "cash", "vaa",
+                ranking_table,
+                rx.grid(
+                    _momentum_strategy_card(
+                        "단순 모멘텀", "기간별 1위 카운트",
+                        State.momentum_recommendation, State.momentum_rec_reason,
+                        State.momentum_rec_key == "cash", "momentum",
+                    ),
+                    _momentum_strategy_card(
+                        "VAA 모멘텀", "12×1M + 4×3M + 2×6M + 1×12M",
+                        State.momentum_vaa_rec_name, State.momentum_vaa_rec_desc,
+                        State.momentum_vaa_rec_key == "cash", "vaa",
+                    ),
+                    _momentum_strategy_card(
+                        "MA200 필터", "200일 이평 위 자산 중 12M 1위",
+                        State.momentum_ma_rec_name, State.momentum_ma_rec_desc,
+                        State.momentum_ma_rec_key == "cash", "ma",
+                    ),
+                    columns="3",
+                    gap="3",
+                    width="100%",
                 ),
-                _momentum_strategy_card(
-                    "MA200 필터", "200일 이동평균 위 자산 중 12M 1위",
-                    State.momentum_ma_rec_name, State.momentum_ma_rec_desc,
-                    State.momentum_ma_rec_key == "cash", "ma",
+                # ── 섹션 B: 자산 배분 ──────────────────────────────
+                rx.separator(width="100%"),
+                rx.hstack(
+                    rx.heading("자산 배분", size="3"),
+                    rx.text("전체 자산에 얼마씩 투자할까?", size="2", color="gray"),
+                    spacing="3", align="center",
                 ),
-                _momentum_strategy_card(
-                    "역변동성 배분", "변동성 역수 비례 비중",
-                    "분산 배분", State.momentum_invvol_rec_desc,
-                    False, "invvol",
-                ),
-                _momentum_strategy_card(
-                    "Risk Parity", "위험 균형 배분 (공분산 최적화)",
-                    "위험균형", State.momentum_rp_rec_desc,
-                    False, "rp",
-                ),
-                columns="2",
-                gap="3",
+                alloc_table,
+                spacing="4",
                 width="100%",
             ),
         ),
-        # 상세 테이블 (카드 클릭으로 전환)
-        rx.cond(
-            State.momentum_rows.length() > 0,
-            rx.box(
-                rx.cond(State.momentum_detail == "momentum", momentum_table, rx.fragment()),
-                rx.cond(State.momentum_detail == "vaa", vaa_table, rx.fragment()),
-                rx.cond(State.momentum_detail == "ma", ma_table, rx.fragment()),
-                rx.cond(State.momentum_detail == "invvol", invvol_table, rx.fragment()),
-                rx.cond(State.momentum_detail == "rp", rp_table, rx.fragment()),
-                width="100%",
-            ),
-        ),
-        # ── 백테스트 섹션 ─────────────────────────────────────────
+        # ── 섹션 C: 백테스트 ──────────────────────────────────────
         rx.separator(width="100%"),
         rx.vstack(
             rx.heading("전략 백테스트 (월별 리밸런싱)", size="3"),
