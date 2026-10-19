@@ -6704,6 +6704,152 @@ def momentum_tab() -> rx.Component:
             )
         )
 
+    # ── 종합 투자 제안 카드 ────────────────────────────────────
+    def alloc_bar_row(r, weight_key):
+        w = r[weight_key]
+        return rx.hstack(
+            rx.text(r["name"].split("(")[0].strip(), size="2", width="72px"),
+            rx.box(
+                background="var(--blue-8)",
+                height="10px",
+                width=w,
+                border_radius="3px",
+                min_width="4px",
+            ),
+            rx.text(w, size="2", color="gray", min_width="40px"),
+            spacing="2", align="center", width="100%",
+        )
+
+    def alloc_bar_row_rp(r):
+        w = r["rp_weight_str"]
+        return rx.hstack(
+            rx.text(r["name"].split("(")[0].strip(), size="2", width="72px"),
+            rx.box(
+                background="var(--violet-8)",
+                height="10px",
+                width=w,
+                border_radius="3px",
+                min_width="4px",
+            ),
+            rx.text(w, size="2", color="gray", min_width="40px"),
+            spacing="2", align="center", width="100%",
+        )
+
+    def alloc_bar_row_iv(r):
+        w = r["inv_vol_weight_str"]
+        return rx.hstack(
+            rx.text(r["name"].split("(")[0].strip(), size="2", width="72px"),
+            rx.box(
+                background="var(--blue-8)",
+                height="10px",
+                width=w,
+                border_radius="3px",
+                min_width="4px",
+            ),
+            rx.text(w, size="2", color="gray", min_width="40px"),
+            spacing="2", align="center", width="100%",
+        )
+
+    summary_card = rx.cond(
+        State.momentum_rows.length() > 0,
+        rx.box(
+            rx.vstack(
+                rx.hstack(
+                    rx.heading("종합 투자 제안", size="4"),
+                    rx.text("조회 결과 기준", size="1", color="gray"),
+                    spacing="3", align="center",
+                ),
+                rx.grid(
+                    # 집중 투자 카드
+                    rx.box(
+                        rx.vstack(
+                            rx.hstack(
+                                rx.badge("집중 투자", color_scheme="blue", variant="soft"),
+                                rx.text("모멘텀 1위 자산에 전액", size="1", color="gray"),
+                                spacing="2", align="center",
+                            ),
+                            rx.separator(width="100%"),
+                            rx.vstack(
+                                rx.hstack(
+                                    rx.text("단순모멘텀", size="1", color="gray", width="80px"),
+                                    rx.text(State.momentum_recommendation, size="2", weight="bold"),
+                                    spacing="2",
+                                ),
+                                rx.hstack(
+                                    rx.text("VAA", size="1", color="gray", width="80px"),
+                                    rx.text(State.momentum_vaa_rec_name, size="2", weight="bold"),
+                                    spacing="2",
+                                ),
+                                rx.hstack(
+                                    rx.text("MA200", size="1", color="gray", width="80px"),
+                                    rx.text(State.momentum_ma_rec_name, size="2", weight="bold"),
+                                    spacing="2",
+                                ),
+                                spacing="2", width="100%",
+                            ),
+                            spacing="3", width="100%",
+                        ),
+                        padding="16px",
+                        border="1px solid var(--blue-6)",
+                        border_radius="8px",
+                        background="var(--blue-1)",
+                    ),
+                    # 역변동성 배분 카드
+                    rx.box(
+                        rx.vstack(
+                            rx.hstack(
+                                rx.badge("분산 투자 ①", color_scheme="teal", variant="soft"),
+                                rx.text("역변동성 비중", size="1", color="gray"),
+                                spacing="2", align="center",
+                            ),
+                            rx.text("변동성 낮을수록 비중↑", size="1", color="gray"),
+                            rx.separator(width="100%"),
+                            rx.vstack(
+                                rx.foreach(State.momentum_rows, alloc_bar_row_iv),
+                                spacing="1", width="100%",
+                            ),
+                            spacing="3", width="100%",
+                        ),
+                        padding="16px",
+                        border="1px solid var(--teal-6)",
+                        border_radius="8px",
+                        background="var(--teal-1)",
+                    ),
+                    # Risk Parity 배분 카드
+                    rx.box(
+                        rx.vstack(
+                            rx.hstack(
+                                rx.badge("분산 투자 ②", color_scheme="violet", variant="soft"),
+                                rx.text("Risk Parity 비중", size="1", color="gray"),
+                                spacing="2", align="center",
+                            ),
+                            rx.text("공분산 기반 위험 균형", size="1", color="gray"),
+                            rx.separator(width="100%"),
+                            rx.vstack(
+                                rx.foreach(State.momentum_rows, alloc_bar_row_rp),
+                                spacing="1", width="100%",
+                            ),
+                            spacing="3", width="100%",
+                        ),
+                        padding="16px",
+                        border="1px solid var(--violet-6)",
+                        border_radius="8px",
+                        background="var(--violet-1)",
+                    ),
+                    columns="3",
+                    gap="3",
+                    width="100%",
+                ),
+                spacing="3", width="100%",
+            ),
+            padding="16px",
+            border="1px solid var(--gray-4)",
+            border_radius="10px",
+            background="var(--gray-1)",
+            width="100%",
+        ),
+    )
+
     # ── 섹션 A: 통합 랭킹 테이블 (시장 판단) ─────────────────
     def rank_row(r):
         return rx.table.row(
@@ -6834,7 +6980,7 @@ def momentum_tab() -> rx.Component:
                 rx.table.column_header_cell("신호"),
                 rx.table.column_header_cell("12개월"),
             )),
-            rx.table.body(rx.foreach(State.momentum_rows, ma_row)),
+            rx.table.body(rx.foreach(State.momentum_rows, _dummy_ma_row)),
             width="100%", variant="surface",
         ),
         spacing="2", width="100%",
@@ -6875,9 +7021,11 @@ def momentum_tab() -> rx.Component:
             State.momentum_error != "",
             rx.callout(State.momentum_error, color_scheme="red"),
         ),
+        summary_card,
         rx.cond(
             State.momentum_rows.length() > 0,
             rx.vstack(
+                rx.separator(width="100%"),
                 # ── 섹션 A: 시장 판단 ──────────────────────────────
                 rx.hstack(
                     rx.heading("시장 판단", size="3"),
