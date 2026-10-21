@@ -360,7 +360,7 @@ def _progress_printer(stop_event: threading.Event, start_time: float):
     while not stop_event.wait(30):
         elapsed = int(time.time() - start_time)
         m, s = divmod(elapsed, 60)
-        log.info(f"  ⏳ Claude 처리 중... (경과 {m}분 {s}초)")
+        log.info(f"  [waiting] Claude 처리 중... (경과 {m}분 {s}초)")
 
 
 # ── Claude CLI 트리거 ──────────────────────────────────────────────────────────
@@ -381,26 +381,26 @@ def trigger_claude():
         )
         stop_evt.set()
         if result.returncode == 0:
-            _print_banner("✅ Claude v3 처리 완료")
-            _set_title("QuantMaster Poll — 대기 중 ✅")
+            _print_banner("[OK] Claude v3 처리 완료")
+            _set_title("QuantMaster Poll — 대기 중")
             log.info("Claude v3 처리 완료")
             if result.stdout:
                 log.info(f"결과:\n{result.stdout[:500]}")
             return True
         else:
-            _print_banner(f"❌ Claude 오류 (exit {result.returncode})")
-            _set_title("QuantMaster Poll — 오류 ❌")
+            _print_banner(f"[ERROR] Claude 오류 (exit {result.returncode})")
+            _set_title("QuantMaster Poll — 오류")
             log.error(f"Claude 오류 (exit {result.returncode}):\n{result.stderr[:300]}")
             return False
     except subprocess.TimeoutExpired:
         stop_evt.set()
-        _print_banner("⏰ Claude 실행 타임아웃 (30분)")
-        _set_title("QuantMaster Poll — 타임아웃 ⏰")
+        _print_banner("[TIMEOUT] Claude 실행 타임아웃 (30분)")
+        _set_title("QuantMaster Poll — 타임아웃")
         log.error("Claude 실행 타임아웃 (30분)")
         return False
     except FileNotFoundError:
         stop_evt.set()
-        _set_title("QuantMaster Poll — 오류 ❌")
+        _set_title("QuantMaster Poll — 오류")
         log.error(f"'{CLAUDE_CMD}' 명령을 찾을 수 없음. PATH를 확인하세요.")
         return False
 
