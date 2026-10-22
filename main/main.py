@@ -6705,25 +6705,10 @@ def momentum_tab() -> rx.Component:
         )
 
     # ── 종합 투자 제안 카드 ────────────────────────────────────
-    def alloc_bar_row(r, weight_key):
-        w = r[weight_key]
-        return rx.hstack(
-            rx.text(r["name"].split("(")[0].strip(), size="2", width="72px"),
-            rx.box(
-                background="var(--blue-8)",
-                height="10px",
-                width=w,
-                border_radius="3px",
-                min_width="4px",
-            ),
-            rx.text(w, size="2", color="gray", min_width="40px"),
-            spacing="2", align="center", width="100%",
-        )
-
     def alloc_bar_row_rp(r):
         w = r["rp_weight_str"]
         return rx.hstack(
-            rx.text(r["name"].split("(")[0].strip(), size="2", width="72px"),
+            rx.text(r["name"], size="2", width="100px"),
             rx.box(
                 background="var(--violet-8)",
                 height="10px",
@@ -6738,7 +6723,7 @@ def momentum_tab() -> rx.Component:
     def alloc_bar_row_iv(r):
         w = r["inv_vol_weight_str"]
         return rx.hstack(
-            rx.text(r["name"].split("(")[0].strip(), size="2", width="72px"),
+            rx.text(r["name"], size="2", width="100px"),
             rx.box(
                 background="var(--blue-8)",
                 height="10px",
