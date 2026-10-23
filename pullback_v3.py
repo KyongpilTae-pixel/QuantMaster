@@ -86,8 +86,12 @@ def get_kr_universe(n: int = KR_UNIVERSE_SIZE) -> list[str]:
         df = fdr.StockListing("KOSPI")
         if df is None or df.empty:
             raise ValueError("empty listing")
-        df = df.dropna(subset=["Marcap"]).sort_values("Marcap", ascending=False)
+        # Marcap column may not exist or may be all NaN
+        if "Marcap" in df.columns:
+            df = df.dropna(subset=["Marcap"]).sort_values("Marcap", ascending=False)
         codes = df["Code"].dropna().head(n).tolist()
+        if not codes:
+            raise ValueError("no codes after filtering")
         tickers = [c + ".KS" for c in codes]
         log.info(f"KR universe: {len(tickers)} tickers")
         return tickers
@@ -160,12 +164,12 @@ def compute_signals(ticker: str, df: pd.DataFrame) -> pd.DataFrame:
 
     growth_gate = (ratio250 >= RATIO_MIN) & ma_slope
 
-    # Touch: close just crossed above MA200 AND within 0~+5% band
+    # touch and reclaim are mutually exclusive:
+    # touch   = crossed above MA200 AND close within 0~+5% band (gentle pullback)
+    # reclaim = crossed above MA200 AND close > MA200 * 1.05 (strong break)
     crossed_above = above & ~above.shift(1).fillna(False)
     touch   = growth_gate & crossed_above & (c <= ma * (1 + TOUCH_BAND))
-
-    # Reclaim: crossed above MA200 (superset of touch — any cross)
-    reclaim = growth_gate & crossed_above
+    reclaim = growth_gate & crossed_above & (c >  ma * (1 + TOUCH_BAND))
 
     out = pd.DataFrame({
         "close": c,
