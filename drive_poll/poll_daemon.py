@@ -66,12 +66,16 @@ PROCESS_PROMPT_V3 = """[로컬 폴링 v3 — 매 주기 실행 강제]
 """.strip()
 
 
+_console_handler = logging.StreamHandler(
+    stream=open(sys.stdout.fileno(), mode="w", encoding="utf-8", buffering=1, closefd=False)
+)
+_console_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
     handlers=[
         logging.FileHandler(LOG_FILE, encoding="utf-8"),
-        logging.StreamHandler(sys.stdout),
+        _console_handler,
     ],
 )
 log = logging.getLogger(__name__)
