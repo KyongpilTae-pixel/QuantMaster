@@ -116,6 +116,10 @@ def _download_one(ticker: str) -> tuple[str, pd.DataFrame | None]:
         cache = DATA_DIR / f"{ticker.replace('/', '_')}.parquet"
         if cache.exists():
             df = pd.read_parquet(cache)
+            if isinstance(df.columns, pd.MultiIndex):
+                # Cached file has corrupted MultiIndex — delete and re-download
+                cache.unlink()
+                raise ValueError("MultiIndex columns in cache, forcing re-download")
         else:
             df = yf.download(ticker, start=START_DATE, auto_adjust=True,
                              progress=False, threads=False)
@@ -164,12 +168,12 @@ def compute_signals(ticker: str, df: pd.DataFrame) -> pd.DataFrame:
 
     growth_gate = (ratio250 >= RATIO_MIN) & ma_slope
 
-    # touch and reclaim are mutually exclusive:
-    # touch   = crossed above MA200 AND close within 0~+5% band (gentle pullback)
-    # reclaim = crossed above MA200 AND close > MA200 * 1.05 (strong break)
+    # touch   = band-stay entry: above MA200 and within 0~+5% (no crossing required)
+    # reclaim = crossing entry:  just crossed above MA200 from below (no band cap)
+    # Both are independent streams, each with separate 30-day cooldown dedup.
     crossed_above = above & ~above.shift(1).fillna(False)
-    touch   = growth_gate & crossed_above & (c <= ma * (1 + TOUCH_BAND))
-    reclaim = growth_gate & crossed_above & (c >  ma * (1 + TOUCH_BAND))
+    touch   = growth_gate & above & (c <= ma * (1 + TOUCH_BAND))
+    reclaim = growth_gate & crossed_above
 
     out = pd.DataFrame({
         "close": c,
@@ -204,59 +208,70 @@ def run_backtest(
         if sig.empty:
             continue
 
-        last_signal_idx: int = -COOLDOWN - 1  # index position of last signal
-        open_trade: dict | None = None
+        # Separate independent cooldown streams for touch and reclaim
+        last_touch_idx:   int       = -COOLDOWN - 1
+        last_reclaim_idx: int       = -COOLDOWN - 1
+        open_touch:   dict | None = None
+        open_reclaim: dict | None = None
         indices = sig.index.tolist()
 
         for i, date in enumerate(indices):
-            row = sig.loc[date]
+            row   = sig.loc[date]
             close = float(row["close"])
 
-            # --- Check exit for open trade ---
-            if open_trade is not None:
-                days_held = i - open_trade["entry_i"]
-                pnl_pct = close / open_trade["entry_price"] - 1
-
+            # --- Touch stream exit ---
+            if open_touch is not None:
+                days_held = i - open_touch["entry_i"]
+                pnl_pct   = close / open_touch["entry_price"] - 1
                 exit_type = None
                 if pnl_pct <= STOP_LOSS:
                     exit_type = "stop_loss"
                 elif days_held >= MAX_HOLD:
                     exit_type = "hold_12m"
-
                 if exit_type:
-                    t = {
-                        **open_trade,
-                        "exit_date": date,
-                        "exit_price": close,
-                        "pnl_pct": pnl_pct,
-                        "days_held": days_held,
+                    trades_touch.append({
+                        **open_touch,
+                        "exit_date": date, "exit_price": close,
+                        "pnl_pct": pnl_pct, "days_held": days_held,
                         "exit_type": exit_type,
-                    }
-                    if open_trade["signal_type"] == "touch":
-                        trades_touch.append(t)
-                    else:
-                        trades_reclaim.append(t)
-                    open_trade = None
-                    # Reset cooldown from exit, not entry
-                    last_signal_idx = i
+                    })
+                    open_touch = None
+                    last_touch_idx = i
 
-            # --- Check entry ---
-            if open_trade is None and (i - last_signal_idx) > COOLDOWN:
-                sig_type = None
-                if bool(row["touch"]):
-                    sig_type = "touch"
-                elif bool(row["reclaim"]):
-                    sig_type = "reclaim"
+            # --- Reclaim stream exit ---
+            if open_reclaim is not None:
+                days_held = i - open_reclaim["entry_i"]
+                pnl_pct   = close / open_reclaim["entry_price"] - 1
+                exit_type = None
+                if pnl_pct <= STOP_LOSS:
+                    exit_type = "stop_loss"
+                elif days_held >= MAX_HOLD:
+                    exit_type = "hold_12m"
+                if exit_type:
+                    trades_reclaim.append({
+                        **open_reclaim,
+                        "exit_date": date, "exit_price": close,
+                        "pnl_pct": pnl_pct, "days_held": days_held,
+                        "exit_type": exit_type,
+                    })
+                    open_reclaim = None
+                    last_reclaim_idx = i
 
-                if sig_type:
-                    open_trade = {
-                        "ticker": ticker,
-                        "signal_type": sig_type,
-                        "entry_date": date,
-                        "entry_price": close,
-                        "entry_i": i,
-                    }
-                    last_signal_idx = i
+            # --- Touch entry ---
+            if open_touch is None and (i - last_touch_idx) > COOLDOWN and bool(row["touch"]):
+                open_touch = {
+                    "ticker": ticker, "signal_type": "touch",
+                    "entry_date": date, "entry_price": close, "entry_i": i,
+                }
+                last_touch_idx = i
+
+            # --- Reclaim entry ---
+            if open_reclaim is None and (i - last_reclaim_idx) > COOLDOWN and bool(row["reclaim"]):
+                open_reclaim = {
+                    "ticker": ticker, "signal_type": "reclaim",
+                    "entry_date": date, "entry_price": close, "entry_i": i,
+                }
+                last_reclaim_idx = i
 
     return {"touch": trades_touch, "reclaim": trades_reclaim}
 
@@ -292,52 +307,67 @@ def get_live_positions(data: dict[str, pd.DataFrame]) -> dict:
 
     for ticker, df in data.items():
         sig = compute_signals(ticker, df)
-        # Scan all history for open trades
-        last_signal_idx = -COOLDOWN - 1
-        open_trade = None
+        # Separate independent cooldown streams for touch and reclaim
+        last_touch_idx   = -COOLDOWN - 1
+        last_reclaim_idx = -COOLDOWN - 1
+        open_touch:   dict | None = None
+        open_reclaim: dict | None = None
         indices = sig.index.tolist()
 
         for i, date in enumerate(indices):
-            row = sig.loc[date]
+            row   = sig.loc[date]
             close = float(row["close"])
 
-            if open_trade is not None:
-                days_held = i - open_trade["entry_i"]
-                pnl_pct = close / open_trade["entry_price"] - 1
+            # Touch stream update / expire
+            if open_touch is not None:
+                days_held = i - open_touch["entry_i"]
+                pnl_pct   = close / open_touch["entry_price"] - 1
                 if pnl_pct <= STOP_LOSS or days_held >= MAX_HOLD:
-                    open_trade = None
-                    last_signal_idx = i
+                    open_touch = None
+                    last_touch_idx = i
                 else:
-                    open_trade["current_price"] = close
-                    open_trade["days_held"] = days_held
-                    open_trade["pnl_pct"] = pnl_pct
+                    open_touch["current_price"] = close
+                    open_touch["days_held"]     = days_held
+                    open_touch["pnl_pct"]       = pnl_pct
 
-            if open_trade is None and (i - last_signal_idx) > COOLDOWN:
-                sig_type = None
-                if bool(row["touch"]):
-                    sig_type = "touch"
-                elif bool(row["reclaim"]):
-                    sig_type = "reclaim"
-                if sig_type:
-                    open_trade = {
-                        "ticker": ticker,
-                        "signal_type": sig_type,
-                        "entry_date": str(date.date()),
-                        "entry_price": close,
-                        "entry_i": i,
-                        "current_price": close,
-                        "days_held": 0,
-                        "pnl_pct": 0.0,
-                    }
-                    last_signal_idx = i
+            # Reclaim stream update / expire
+            if open_reclaim is not None:
+                days_held = i - open_reclaim["entry_i"]
+                pnl_pct   = close / open_reclaim["entry_price"] - 1
+                if pnl_pct <= STOP_LOSS or days_held >= MAX_HOLD:
+                    open_reclaim = None
+                    last_reclaim_idx = i
+                else:
+                    open_reclaim["current_price"] = close
+                    open_reclaim["days_held"]     = days_held
+                    open_reclaim["pnl_pct"]       = pnl_pct
 
-        if open_trade is not None:
-            rec = {k: v for k, v in open_trade.items() if k != "entry_i"}
-            rec["pnl_pct"] = round(rec["pnl_pct"] * 100, 2)
-            if ".KS" in ticker:
-                open_kr.append(rec)
-            else:
-                open_us.append(rec)
+            # Touch entry
+            if open_touch is None and (i - last_touch_idx) > COOLDOWN and bool(row["touch"]):
+                open_touch = {
+                    "ticker": ticker, "signal_type": "touch",
+                    "entry_date": str(date.date()), "entry_price": close,
+                    "entry_i": i, "current_price": close, "days_held": 0, "pnl_pct": 0.0,
+                }
+                last_touch_idx = i
+
+            # Reclaim entry
+            if open_reclaim is None and (i - last_reclaim_idx) > COOLDOWN and bool(row["reclaim"]):
+                open_reclaim = {
+                    "ticker": ticker, "signal_type": "reclaim",
+                    "entry_date": str(date.date()), "entry_price": close,
+                    "entry_i": i, "current_price": close, "days_held": 0, "pnl_pct": 0.0,
+                }
+                last_reclaim_idx = i
+
+        for open_trade in [open_touch, open_reclaim]:
+            if open_trade is not None:
+                rec = {k: v for k, v in open_trade.items() if k != "entry_i"}
+                rec["pnl_pct"] = round(rec["pnl_pct"] * 100, 2)
+                if ".KS" in ticker:
+                    open_kr.append(rec)
+                else:
+                    open_us.append(rec)
 
     open_us.sort(key=lambda x: x["pnl_pct"], reverse=True)
     open_kr.sort(key=lambda x: x["pnl_pct"], reverse=True)
@@ -352,6 +382,34 @@ def get_live_positions(data: dict[str, pd.DataFrame]) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# 5b. Cache utilities
+# ---------------------------------------------------------------------------
+
+def clean_corrupted_us_cache(tickers: list[str]) -> int:
+    """Delete US parquet files with MultiIndex column corruption for re-download."""
+    removed = 0
+    for ticker in tickers:
+        cache = DATA_DIR / f"{ticker.replace('/', '_')}.parquet"
+        if not cache.exists():
+            continue
+        try:
+            df = pd.read_parquet(cache)
+            if isinstance(df.columns, pd.MultiIndex):
+                cache.unlink()
+                removed += 1
+                log.info(f"Removed corrupted cache: {cache.name}")
+            elif "Close" not in df.columns:
+                cache.unlink()
+                removed += 1
+                log.info(f"Removed cache missing Close column: {cache.name}")
+        except Exception as e:
+            cache.unlink()
+            removed += 1
+            log.info(f"Removed unreadable cache {cache.name}: {e}")
+    return removed
+
+
+# ---------------------------------------------------------------------------
 # 6. Main
 # ---------------------------------------------------------------------------
 
@@ -362,6 +420,10 @@ def main():
     kr_tickers = get_kr_universe()
     all_tickers = us_tickers + kr_tickers
     log.info(f"Universe: {len(us_tickers)} US + {len(kr_tickers)} KR = {len(all_tickers)} total")
+
+    log.info("Cleaning corrupted US parquet cache (MultiIndex fix)...")
+    removed = clean_corrupted_us_cache(us_tickers)
+    log.info(f"  Removed {removed} corrupted US cache files — will re-download")
 
     log.info("Downloading price data...")
     data = download_universe(all_tickers)
