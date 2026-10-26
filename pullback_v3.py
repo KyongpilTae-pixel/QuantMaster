@@ -171,7 +171,7 @@ def compute_signals(ticker: str, df: pd.DataFrame) -> pd.DataFrame:
     # touch   = band-stay entry: above MA200 and within 0~+5% (no crossing required)
     # reclaim = crossing entry:  just crossed above MA200 from below (no band cap)
     # Both are independent streams, each with separate 30-day cooldown dedup.
-    crossed_above = above & ~above.shift(1).fillna(False)
+    crossed_above = above & ~above.shift(1).fillna(False).infer_objects(copy=False)
     touch   = growth_gate & above & (c <= ma * (1 + TOUCH_BAND))
     reclaim = growth_gate & crossed_above
 

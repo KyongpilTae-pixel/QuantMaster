@@ -1,32 +1,32 @@
 {
-  "generated_at": "2026-10-24T14:44:14.219268+00:00",
+  "generated_at": "2026-10-26T00:53:28.902813+00:00",
   "backtest_period": "2019-01-01 ~ 2024-12-31",
   "universe": {
     "us": 80,
-    "kr": 90,
-    "downloaded": 168
+    "kr": 40,
+    "downloaded": 113
   },
   "touch": {
     "label": "touch",
-    "count": 345,
-    "stop_loss": 241,
-    "stop_loss_pct": 69.9,
-    "hold_12m": 104,
-    "hold_12m_avg_pnl": 41.7,
-    "hold_12m_win_rate": 97.1,
+    "count": 267,
+    "stop_loss": 177,
+    "stop_loss_pct": 66.3,
+    "hold_12m": 90,
+    "hold_12m_avg_pnl": 40.1,
+    "hold_12m_win_rate": 96.7,
     "stop_avg_pnl": -12.0,
-    "stop_median_days": 54
+    "stop_median_days": 58
   },
   "reclaim": {
     "label": "reclaim",
-    "count": 258,
-    "stop_loss": 199,
-    "stop_loss_pct": 77.1,
-    "hold_12m": 59,
-    "hold_12m_avg_pnl": 46.2,
-    "hold_12m_win_rate": 94.9,
+    "count": 200,
+    "stop_loss": 147,
+    "stop_loss_pct": 73.5,
+    "hold_12m": 53,
+    "hold_12m_avg_pnl": 39.2,
+    "hold_12m_win_rate": 94.3,
     "stop_avg_pnl": -11.8,
-    "stop_median_days": 36
+    "stop_median_days": 45
   },
   "self_check_targets": {
     "touch": {
@@ -434,51 +434,6 @@
     ],
     "kr_open": [
       {
-        "ticker": "000500.KS",
-        "signal_type": "reclaim",
-        "entry_date": "2025-10-23",
-        "entry_price": 33139.48046875,
-        "current_price": 228500.0,
-        "days_held": 244,
-        "pnl_pct": 589.51
-      },
-      {
-        "ticker": "028050.KS",
-        "signal_type": "touch",
-        "entry_date": "2026-10-16",
-        "entry_price": 43600.0,
-        "current_price": 59800.0,
-        "days_held": 5,
-        "pnl_pct": 37.16
-      },
-      {
-        "ticker": "028050.KS",
-        "signal_type": "reclaim",
-        "entry_date": "2026-10-16",
-        "entry_price": 43600.0,
-        "current_price": 59800.0,
-        "days_held": 5,
-        "pnl_pct": 37.16
-      },
-      {
-        "ticker": "078930.KS",
-        "signal_type": "touch",
-        "entry_date": "2026-06-26",
-        "entry_price": 62500.0,
-        "current_price": 85600.0,
-        "days_held": 79,
-        "pnl_pct": 36.96
-      },
-      {
-        "ticker": "272210.KS",
-        "signal_type": "touch",
-        "entry_date": "2025-11-21",
-        "entry_price": 48422.109375,
-        "current_price": 66300.0,
-        "days_held": 223,
-        "pnl_pct": 36.92
-      },
-      {
         "ticker": "010950.KS",
         "signal_type": "touch",
         "entry_date": "2026-06-25",
@@ -488,15 +443,6 @@
         "pnl_pct": 35.6
       },
       {
-        "ticker": "005830.KS",
-        "signal_type": "reclaim",
-        "entry_date": "2026-05-29",
-        "entry_price": 143100.0,
-        "current_price": 184200.0,
-        "days_held": 98,
-        "pnl_pct": 28.72
-      },
-      {
         "ticker": "010950.KS",
         "signal_type": "reclaim",
         "entry_date": "2026-06-29",
@@ -504,33 +450,6 @@
         "current_price": 132400.0,
         "days_held": 78,
         "pnl_pct": 28.4
-      },
-      {
-        "ticker": "353200.KS",
-        "signal_type": "reclaim",
-        "entry_date": "2026-07-31",
-        "entry_price": 96800.0,
-        "current_price": 124200.0,
-        "days_held": 55,
-        "pnl_pct": 28.31
-      },
-      {
-        "ticker": "353200.KS",
-        "signal_type": "touch",
-        "entry_date": "2026-09-14",
-        "entry_price": 97000.0,
-        "current_price": 124200.0,
-        "days_held": 25,
-        "pnl_pct": 28.04
-      },
-      {
-        "ticker": "272210.KS",
-        "signal_type": "reclaim",
-        "entry_date": "2025-12-12",
-        "entry_price": 52905.63671875,
-        "current_price": 66300.0,
-        "days_held": 208,
-        "pnl_pct": 25.32
       },
       {
         "ticker": "018260.KS",
@@ -551,15 +470,6 @@
         "pnl_pct": 20.58
       },
       {
-        "ticker": "180640.KS",
-        "signal_type": "reclaim",
-        "entry_date": "2025-10-22",
-        "entry_price": 100290.9921875,
-        "current_price": 120100.0,
-        "days_held": 245,
-        "pnl_pct": 19.75
-      },
-      {
         "ticker": "018260.KS",
         "signal_type": "reclaim",
         "entry_date": "2026-04-15",
@@ -567,15 +477,6 @@
         "current_price": 213500.0,
         "days_held": 127,
         "pnl_pct": 19.54
-      },
-      {
-        "ticker": "161390.KS",
-        "signal_type": "touch",
-        "entry_date": "2026-04-03",
-        "entry_price": 51290.91015625,
-        "current_price": 60100.0,
-        "days_held": 135,
-        "pnl_pct": 17.17
       },
       {
         "ticker": "012330.KS",
@@ -596,15 +497,6 @@
         "pnl_pct": 11.54
       },
       {
-        "ticker": "047040.KS",
-        "signal_type": "reclaim",
-        "entry_date": "2026-08-03",
-        "entry_price": 13300.0,
-        "current_price": 14700.0,
-        "days_held": 54,
-        "pnl_pct": 10.53
-      },
-      {
         "ticker": "000810.KS",
         "signal_type": "touch",
         "entry_date": "2026-10-14",
@@ -614,24 +506,6 @@
         "pnl_pct": 3.44
       },
       {
-        "ticker": "316140.KS",
-        "signal_type": "reclaim",
-        "entry_date": "2026-07-01",
-        "entry_price": 29157.25390625,
-        "current_price": 30100.0,
-        "days_held": 76,
-        "pnl_pct": 3.23
-      },
-      {
-        "ticker": "032640.KS",
-        "signal_type": "touch",
-        "entry_date": "2026-01-08",
-        "entry_price": 13751.9462890625,
-        "current_price": 14160.0,
-        "days_held": 192,
-        "pnl_pct": 2.97
-      },
-      {
         "ticker": "068270.KS",
         "signal_type": "touch",
         "entry_date": "2026-07-30",
@@ -648,33 +522,6 @@
         "current_price": 194400.0,
         "days_held": 56,
         "pnl_pct": 2.32
-      },
-      {
-        "ticker": "316140.KS",
-        "signal_type": "touch",
-        "entry_date": "2026-06-09",
-        "entry_price": 29802.984375,
-        "current_price": 30100.0,
-        "days_held": 92,
-        "pnl_pct": 1.0
-      },
-      {
-        "ticker": "005935.KS",
-        "signal_type": "touch",
-        "entry_date": "2026-10-16",
-        "entry_price": 167200.0,
-        "current_price": 167900.0,
-        "days_held": 5,
-        "pnl_pct": 0.42
-      },
-      {
-        "ticker": "005935.KS",
-        "signal_type": "reclaim",
-        "entry_date": "2026-10-16",
-        "entry_price": 167200.0,
-        "current_price": 167900.0,
-        "days_held": 5,
-        "pnl_pct": 0.42
       },
       {
         "ticker": "006400.KS",
@@ -684,24 +531,6 @@
         "current_price": 490500.0,
         "days_held": 0,
         "pnl_pct": 0.0
-      },
-      {
-        "ticker": "032640.KS",
-        "signal_type": "reclaim",
-        "entry_date": "2026-03-05",
-        "entry_price": 14374.4228515625,
-        "current_price": 14160.0,
-        "days_held": 156,
-        "pnl_pct": -1.49
-      },
-      {
-        "ticker": "079550.KS",
-        "signal_type": "reclaim",
-        "entry_date": "2026-02-20",
-        "entry_price": 484547.375,
-        "current_price": 475500.0,
-        "days_held": 164,
-        "pnl_pct": -1.87
       },
       {
         "ticker": "030200.KS",
@@ -722,15 +551,6 @@
         "pnl_pct": -2.46
       },
       {
-        "ticker": "034730.KS",
-        "signal_type": "reclaim",
-        "entry_date": "2026-10-21",
-        "entry_price": 482000.0,
-        "current_price": 465500.0,
-        "days_held": 2,
-        "pnl_pct": -3.42
-      },
-      {
         "ticker": "024110.KS",
         "signal_type": "reclaim",
         "entry_date": "2026-05-21",
@@ -740,13 +560,13 @@
         "pnl_pct": -3.61
       },
       {
-        "ticker": "161390.KS",
-        "signal_type": "reclaim",
-        "entry_date": "2026-10-14",
-        "entry_price": 62700.0,
-        "current_price": 60100.0,
-        "days_held": 7,
-        "pnl_pct": -4.15
+        "ticker": "036570.KS",
+        "signal_type": "touch",
+        "entry_date": "2026-04-02",
+        "entry_price": 213000.0,
+        "current_price": 204000.0,
+        "days_held": 137,
+        "pnl_pct": -4.23
       },
       {
         "ticker": "086790.KS",
@@ -776,6 +596,15 @@
         "pnl_pct": -5.79
       },
       {
+        "ticker": "036570.KS",
+        "signal_type": "reclaim",
+        "entry_date": "2026-04-08",
+        "entry_price": 218000.0,
+        "current_price": 204000.0,
+        "days_held": 133,
+        "pnl_pct": -6.42
+      },
+      {
         "ticker": "066570.KS",
         "signal_type": "touch",
         "entry_date": "2026-10-15",
@@ -795,8 +624,8 @@
       }
     ],
     "us_count": 43,
-    "kr_count": 40,
+    "kr_count": 21,
     "us_avg_pnl": 15.4,
-    "kr_avg_pnl": 25.5
+    "kr_avg_pnl": 5.5
   }
 }
