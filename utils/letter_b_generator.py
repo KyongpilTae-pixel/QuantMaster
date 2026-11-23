@@ -13,6 +13,9 @@ import pandas as pd
 _REPORTS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "letterService")
 os.makedirs(_REPORTS_DIR, exist_ok=True)
 
+_SIG_KO = {"touch": "터치", "reclaim": "탈환"}
+_EXIT_KO = {"stop_loss": "손절(-10%)", "hold_12m": "만기청산(252일)", "": "-"}
+
 _CSS = """
 :root {
   --bg:       #F8FAFF;
@@ -106,15 +109,15 @@ th{background:var(--bg2);color:var(--text-sub);font-weight:600;
 td{padding:8px 10px;border-bottom:1px solid var(--border)}
 tr:last-child td{border-bottom:none}
 .badge-touch{background:var(--touch-bg);color:var(--touch-cl);
-  font-weight:700;font-size:10px;padding:2px 6px;border-radius:4px}
+  font-weight:700;font-size:11px;padding:2px 7px;border-radius:4px}
 .badge-reclaim{background:var(--recl-bg);color:var(--recl-cl);
-  font-weight:700;font-size:10px;padding:2px 6px;border-radius:4px}
+  font-weight:700;font-size:11px;padding:2px 7px;border-radius:4px}
 .badge-stop{background:var(--stop-bg);color:var(--stop-cl);
-  font-weight:700;font-size:10px;padding:2px 6px;border-radius:4px}
+  font-weight:700;font-size:11px;padding:2px 7px;border-radius:4px}
 .badge-hold{background:var(--hold-bg);color:var(--hold-cl);
-  font-weight:700;font-size:10px;padding:2px 6px;border-radius:4px}
+  font-weight:700;font-size:11px;padding:2px 7px;border-radius:4px}
 .badge-new{background:#FEF9C3;color:#854D0E;
-  font-weight:700;font-size:10px;padding:2px 6px;border-radius:4px}
+  font-weight:700;font-size:11px;padding:2px 7px;border-radius:4px}
 .up{color:var(--up);font-weight:600}
 .dn{color:var(--dn);font-weight:600}
 .empty-note{
@@ -229,9 +232,9 @@ def _render_b_html(
             mkt   = "KR" if is_kr else "US"
             sym   = p["ticker"].replace(".KS", "")
             sig   = p["signal_type"]
-            badge = f'<span class="badge-{sig}">{sig.upper()}</span>'
+            badge = f'<span class="badge-{sig}">{_SIG_KO.get(sig, sig)}</span>'
             isnew = p["ticker"] in new_tickers
-            new_b = ' <span class="badge-new">NEW</span>' if isnew else ""
+            new_b = ' <span class="badge-new">신규</span>' if isnew else ""
             ep    = p["entry_price"]
             cp    = p["current_price"]
             ep_fmt = f"{ep:,.2f}"
@@ -273,10 +276,11 @@ def _render_b_html(
         for ex in exit_items:
             sym = ex["ticker"].replace(".KS", "")
             sig = ex["signal_type"]
+            exit_ko = _EXIT_KO.get(ex.get("exit_type", ""), "-")
             exit_rows += (
                 f"<tr><td><strong>{sym}</strong></td>"
-                f"<td style='text-align:center'><span class='badge-{sig}'>{sig.upper()}</span></td>"
-                f"<td>-</td></tr>"
+                f"<td style='text-align:center'><span class='badge-{sig}'>{_SIG_KO.get(sig, sig)}</span></td>"
+                f"<td>{exit_ko}</td></tr>"
             )
         exits_html = f"""
 <div style="overflow-x:auto">
@@ -304,7 +308,7 @@ def _render_b_html(
 <div class="letter-header">
   <div class="series">QuantLetter · B축 MA200 Pullback</div>
   <h1>{week_label} 주간 레터</h1>
-  <div class="meta">기준일: {as_of_date} &nbsp;|&nbsp; 발행: {generated_at} &nbsp;|&nbsp; Pullback v3</div>
+  <div class="meta">기준일: {as_of_date} &nbsp;|&nbsp; 발행: {generated_at} &nbsp;|&nbsp; 풀백 v3</div>
 </div>
 
 <h2>이번 주 요약</h2>
