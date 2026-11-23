@@ -301,12 +301,13 @@ def summarize(trades: list[dict], label: str) -> dict:
 # 5. Live open positions (current as of today)
 # ---------------------------------------------------------------------------
 
-def get_live_positions(data: dict[str, pd.DataFrame]) -> dict:
-    today = pd.Timestamp.now(tz=None).normalize()
+def get_live_positions(data: dict[str, pd.DataFrame], as_of: str | None = None) -> dict:
+    cutoff = pd.Timestamp(as_of).normalize() if as_of else pd.Timestamp.now(tz=None).normalize()
     open_us, open_kr = [], []
 
     for ticker, df in data.items():
         sig = compute_signals(ticker, df)
+        sig = sig.loc[:cutoff]
         # Separate independent cooldown streams for touch and reclaim
         last_touch_idx   = -COOLDOWN - 1
         last_reclaim_idx = -COOLDOWN - 1
@@ -382,7 +383,33 @@ def get_live_positions(data: dict[str, pd.DataFrame]) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# 5b. Cache utilities
+# 5b. Load all cached data (letter generator helper)
+# ---------------------------------------------------------------------------
+
+def load_all_cached_data() -> dict[str, pd.DataFrame]:
+    """Load every parquet file from DATA_DIR without network calls."""
+    data = {}
+    for f in DATA_DIR.glob("*.parquet"):
+        try:
+            df = pd.read_parquet(f)
+            if isinstance(df.columns, pd.MultiIndex):
+                continue
+            if "Close" not in df.columns:
+                continue
+            df = df[["Open", "High", "Low", "Close", "Volume"]].copy()
+            df.index = pd.to_datetime(df.index)
+            df = df.sort_index().ffill()
+            ticker = f.stem.replace("_", ".", 1) if f.stem.count("_") == 1 else f.stem
+            # Restore .KS tickers: filename stored as "000660.KS" → "000660.KS"
+            # parquet stored with replace('/', '_') so just use stem directly
+            data[f.stem] = df
+        except Exception:
+            pass
+    return data
+
+
+# ---------------------------------------------------------------------------
+# 5c. Cache utilities
 # ---------------------------------------------------------------------------
 
 def clean_corrupted_us_cache(tickers: list[str]) -> int:
