@@ -11,7 +11,7 @@ from datetime import datetime
 import pandas as pd
 import yfinance as yf
 
-_REPORTS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "quantLetters")
+_REPORTS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "letterService")
 os.makedirs(_REPORTS_DIR, exist_ok=True)
 
 ASSETS   = ["EWY", "SPY", "AGG", "GLD", "BIL"]

@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang='ko'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>QuantLetter A — 2026년 11월</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:       #FAFAF8;
+  --bg2:      #FFF8E6;
+  --surface:  #FFFFFF;
+  --border:   #E8D9A0;
+  --gold:     #B45309;
+  --gold-lt:  #D97706;
+  --gold-dk:  #92400E;
+  --text:     #1C1917;
+  --text-sub: #78716C;
+  --up:       #15803D;
+  --dn:       #B91C1C;
+  --on-bg:    #ECFDF5;
+  --on-cl:    #15803D;
+  --off-bg:   #FEF2F2;
+  --off-cl:   #B91C1C;
+  --neu-bg:   #F5F5F4;
+  --neu-cl:   #78716C;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg:       #1C1917;
+    --bg2:      #292524;
+    --surface:  #292524;
+    --border:   #57534E;
+    --gold:     #FCD34D;
+    --gold-lt:  #FDE68A;
+    --gold-dk:  #F59E0B;
+    --text:     #F5F5F4;
+    --text-sub: #A8A29E;
+    --up:       #34D399;
+    --dn:       #F87171;
+    --on-bg:    #052E16;
+    --on-cl:    #34D399;
+    --off-bg:   #450A0A;
+    --off-cl:   #F87171;
+    --neu-bg:   #292524;
+    --neu-cl:   #A8A29E;
+  }
+}
+:root[data-theme="dark"] {
+  --bg:#1C1917;--bg2:#292524;--surface:#292524;--border:#57534E;
+  --gold:#FCD34D;--gold-lt:#FDE68A;--gold-dk:#F59E0B;
+  --text:#F5F5F4;--text-sub:#A8A29E;--up:#34D399;--dn:#F87171;
+  --on-bg:#052E16;--on-cl:#34D399;--off-bg:#450A0A;--off-cl:#F87171;
+  --neu-bg:#292524;--neu-cl:#A8A29E;
+}
+:root[data-theme="light"] {
+  --bg:#FAFAF8;--bg2:#FFF8E6;--surface:#FFFFFF;--border:#E8D9A0;
+  --gold:#B45309;--gold-lt:#D97706;--gold-dk:#92400E;
+  --text:#1C1917;--text-sub:#78716C;--up:#15803D;--dn:#B91C1C;
+  --on-bg:#ECFDF5;--on-cl:#15803D;--off-bg:#FEF2F2;--off-cl:#B91C1C;
+  --neu-bg:#F5F5F4;--neu-cl:#78716C;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{
+  font-family:'IBM Plex Sans KR','Noto Sans KR',sans-serif;
+  background:var(--bg);color:var(--text);
+  max-width:720px;margin:0 auto;padding:24px 16px 48px;
+  font-size:15px;line-height:1.6;
+}
+.letter-header{
+  border-top:4px solid var(--gold);
+  background:var(--bg2);
+  padding:20px 24px;border-radius:0 0 8px 8px;
+  margin-bottom:28px;
+}
+.letter-header .series{
+  font-size:11px;font-weight:700;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--gold);margin-bottom:4px;
+}
+.letter-header h1{font-size:1.4rem;font-weight:700;color:var(--text);margin-bottom:2px}
+.letter-header .meta{font-size:12px;color:var(--text-sub)}
+h2{
+  font-size:1rem;font-weight:700;color:var(--gold-dk);
+  border-left:3px solid var(--gold);padding-left:10px;
+  margin:28px 0 12px;
+}
+.weight-grid{
+  display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin:12px 0;
+}
+@media(max-width:460px){.weight-grid{grid-template-columns:repeat(3,1fr)}}
+.weight-card{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:8px;padding:12px 8px;text-align:center;
+}
+.weight-card.active{border-color:var(--gold);background:var(--bg2)}
+.weight-card .sym{font-size:11px;font-weight:700;color:var(--text-sub);letter-spacing:.05em}
+.weight-card .pct{font-size:1.4rem;font-weight:800;color:var(--text);margin:2px 0}
+.weight-card.active .pct{color:var(--gold-dk)}
+.weight-card .lbl{font-size:10px;color:var(--text-sub)}
+table{width:100%;border-collapse:collapse;margin:12px 0;font-size:13px}
+th{background:var(--bg2);color:var(--text-sub);font-weight:600;
+   padding:8px 10px;text-align:left;font-size:11px;letter-spacing:.04em;
+   border-bottom:2px solid var(--border)}
+td{padding:9px 10px;border-bottom:1px solid var(--border)}
+tr:last-child td{border-bottom:none}
+.badge-on{background:var(--on-bg);color:var(--on-cl);font-weight:700;
+  font-size:11px;padding:2px 7px;border-radius:4px;white-space:nowrap}
+.badge-off{background:var(--off-bg);color:var(--off-cl);font-weight:700;
+  font-size:11px;padding:2px 7px;border-radius:4px;white-space:nowrap}
+.badge-bil{background:var(--neu-bg);color:var(--neu-cl);font-weight:700;
+  font-size:11px;padding:2px 7px;border-radius:4px;white-space:nowrap}
+.up{color:var(--up);font-weight:600}
+.dn{color:var(--dn);font-weight:600}
+.change-box{
+  background:var(--bg2);border:1px solid var(--border);
+  border-radius:8px;padding:14px 16px;margin:12px 0;
+}
+.change-box .title{font-size:12px;font-weight:700;color:var(--gold);margin-bottom:6px}
+.change-box ul{padding-left:16px;font-size:13px;color:var(--text)}
+.change-box li{margin-bottom:4px}
+.disclaimer{
+  margin-top:40px;padding:12px 14px;border-radius:6px;
+  background:var(--neu-bg);font-size:11px;color:var(--text-sub);line-height:1.5;
+}
+</style>
+</head>
+<body>
+
+<div class="letter-header">
+  <div class="series">QuantLetter · A축 자산배분</div>
+  <h1>2026년 11월 월간 레터</h1>
+  <div class="meta">기준일: 2026-11-20 &nbsp;|&nbsp; 발행: 2026-11-23 13:32 &nbsp;|&nbsp; TAA V3</div>
+</div>
+
+<h2>이번 달 비중</h2>
+<div class="weight-grid">
+<div class="weight-card"><div class="sym">EWY</div><div class="pct">0%</div><div class="lbl">한국</div></div><div class="weight-card"><div class="sym">SPY</div><div class="pct">0%</div><div class="lbl">미국</div></div><div class="weight-card"><div class="sym">AGG</div><div class="pct">0%</div><div class="lbl">채권</div></div><div class="weight-card"><div class="sym">GLD</div><div class="pct">0%</div><div class="lbl">금</div></div><div class="weight-card active"><div class="sym">BIL</div><div class="pct">100%</div><div class="lbl">현금</div></div>
+</div>
+<p style="font-size:13px;color:var(--text-sub);margin-top:4px;">
+  위험자산 <strong style="color:var(--gold)">0%</strong>
+  &nbsp;/&nbsp; 현금(BIL) <strong>100%</strong>
+  &nbsp;→&nbsp; <span style="font-weight:700">방어적</span> 포지션
+</p>
+
+<div class="change-box"><div class="title">전월 대비 비중 변화</div><ul><li><strong>SPY</strong>: 30% → 0% &nbsp;<span class='dn'>▼ 30%p 감소</span> — 게이트 OFF 전환</li><li><strong>BIL</strong>: 70% → 100% &nbsp;<span class='up'>▲ 30%p 증가</span></li></ul></div>
+
+<h2>자산별 게이트 상태</h2>
+<p style="font-size:12px;color:var(--text-sub);margin-bottom:8px;">
+  게이트 조건: 현재가 &gt; MA200 <strong>AND</strong> 12개월 모멘텀 &gt; 0
+</p>
+<div style="overflow-x:auto">
+<table>
+<thead><tr>
+  <th>자산</th><th>게이트</th><th>현재가</th><th>MA200</th>
+  <th>&gt;MA200</th><th>괴리율</th><th>12M 수익</th><th>6M 수익</th>
+</tr></thead>
+<tbody><tr><td><strong>EWY</strong><br><span style='font-size:11px;color:var(--text-sub)'>한국 주식</span></td><td style='text-align:center'><span class="badge-off">OFF</span></td><td style='text-align:right'>123.26</td><td style='text-align:right'>164.31</td><td style='text-align:center'>✗</td><td style='text-align:right'><span class="dn">-25.0%</span></td><td style='text-align:right'><span class="up">+39.2%</span></td><td style='text-align:right'><span class="dn">-32.3%</span></td></tr><tr><td><strong>SPY</strong><br><span style='font-size:11px;color:var(--text-sub)'>미국 주식</span></td><td style='text-align:center'><span class="badge-off">OFF</span></td><td style='text-align:right'>689.81</td><td style='text-align:right'>730.29</td><td style='text-align:center'>✗</td><td style='text-align:right'><span class="dn">-5.5%</span></td><td style='text-align:right'><span class="up">+5.2%</span></td><td style='text-align:right'><span class="dn">-7.0%</span></td></tr><tr><td><strong>AGG</strong><br><span style='font-size:11px;color:var(--text-sub)'>미국 국채</span></td><td style='text-align:center'><span class="badge-off">OFF</span></td><td style='text-align:right'>96.15</td><td style='text-align:right'>96.41</td><td style='text-align:center'>✗</td><td style='text-align:right'><span class="dn">-0.3%</span></td><td style='text-align:right'><span class="up">+0.0%</span></td><td style='text-align:right'><span class="dn">-0.3%</span></td></tr><tr><td><strong>GLD</strong><br><span style='font-size:11px;color:var(--text-sub)'>금</span></td><td style='text-align:center'><span class="badge-off">OFF</span></td><td style='text-align:right'>322.87</td><td style='text-align:right'>405.83</td><td style='text-align:center'>✗</td><td style='text-align:right'><span class="dn">-20.4%</span></td><td style='text-align:right'><span class="dn">-13.9%</span></td><td style='text-align:right'><span class="dn">-22.0%</span></td></tr></tbody>
+</table>
+</div>
+
+<div class="disclaimer">
+  과거 데이터 기반 모의결과이며 미래 수익을 보장하지 않습니다.
+  본 레터는 투자자문이 아니며, 실제 투자 결정은 본인의 판단으로 이루어져야 합니다.
+  QuantMaster Pro — 내부 검토용
+</div>
+
+</body>
+</html>

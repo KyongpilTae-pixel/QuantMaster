@@ -10,7 +10,7 @@ from datetime import datetime
 
 import pandas as pd
 
-_REPORTS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "quantLetters")
+_REPORTS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "letterService")
 os.makedirs(_REPORTS_DIR, exist_ok=True)
 
 _CSS = """
