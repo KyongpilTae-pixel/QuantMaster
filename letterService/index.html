@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang='ko'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>QuantLetter — 발행 목록</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:#F8F9FA;--surface:#FFFFFF;--border:#E9ECEF;
+  --text:#212529;--text-sub:#6C757D;
+  --gold:#B45309;--gold-bg:#FFF8E6;--gold-bd:#E8D9A0;
+  --blue:#1D4ED8;--blue-bg:#EFF6FF;--blue-bd:#BFDBFE;
+  --teal:#0F766E;--teal-bg:#F0FDFA;--teal-bd:#99F6E4;
+  --radius:8px;
+}
+@media(prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#0F172A;--surface:#1E293B;--border:#334155;
+    --text:#F1F5F9;--text-sub:#94A3B8;
+    --gold:#FCD34D;--gold-bg:#292524;--gold-bd:#57534E;
+    --blue:#60A5FA;--blue-bg:#1E3A5F;--blue-bd:#334155;
+    --teal:#2DD4BF;--teal-bg:#134E4A;--teal-bd:#0F766E;
+  }
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'IBM Plex Sans KR','Noto Sans KR',sans-serif;
+  background:var(--bg);color:var(--text);min-height:100vh;padding:0 0 48px}
+.topbar{
+  background:var(--surface);border-bottom:1px solid var(--border);
+  padding:16px 24px;display:flex;align-items:center;gap:12px;
+  position:sticky;top:0;z-index:10;
+}
+.topbar h1{font-size:1.1rem;font-weight:700}
+.topbar .sub{font-size:12px;color:var(--text-sub)}
+.filters{
+  padding:16px 24px 0;display:flex;gap:8px;flex-wrap:wrap;
+}
+.filter-btn{
+  padding:5px 14px;border-radius:20px;border:1px solid var(--border);
+  background:var(--surface);color:var(--text-sub);font-size:12px;
+  cursor:pointer;font-family:inherit;font-weight:600;transition:.15s;
+}
+.filter-btn:hover,.filter-btn.active{color:var(--text)}
+.filter-btn.f-all.active{border-color:var(--text);background:var(--text);color:var(--bg)}
+.filter-btn.f-a.active{border-color:var(--gold);background:var(--gold-bg);color:var(--gold)}
+.filter-btn.f-b.active{border-color:var(--blue);background:var(--blue-bg);color:var(--blue)}
+.filter-btn.f-c.active{border-color:var(--teal);background:var(--teal-bg);color:var(--teal)}
+.list{padding:16px 24px;display:grid;gap:10px;max-width:860px}
+.card{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--radius);padding:14px 16px;
+  display:flex;align-items:center;gap:14px;
+  text-decoration:none;color:inherit;transition:.15s;
+}
+.card:hover{box-shadow:0 2px 8px rgba(0,0,0,.08);transform:translateY(-1px)}
+.axis-badge{
+  flex-shrink:0;width:38px;height:38px;border-radius:8px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:13px;font-weight:800;
+}
+.axis-A{background:var(--gold-bg);color:var(--gold);border:1px solid var(--gold-bd)}
+.axis-B{background:var(--blue-bg);color:var(--blue);border:1px solid var(--blue-bd)}
+.axis-C{background:var(--teal-bg);color:var(--teal);border:1px solid var(--teal-bd)}
+.card-body{flex:1;min-width:0}
+.card-title{font-weight:700;font-size:14px;margin-bottom:2px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.card-meta{font-size:11px;color:var(--text-sub)}
+.card-arrow{color:var(--text-sub);font-size:16px;flex-shrink:0}
+.empty{padding:48px 24px;text-align:center;color:var(--text-sub);font-size:14px}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div>
+    <h1>QuantLetter</h1>
+    <div class="sub" id="count-label">전체 로딩 중...</div>
+  </div>
+</div>
+
+<div class="filters">
+  <button class="filter-btn f-all active" data-axis="all">전체</button>
+  <button class="filter-btn f-a" data-axis="A">A축 · 자산배분</button>
+  <button class="filter-btn f-b" data-axis="B">B축 · 풀백</button>
+  <button class="filter-btn f-c" data-axis="C">C축 · 매크로</button>
+</div>
+
+<div class="list" id="letter-list">
+  <div class="empty">letterIndex.json 로딩 중...</div>
+</div>
+
+<script>
+const TITLES = {
+  A: { prefix: "자산배분 월간", pat: /^(\d{4}-M\d{2})_A/ },
+  B: { prefix: "풀백 주간",     pat: /^(\d{4}-W\d{2})_B/ },
+  C: { prefix: "매크로 해설",   pat: /^(\d{4}-\d{2}-\d{2})_C_(.+)/ },
+};
+
+let letters = [];
+let activeAxis = "all";
+
+function parseFile(name) {
+  for (const [axis, {prefix, pat}] of Object.entries(TITLES)) {
+    const m = name.match(pat);
+    if (!m) continue;
+    let label = m[1];
+    if (axis === "C") label = m[1] + " — " + m[2].replace(/-/g, " ");
+    return { axis, label: `${prefix} · ${label}`, file: name };
+  }
+  return null;
+}
+
+function render() {
+  const list = document.getElementById("letter-list");
+  const shown = activeAxis === "all" ? letters : letters.filter(l => l.axis === activeAxis);
+  document.getElementById("count-label").textContent =
+    `${shown.length}건` + (activeAxis !== "all" ? ` (${activeAxis}축 필터)` : " 발행됨");
+
+  if (!shown.length) {
+    list.innerHTML = '<div class="empty">해당 레터가 없습니다.</div>';
+    return;
+  }
+
+  list.innerHTML = shown.map(l => `
+    <a class="card" href="${l.file}" target="_blank">
+      <div class="axis-badge axis-${l.axis}">${l.axis}</div>
+      <div class="card-body">
+        <div class="card-title">${l.label}</div>
+        <div class="card-meta">${l.file}</div>
+      </div>
+      <div class="card-arrow">›</div>
+    </a>
+  `).join("");
+}
+
+// Try to load index from letterIndex.json; fallback: scan known filenames
+fetch("letterIndex.json")
+  .then(r => r.ok ? r.json() : Promise.reject())
+  .then(data => {
+    letters = data.map(parseFile).filter(Boolean).reverse();
+    render();
+  })
+  .catch(() => {
+    // Fallback: use known files embedded at build time
+    const known = KNOWN_FILES;
+    letters = known.map(parseFile).filter(Boolean).reverse();
+    render();
+  });
+
+document.querySelectorAll(".filter-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".filter-btn").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    activeAxis = btn.dataset.axis;
+    render();
+  });
+});
+
+// Embedded fallback list (updated by generate_letters.py)
+const KNOWN_FILES = [
+  "2026-M10_A.html",
+  "2026-M11_A.html",
+  "2026-W41_B.html",
+  "2026-W42_B.html",
+  "2026-W43_B.html",
+  "2026-W44_B.html",
+  "2026-W45_B.html",
+  "2026-W46_B.html",
+  "2026-W47_B.html",
+  "2026-10-31_C_ewy-gate-off.html",
+];
+</script>
+</body>
+</html>

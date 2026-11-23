@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang='ko'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>QuantLetter C — EWY 게이트 OFF: 한국 주식 비중 조정 배경</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:       #F0FDFA;
+  --bg2:      #CCFBF1;
+  --surface:  #FFFFFF;
+  --border:   #99F6E4;
+  --teal:     #0F766E;
+  --teal-lt:  #14B8A6;
+  --teal-dk:  #134E4A;
+  --text:     #0F172A;
+  --text-sub: #64748B;
+  --up:       #15803D;
+  --dn:       #B91C1C;
+  --neu-bg:   #F5F5F4;
+  --neu-cl:   #78716C;
+  --tag-bg:   #CCFBF1;
+  --tag-cl:   #0F766E;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg:#0D1F1E;--bg2:#134E4A;--surface:#1A2E2D;--border:#0F766E;
+    --teal:#2DD4BF;--teal-lt:#5EEAD4;--teal-dk:#CCFBF1;
+    --text:#F0FDFA;--text-sub:#94A3B8;--up:#34D399;--dn:#F87171;
+    --neu-bg:#1A2E2D;--neu-cl:#94A3B8;--tag-bg:#134E4A;--tag-cl:#2DD4BF;
+  }
+}
+:root[data-theme="dark"] {
+  --bg:#0D1F1E;--bg2:#134E4A;--surface:#1A2E2D;--border:#0F766E;
+  --teal:#2DD4BF;--teal-lt:#5EEAD4;--teal-dk:#CCFBF1;
+  --text:#F0FDFA;--text-sub:#94A3B8;--up:#34D399;--dn:#F87171;
+  --neu-bg:#1A2E2D;--neu-cl:#94A3B8;--tag-bg:#134E4A;--tag-cl:#2DD4BF;
+}
+:root[data-theme="light"] {
+  --bg:#F0FDFA;--bg2:#CCFBF1;--surface:#FFFFFF;--border:#99F6E4;
+  --teal:#0F766E;--teal-lt:#14B8A6;--teal-dk:#134E4A;
+  --text:#0F172A;--text-sub:#64748B;--up:#15803D;--dn:#B91C1C;
+  --neu-bg:#F5F5F4;--neu-cl:#78716C;--tag-bg:#CCFBF1;--tag-cl:#0F766E;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{
+  font-family:'IBM Plex Sans KR','Noto Sans KR',sans-serif;
+  background:var(--bg);color:var(--text);
+  max-width:720px;margin:0 auto;padding:24px 16px 48px;
+  font-size:15px;line-height:1.75;
+}
+.letter-header{
+  border-top:4px solid var(--teal);
+  background:var(--bg2);
+  padding:20px 24px;border-radius:0 0 8px 8px;margin-bottom:28px;
+}
+.letter-header .series{
+  font-size:11px;font-weight:700;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--teal);margin-bottom:4px;
+}
+.letter-header h1{font-size:1.35rem;font-weight:700;color:var(--text);margin-bottom:6px;line-height:1.3}
+.letter-header .meta{font-size:12px;color:var(--text-sub)}
+.tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.tag{
+  background:var(--tag-bg);color:var(--tag-cl);
+  font-size:11px;font-weight:700;padding:2px 8px;border-radius:12px;
+}
+h2{
+  font-size:1rem;font-weight:700;color:var(--teal-dk);
+  border-left:3px solid var(--teal);padding-left:10px;
+  margin:28px 0 10px;
+}
+p{margin-bottom:12px;color:var(--text)}
+ul,ol{padding-left:20px;margin-bottom:12px}
+li{margin-bottom:6px}
+.highlight{
+  background:var(--bg2);border-left:3px solid var(--teal);
+  padding:12px 16px;border-radius:0 6px 6px 0;margin:16px 0;
+  font-size:14px;
+}
+.highlight strong{color:var(--teal-dk)}
+table{width:100%;border-collapse:collapse;margin:12px 0;font-size:13px}
+th{background:var(--bg2);color:var(--text-sub);font-weight:600;
+   padding:8px 10px;text-align:left;font-size:11px;letter-spacing:.04em;
+   border-bottom:2px solid var(--border)}
+td{padding:9px 10px;border-bottom:1px solid var(--border)}
+tr:last-child td{border-bottom:none}
+.up{color:var(--up);font-weight:600}
+.dn{color:var(--dn);font-weight:600}
+.disclaimer{
+  margin-top:40px;padding:12px 14px;border-radius:6px;
+  background:var(--neu-bg);font-size:11px;color:var(--text-sub);line-height:1.5;
+}
+</style>
+</head>
+<body>
+
+<div class="letter-header">
+  <div class="series">QuantLetter · C축 매크로 해설</div>
+  <h1>EWY 게이트 OFF: 한국 주식 비중 조정 배경</h1>
+  <div class="meta">이벤트일: 2026-10-31 &nbsp;|&nbsp; 발행: 2026-11-23 18:16</div>
+  <div class="tags"><span class="tag">EWY</span><span class="tag">TAA</span><span class="tag">게이트</span><span class="tag">한국주식</span><span class="tag">MA200</span></div>
+</div>
+
+<div class="highlight"><strong>핵심 요약</strong>: EWY(한국 ETF)가 10월 말 기준으로 200일 이동평균선을 하향 이탈했습니다. TAA V3 규칙에 따라 EWY 비중을 <strong>30% → 0%</strong>로 조정, 잔여분은 현금(BIL)으로 이동했습니다.</div>
+
+<h2>무슨 일이 발생했나</h2>
+
+<p>2026년 10월 30일(월말 리밸런싱 기준일), EWY(iShares MSCI Korea ETF)의 종가가
+200일 이동평균선(MA200) 아래로 내려갔습니다.</p>
+<ul>
+  <li>EWY 종가: <span class="dn">139.18</span> &nbsp;/&nbsp; MA200: <strong>163.70</strong></li>
+  <li>MA200 대비 괴리: <span class="dn">-15.0%</span></li>
+  <li>12개월 모멘텀: <span class="up">+55.0%</span> (여전히 양호하나 추세 조건 미충족)</li>
+</ul>
+<p>TAA V3 게이트 조건은 <strong>"가격 &gt; MA200 AND 12개월 모멘텀 &gt; 0"</strong> 두 조건을 모두
+만족해야 합니다. 12M 모멘텀은 양호하지만 MA200 하향 이탈로 게이트가 OFF됐습니다.</p>
+
+
+<h2>비중 변화</h2>
+
+<p>9월말 대비 10월말 비중 변화는 아래와 같습니다.</p>
+
+<div style="overflow-x:auto"><table><thead><tr><th>자산</th><th>9월말</th><th>10월말</th><th>변화</th><th>사유</th></tr></thead><tbody><tr><td>EWY (한국)</td><td>30.0%</td><td>0.0%</td><td>▼ -30.0%p</td><td>게이트 OFF</td></tr><tr><td>SPY (미국)</td><td>26.9%</td><td>30.0%</td><td>▲ +3.1%p</td><td>상한 적용</td></tr><tr><td>AGG (채권)</td><td>0.0%</td><td>0.0%</td><td>-</td><td>게이트 OFF</td></tr><tr><td>GLD (금)</td><td>0.0%</td><td>0.0%</td><td>-</td><td>게이트 OFF</td></tr><tr><td>BIL (현금)</td><td>43.1%</td><td>70.0%</td><td>▲ +26.9%p</td><td>EWY 잔여분 흡수</td></tr></tbody></table></div>
+<h2>배경: KOSPI 하락 원인</h2>
+
+<p>10월 한국 증시가 급락한 주요 원인:</p>
+<ul>
+  <li><strong>외국인 대규모 매도</strong>: 달러 강세 국면에서 EM 자금 유출 가속</li>
+  <li><strong>반도체 사이클 우려</strong>: SK하이닉스, 삼성전자 실적 가이던스 하향</li>
+  <li><strong>원화 약세</strong>: 원/달러 환율 1,420원대 — 수입 비용 상승, 외국인 수익률 압박</li>
+</ul>
+<p>KOSPI는 9월말 대비 약 <span class="dn">-12%</span> 하락하며 MA200을 하향 이탈했습니다.</p>
+
+
+<h2>전략적 의미</h2>
+
+<p>EWY 게이트 OFF는 <strong>2025년 6월 이후 처음</strong>으로, 16개월간 ON 상태를 유지한 후
+발생한 전환입니다.</p>
+<div class="highlight">
+  <strong>향후 복귀 조건</strong>: EWY가 MA200(현재 약 163달러)을 회복하고
+  12M 모멘텀이 양수를 유지해야 비중이 재개됩니다. 현재 가격(139달러)에서
+  MA200 복귀까지는 약 <strong>+17.6%</strong> 상승이 필요합니다.
+</div>
+<p>B축(풀백 전략) 측면에서는 KOSPI200 종목들의 MA200 복귀 시점이 중요한
+매수 기회가 될 수 있습니다. <strong>터치/탈환 신호</strong>가 발생하는 시점을 모니터링하고 있습니다.</p>
+
+
+<h2>당면 액션 플랜</h2>
+
+<ul>
+  <li>✅ <strong>완료</strong>: 10월말 리밸런싱 — EWY 0%, SPY 30%, BIL 70%</li>
+  <li>🔍 <strong>모니터링</strong>: EWY MA200(163달러) 회복 여부 — 매월 말 재판단</li>
+  <li>📌 <strong>B축 주목</strong>: KOSPI200 대형주 중 MA200 터치/탈환 신호 — 주간 레터에서 추적</li>
+</ul>
+
+
+
+
+<div class="disclaimer">
+  과거 데이터 기반 모의결과이며 미래 수익을 보장하지 않습니다.
+  본 레터는 투자자문이 아닙니다. QuantMaster Pro — 내부 검토용
+</div>
+
+</body>
+</html>
