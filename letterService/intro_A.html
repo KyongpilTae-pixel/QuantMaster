@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang='ko'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>QuantLetter A축 — 자산배분 전략 소개</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:#FFFBEB;--bg2:#FEF3C7;--surface:#FFFFFF;--border:#FDE68A;
+  --gold:#B45309;--gold-lt:#D97706;--gold-dk:#78350F;
+  --text:#1C1917;--text-sub:#78716C;
+  --tag-bg:#FEF3C7;--tag-cl:#B45309;
+  --neu-bg:#F5F5F4;--neu-cl:#78716C;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg:#1C1200;--bg2:#292524;--surface:#1C1817;--border:#57534E;
+    --gold:#FCD34D;--gold-lt:#FDE68A;--gold-dk:#FEF3C7;
+    --text:#FAFAF9;--text-sub:#A8A29E;--tag-bg:#292524;--tag-cl:#FCD34D;
+    --neu-bg:#1C1817;--neu-cl:#A8A29E;
+  }
+}
+:root[data-theme="dark"] {
+  --bg:#1C1200;--bg2:#292524;--surface:#1C1817;--border:#57534E;
+  --gold:#FCD34D;--gold-lt:#FDE68A;--gold-dk:#FEF3C7;
+  --text:#FAFAF9;--text-sub:#A8A29E;--tag-bg:#292524;--tag-cl:#FCD34D;
+  --neu-bg:#1C1817;--neu-cl:#A8A29E;
+}
+:root[data-theme="light"] {
+  --bg:#FFFBEB;--bg2:#FEF3C7;--surface:#FFFFFF;--border:#FDE68A;
+  --gold:#B45309;--gold-lt:#D97706;--gold-dk:#78350F;
+  --text:#1C1917;--text-sub:#78716C;--tag-bg:#FEF3C7;--tag-cl:#B45309;
+  --neu-bg:#F5F5F4;--neu-cl:#78716C;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{
+  font-family:'IBM Plex Sans KR','Noto Sans KR',sans-serif;
+  background:var(--bg);color:var(--text);
+  max-width:720px;margin:0 auto;padding:24px 16px 48px;
+  font-size:15px;line-height:1.75;
+}
+.nav{margin-bottom:20px}
+.nav a{font-size:13px;color:var(--gold);text-decoration:none;font-weight:600}
+.nav a:hover{text-decoration:underline}
+.letter-header{
+  border-top:4px solid var(--gold);
+  background:var(--bg2);
+  padding:20px 24px;border-radius:0 0 8px 8px;margin-bottom:28px;
+}
+.letter-header .series{
+  font-size:11px;font-weight:700;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--gold);margin-bottom:4px;
+}
+.letter-header h1{font-size:1.4rem;font-weight:700;color:var(--text);margin-bottom:6px;line-height:1.3}
+.letter-header .meta{font-size:12px;color:var(--text-sub)}
+h2{
+  font-size:1rem;font-weight:700;color:var(--gold-dk);
+  border-left:3px solid var(--gold);padding-left:10px;
+  margin:28px 0 10px;
+}
+p{margin-bottom:12px;color:var(--text)}
+ul{padding-left:20px;margin-bottom:12px}
+li{margin-bottom:6px}
+.highlight{
+  background:var(--bg2);border-left:3px solid var(--gold);
+  padding:12px 16px;border-radius:0 6px 6px 0;margin:16px 0;
+  font-size:14px;
+}
+.highlight strong{color:var(--gold-dk)}
+table{width:100%;border-collapse:collapse;margin:12px 0;font-size:13px}
+th{background:var(--bg2);color:var(--text-sub);font-weight:600;
+   padding:8px 10px;text-align:left;font-size:11px;letter-spacing:.04em;
+   border-bottom:2px solid var(--border)}
+td{padding:9px 10px;border-bottom:1px solid var(--border)}
+tr:last-child td{border-bottom:none}
+.on{color:#15803D;font-weight:600}
+.off{color:#B91C1C;font-weight:600}
+.cta{
+  display:inline-block;margin-top:28px;
+  background:var(--gold);color:#FFFFFF;
+  padding:10px 20px;border-radius:6px;font-size:13px;font-weight:700;
+  text-decoration:none;
+}
+.cta:hover{opacity:.9}
+.disclaimer{
+  margin-top:40px;padding:12px 14px;border-radius:6px;
+  background:var(--neu-bg);font-size:11px;color:var(--text-sub);line-height:1.5;
+}
+</style>
+</head>
+<body>
+
+<div class="nav"><a href="index.html">← 목록으로</a></div>
+
+<div class="letter-header">
+  <div class="series">QuantLetter · A축 소개</div>
+  <h1>A축 — 자산배분 전략</h1>
+  <div class="meta">월간 발행 · TAA V3 기반 · 5자산 글로벌 포트폴리오</div>
+</div>
+
+<div class="highlight">
+  <strong>한 줄 정의</strong>: 한국·미국·채권·금·현금 5가지 자산을 추세 신호에 따라 매월 리밸런싱합니다.
+  "지금 이 자산에 돈을 넣을 추세인가?"를 판단해 비중을 조정합니다.
+</div>
+
+<h2>무엇을 하는 전략인가</h2>
+
+<p>A축은 <strong>추세 추종 기반 자산배분(TAA, Tactical Asset Allocation) V3</strong>를 적용합니다.
+5개 자산에 대해 매월 말 "게이트" 조건을 평가하고, 통과한 자산에만 비중을 배분합니다.
+게이트를 통과하지 못한 자산의 비중은 단기채(BIL)로 대체해 하락 위험을 줄입니다.</p>
+
+<h2>5가지 편입 자산</h2>
+
+<div style="overflow-x:auto"><table>
+<thead><tr><th>티커</th><th>자산</th><th>설명</th></tr></thead>
+<tbody>
+<tr><td><strong>EWY</strong></td><td>한국 주식</td><td>iShares MSCI Korea ETF</td></tr>
+<tr><td><strong>SPY</strong></td><td>미국 주식</td><td>SPDR S&P 500 ETF</td></tr>
+<tr><td><strong>AGG</strong></td><td>미국 채권</td><td>iShares Core US Aggregate Bond ETF</td></tr>
+<tr><td><strong>GLD</strong></td><td>금</td><td>SPDR Gold Shares</td></tr>
+<tr><td><strong>BIL</strong></td><td>단기채(현금)</td><td>SPDR Bloomberg 1-3 Month T-Bill ETF — 위험 자산 대체</td></tr>
+</tbody>
+</table></div>
+
+<h2>게이트 조건 (편입 기준)</h2>
+
+<p>각 자산이 아래 두 조건을 <strong>동시에</strong> 만족해야 비중이 배분됩니다.</p>
+<ul>
+  <li><strong>조건 1 — 가격 &gt; MA200</strong>: 종가가 200일 이동평균선 위에 있을 것</li>
+  <li><strong>조건 2 — 12개월 모멘텀 &gt; 0</strong>: 1년 전 대비 가격 상승 상태일 것</li>
+</ul>
+<p>두 조건 중 하나라도 미충족 시 → 해당 자산 비중은 <strong>0%</strong>, BIL로 흡수됩니다.</p>
+
+<div class="highlight">
+  <strong>게이트 상태 예시</strong><br>
+  EWY <span class="off">OFF</span>(MA200 하향) · SPY <span class="on">ON</span> · AGG <span class="off">OFF</span> · GLD <span class="on">ON</span> · BIL 잔여분 흡수<br>
+  → SPY 30% + GLD 30% + BIL 40% 편성
+</div>
+
+<h2>발행 주기</h2>
+<ul>
+  <li><strong>월 1회</strong> — 매월 말 리밸런싱 결과 직후 발행</li>
+  <li>게이트 상태 변화(ON↔OFF)가 없으면 간략 확인 레터 발행</li>
+  <li>C축 매크로 해설에서 게이트 전환 사건의 배경 설명을 제공합니다</li>
+</ul>
+
+<h2>레터 구성</h2>
+<ul>
+  <li>당월 게이트 상태 (5자산 ON/OFF 현황)</li>
+  <li>비중 테이블 (전월 대비 변화)</li>
+  <li>다음 달 주목 지점</li>
+</ul>
+
+<a class="cta" href="index.html?axis=A">A축 레터 목록 보기 →</a>
+
+<div class="disclaimer">
+  과거 데이터 기반 전략 소개이며 미래 수익을 보장하지 않습니다.
+  본 문서는 전략 설명용이며 투자 지시가 아닙니다. QuantMaster Pro — 내부 검토용
+</div>
+
+</body>
+</html>

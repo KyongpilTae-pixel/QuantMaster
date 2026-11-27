@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang='ko'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>QuantLetter C축 — 매크로 해설 소개</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:#F0FDFA;--bg2:#CCFBF1;--surface:#FFFFFF;--border:#99F6E4;
+  --teal:#0F766E;--teal-lt:#14B8A6;--teal-dk:#134E4A;
+  --text:#0F172A;--text-sub:#64748B;
+  --tag-bg:#CCFBF1;--tag-cl:#0F766E;
+  --neu-bg:#F5F5F4;--neu-cl:#78716C;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg:#0D1F1E;--bg2:#134E4A;--surface:#1A2E2D;--border:#0F766E;
+    --teal:#2DD4BF;--teal-lt:#5EEAD4;--teal-dk:#CCFBF1;
+    --text:#F0FDFA;--text-sub:#94A3B8;--tag-bg:#134E4A;--tag-cl:#2DD4BF;
+    --neu-bg:#1A2E2D;--neu-cl:#94A3B8;
+  }
+}
+:root[data-theme="dark"] {
+  --bg:#0D1F1E;--bg2:#134E4A;--surface:#1A2E2D;--border:#0F766E;
+  --teal:#2DD4BF;--teal-lt:#5EEAD4;--teal-dk:#CCFBF1;
+  --text:#F0FDFA;--text-sub:#94A3B8;--tag-bg:#134E4A;--tag-cl:#2DD4BF;
+  --neu-bg:#1A2E2D;--neu-cl:#94A3B8;
+}
+:root[data-theme="light"] {
+  --bg:#F0FDFA;--bg2:#CCFBF1;--surface:#FFFFFF;--border:#99F6E4;
+  --teal:#0F766E;--teal-lt:#14B8A6;--teal-dk:#134E4A;
+  --text:#0F172A;--text-sub:#64748B;--tag-bg:#CCFBF1;--tag-cl:#0F766E;
+  --neu-bg:#F5F5F4;--neu-cl:#78716C;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{
+  font-family:'IBM Plex Sans KR','Noto Sans KR',sans-serif;
+  background:var(--bg);color:var(--text);
+  max-width:720px;margin:0 auto;padding:24px 16px 48px;
+  font-size:15px;line-height:1.75;
+}
+.nav{margin-bottom:20px}
+.nav a{font-size:13px;color:var(--teal);text-decoration:none;font-weight:600}
+.nav a:hover{text-decoration:underline}
+.letter-header{
+  border-top:4px solid var(--teal);
+  background:var(--bg2);
+  padding:20px 24px;border-radius:0 0 8px 8px;margin-bottom:28px;
+}
+.letter-header .series{
+  font-size:11px;font-weight:700;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--teal);margin-bottom:4px;
+}
+.letter-header h1{font-size:1.4rem;font-weight:700;color:var(--text);margin-bottom:6px;line-height:1.3}
+.letter-header .meta{font-size:12px;color:var(--text-sub)}
+h2{
+  font-size:1rem;font-weight:700;color:var(--teal-dk);
+  border-left:3px solid var(--teal);padding-left:10px;
+  margin:28px 0 10px;
+}
+p{margin-bottom:12px;color:var(--text)}
+ul{padding-left:20px;margin-bottom:12px}
+li{margin-bottom:6px}
+.highlight{
+  background:var(--bg2);border-left:3px solid var(--teal);
+  padding:12px 16px;border-radius:0 6px 6px 0;margin:16px 0;
+  font-size:14px;
+}
+.highlight strong{color:var(--teal-dk)}
+table{width:100%;border-collapse:collapse;margin:12px 0;font-size:13px}
+th{background:var(--bg2);color:var(--text-sub);font-weight:600;
+   padding:8px 10px;text-align:left;font-size:11px;letter-spacing:.04em;
+   border-bottom:2px solid var(--border)}
+td{padding:9px 10px;border-bottom:1px solid var(--border)}
+tr:last-child td{border-bottom:none}
+.cta{
+  display:inline-block;margin-top:28px;
+  background:var(--teal);color:#FFFFFF;
+  padding:10px 20px;border-radius:6px;font-size:13px;font-weight:700;
+  text-decoration:none;
+}
+.cta:hover{opacity:.9}
+.important{
+  background:var(--bg2);border:1px solid var(--border);
+  padding:12px 16px;border-radius:6px;margin:16px 0;font-size:13px;
+  color:var(--teal-dk);
+}
+.disclaimer{
+  margin-top:40px;padding:12px 14px;border-radius:6px;
+  background:var(--neu-bg);font-size:11px;color:var(--text-sub);line-height:1.5;
+}
+</style>
+</head>
+<body>
+
+<div class="nav"><a href="index.html">← 목록으로</a></div>
+
+<div class="letter-header">
+  <div class="series">QuantLetter · C축 소개</div>
+  <h1>C축 — 매크로 해설</h1>
+  <div class="meta">사건 기반 발행 · 비중 없는 해설 · A·B 신호 번역</div>
+</div>
+
+<div class="highlight">
+  <strong>한 줄 정의</strong>: "A·B가 보는 숫자를 구독자가 이해할 수 있도록 번역합니다."
+  금리·환율·섹터 등 시장 사건이 A/B 전략에 어떤 의미인지 쉬운 말로 풀어 설명합니다.
+</div>
+
+<h2>A·B와 무엇이 다른가</h2>
+
+<p>A축은 <strong>비중 숫자</strong>를 알려주고, B축은 <strong>포지션 현황</strong>을 알려줍니다.
+C축은 그 숫자와 현황이 <strong>"왜 그렇게 됐는지"</strong>를 설명합니다.</p>
+
+<div class="important">
+  ⚠️ <strong>C축에는 자산 비중이 없습니다.</strong><br>
+  C축은 매매 지시가 아니라 <strong>상태 해설</strong>입니다. "이렇게 하세요"가 아니라
+  "A축이 EWY를 OFF 처리했습니다 / B축엔 현재 해당 없음"과 같이 현황을 설명합니다.
+</div>
+
+<h2>발행 방식</h2>
+
+<ul>
+  <li><strong>사건 기반(수시)</strong>: 아래 6종 트리거 중 하나라도 발생하면 1편 작성</li>
+  <li><strong>주 1회 고정</strong>: "이번 주 시장 요약" — 별다른 사건이 없어도 발행</li>
+</ul>
+
+<h2>6종 발행 트리거</h2>
+
+<div style="overflow-x:auto"><table>
+<thead><tr><th>유형</th><th>조건</th></tr></thead>
+<tbody>
+<tr><td><strong>금리</strong></td><td>미10Y 하루 ±20bp, 또는 4.5% · 5.0% 라운드레벨 돌파</td></tr>
+<tr><td><strong>VIX</strong></td><td>VIX 25 · 30 상향 돌파 (공포 지수 급등)</td></tr>
+<tr><td><strong>환율</strong></td><td>원/달러 하루 ±1.5%, 또는 1,350 · 1,400원 레벨 돌파</td></tr>
+<tr><td><strong>A축 게이트 전환</strong></td><td>EWY · SPY · AGG · GLD · BIL 중 ON↔OFF 전환</td></tr>
+<tr><td><strong>섹터 1위 교체</strong></td><td>당월 MTD 수익률 1위 미국 섹터 변경</td></tr>
+<tr><td><strong>매크로 발표</strong></td><td>FOMC · 미CPI · 미고용(NFP) · 한국 금통위 당일/전일</td></tr>
+</tbody>
+</table></div>
+
+<h2>레터 3단 구조</h2>
+
+<p>모든 C축 레터는 아래 3단 골격으로 작성됩니다. 스크롤 한 번에 읽히는 200~300자 분량을 지향합니다.</p>
+
+<ul>
+  <li><strong>① 무슨 일</strong> — 사건의 수치 (예: "EWY 종가 139 / MA200 164 / 괴리 -15%")</li>
+  <li><strong>② 왜 중요</strong> — 쉬운 말로 설명 (예: "추세 게이트 원리")</li>
+  <li><strong>③ A·B에 어떤 의미</strong> — 현재 상태 서술 (예: "EWY 비중 30%→0%, 복귀 조건 +17.6%")</li>
+</ul>
+
+<a class="cta" href="index.html?axis=C">C축 레터 목록 보기 →</a>
+
+<div class="disclaimer">
+  과거 데이터·시장 정보 기반 해설이며 미래 수익을 보장하지 않습니다.
+  본 레터는 투자자문이 아닙니다. 유사투자자문업 고지. QuantMaster Pro — 내부 검토용
+</div>
+
+</body>
+</html>

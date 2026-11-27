@@ -69,6 +69,22 @@ body{font-family:'IBM Plex Sans KR','Noto Sans KR',sans-serif;
 .card-meta{font-size:11px;color:var(--text-sub)}
 .card-arrow{color:var(--text-sub);font-size:16px;flex-shrink:0}
 .empty{padding:48px 24px;text-align:center;color:var(--text-sub);font-size:14px}
+.intro-section{padding:16px 24px 0;max-width:860px}
+.intro-title{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--text-sub);margin-bottom:8px}
+.intro-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+@media(max-width:600px){.intro-cards{grid-template-columns:1fr}}
+.intro-card{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--radius);padding:12px 14px;
+  display:flex;align-items:center;gap:10px;
+  text-decoration:none;color:inherit;transition:.15s;
+}
+.intro-card:hover{box-shadow:0 2px 8px rgba(0,0,0,.08);transform:translateY(-1px)}
+.intro-card-body{flex:1;min-width:0}
+.intro-card-name{font-weight:700;font-size:13px;margin-bottom:1px}
+.intro-card-desc{font-size:11px;color:var(--text-sub)}
+.divider{height:1px;background:var(--border);margin:16px 24px 0;max-width:860px}
 </style>
 </head>
 <body>
@@ -80,6 +96,37 @@ body{font-family:'IBM Plex Sans KR','Noto Sans KR',sans-serif;
   </div>
 </div>
 
+<div class="intro-section">
+  <div class="intro-title">서비스 소개</div>
+  <div class="intro-cards">
+    <a class="intro-card" href="intro_A.html">
+      <div class="axis-badge axis-A">A</div>
+      <div class="intro-card-body">
+        <div class="intro-card-name">자산배분 전략</div>
+        <div class="intro-card-desc">5자산 TAA V3 · 월간 리밸런싱</div>
+      </div>
+      <div class="card-arrow">›</div>
+    </a>
+    <a class="intro-card" href="intro_B.html">
+      <div class="axis-badge axis-B">B</div>
+      <div class="intro-card-body">
+        <div class="intro-card-name">풀백 전략</div>
+        <div class="intro-card-desc">MA200 풀백 포지션 · 주간 발행</div>
+      </div>
+      <div class="card-arrow">›</div>
+    </a>
+    <a class="intro-card" href="intro_C.html">
+      <div class="axis-badge axis-C">C</div>
+      <div class="intro-card-body">
+        <div class="intro-card-name">매크로 해설</div>
+        <div class="intro-card-desc">사건 기반 · 비중 없는 해설</div>
+      </div>
+      <div class="card-arrow">›</div>
+    </a>
+  </div>
+</div>
+
+<div class="divider"></div>
 <div class="filters">
   <button class="filter-btn f-all active" data-axis="all">전체</button>
   <button class="filter-btn f-a" data-axis="A">A축 · 자산배분</button>
